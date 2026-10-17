@@ -14,7 +14,17 @@ from typing import Any
 
 from qor_receipt import SCHEMA
 from qor_receipt import delegation as D
-from qor_receipt.challenge import DEFAULT_LEN, MAX_WINDOW_MS, PHASES, pattern_for
+from qor_receipt.challenge import (
+    DEFAULT_LEN,
+    MAX_WINDOW_MS,
+    PHASES,
+    RULE_V1,
+    RULE_V2,
+    deviations_over,
+    latency_ceiling_ms,
+    pattern_for,
+    result_rule_id,
+)
 from qor_receipt.checkpoints import verify_chain
 from qor_receipt.jcs import canonicalize
 from qor_receipt.keys import KeyProvider, kid, verify  # noqa: F401
@@ -128,13 +138,50 @@ def _challenge_evidence_errors(c: dict[str, Any], cps: list[dict[str, Any]]) -> 
             errs.append("challenge_pause_outside_window")
         if int(done) < int(pause):
             errs.append("challenge_done_before_pause")
-        if not (0 <= int(lat) <= 600):
+        # Absent rule is v1 (0..600). Rule 2 is the capture-path ceiling. Any other value is not a
+        # widening: it is flagged and judged against the v1 ceiling.
+        rule_id = result_rule_id(res)
+        if rule_id is None:
+            errs.append("challenge_rule_unknown")
+        if not (0 <= int(lat) <= latency_ceiling_ms(rule_id)):
             errs.append("challenge_latency_out_of_range")
     # Live referee: at least one countersigned checkpoint stamped during the challenge window.
     win_lo, win_hi = issued - 3_000, deadline + 5_000
     if not any(isinstance(cp.get("referee_ts_ms"), int) and win_lo <= cp["referee_ts_ms"] <= win_hi for cp in (cps or [])):
         errs.append("challenge_not_bound_to_live_checkpoint")
     return errs
+
+
+def challenge_consistency_partials(challenges: list[dict[str, Any]], role: str) -> list[str]:
+    """Backstop when a signed receipt claims several rule-v2 successes that do not agree.
+
+    The referee flips outliers to ``ok`` false before signing, which is a failed challenge.
+    This catches a receipt that still claims them ok: the verdict stays PARTIAL. Mixed rule
+    ids on one role are the same kind of partial. Rule v1 latencies are not compared here;
+    their ceiling is already 600 ms.
+    """
+    ok: list[dict[str, Any]] = []
+    for c in challenges or []:
+        if c.get("role") != role:
+            continue
+        res = c.get("result") or {}
+        if res.get("ok"):
+            ok.append(res)
+    rules = [result_rule_id(res) for res in ok]
+    out: list[str] = []
+    known = [r for r in rules if r in (RULE_V1, RULE_V2)]
+    if RULE_V1 in known and RULE_V2 in known:
+        out.append(f"{role}:challenge_rule_mixed")
+    lats = []
+    for res in ok:
+        if result_rule_id(res) != RULE_V2:
+            continue
+        lat = res.get("latency_ms")
+        if isinstance(lat, int) and not isinstance(lat, bool):
+            lats.append(int(lat))
+    if deviations_over(lats):
+        out.append(f"{role}:challenge_latency_inconsistent")
+    return out
 
 
 def _is_hex64(v: Any) -> bool:
@@ -399,6 +446,7 @@ def verify_receipt(r: dict[str, Any], *, referee_pub: str | None = None,
                         if ev_errs:
                             for e in ev_errs:
                                 partial.append(f"{role}:{ph}:{e}")
+            partial.extend(challenge_consistency_partials(r.get("challenges") or [], role))
             mp = (r.get("signals") or {}).get("motion_permille", {}).get(role)
             if mp is None:
                 partial.append(f"{role}:motion_signal_missing")

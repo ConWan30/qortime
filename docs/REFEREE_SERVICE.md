@@ -59,6 +59,42 @@ Same `qor-receipt/v0`, with:
 - `challenges[*].issuer` = signed `qortime-challenge/v1` token; `result` is the referee's own re-run.
 - `signals.motion_permille` is computed by the referee (`signals.motion_basis` says how).
 
+## Challenge latency (rule v1 and rule v2)
+
+The bound is a liveness check, not a claim about how fast Madden draws. The HID log must contain
+OPTIONS and then the nonce pattern inside the issue window, and the referee's own decode must show
+the pause menu open *after that press*. A menu already on the tape (`video_before_input`) means the
+video is not this live console. A menu that shows up too late (`video_latency_too_high`) means the
+HDMI can be a delayed copy. The four-button pattern is derived from a nonce issued at runtime, so a
+pre-recorded or replayed stream does not contain it.
+
+Rule v1 is the historical check and the default. Frames are dated with `segment_ranges` (the
+manifest close stamps). The menu must land in 0..600 ms. A receipt with no `result.rule` keeps
+that meaning. On a real Madden/PS5 capture the fully drawn menu is about 1.5–1.75 s after OPTIONS
+(match 110028: 1556 / 1535 / 1715 ms on the presentation clock), so an honest press cannot pass v1.
+The close-stamp clock adds about another 1.6–1.9 s on top of that.
+
+Rule v2 is opt-in: `bundle.json` `challenge_rule` must be the integer 2. Anything else, including a
+missing or unknown field, stays v1. The referee then:
+
+- dates frames from the fragment's first-sample PTS (`tfdt`) through the manifest frame fit;
+- accepts a menu in 0..2500 ms;
+- requires every successful latency to sit within ±300 ms of the median of those latencies
+  (a difference of exactly 300 ms still passes; one challenge has no peer and is not compared).
+
+An outlier is flipped to `ok: false`, reason `latency_inconsistent`, before the phase-pass check,
+so it does not count toward VERIFIED. The challenges check stays `partial` (not a structural
+`fail`). The signed result carries `result.rule`, which is what the verifiers trust. A claimed
+success at 1700 ms with no rule is still `challenge_latency_out_of_range`. A claimed rule-2 success
+whose latencies disagree is `challenge_latency_inconsistent` (PARTIAL). Mixed rule ids on one role
+are `challenge_rule_mixed`.
+
+What v2 still rejects: a pause before the press, a missing pause, a replayed or early pattern, and
+a delay past 2500 ms. What a constant-delay relay under 2500 ms can still do: show the menu at the
+same offset on every challenge. That offset is inside the ceiling and inside the jitter window.
+The pattern is still unpredictable and issued at runtime, so the relay has to be a live delayed
+copy, not a recording made earlier.
+
 ## Verdict rules (Python `qor_receipt/receipt.py` = JS `verify/verify.js`)
 
 | condition | status |

@@ -1,6 +1,6 @@
 // node verify/test.mjs : JCS parity + JS verifier against the Python-produced vectors.
 import { readFileSync } from "node:fs";
-import { canonicalize, sha256Hex, verifyReceipt, challengeEvidenceErrors, inputProofAdvisory, checkDelegation,
+import { canonicalize, sha256Hex, verifyReceipt, challengeEvidenceErrors, challengeConsistencyPartials, inputProofAdvisory, checkDelegation,
          revocationsProblem, receiptBodyHash, verifyInclusion, verifyLogEntries, verifyLogHead, loadAllowlist } from "./verify.js";
 import { REFEREE_REVOCATIONS } from "./referee_revocations.inc.js";
 const v = JSON.parse(readFileSync(new URL("../tests/vectors/jcs_vector.json", import.meta.url)));
@@ -33,6 +33,25 @@ const good = {
 };
 ok(challengeEvidenceErrors(good, [{ referee_ts_ms: 1600 }]).length === 0,
    "challengeEvidenceErrors accepts HID+timing+live checkpoint");
+const oldWide = structuredClone(good); oldWide.result.latency_ms = 1700;
+ok(challengeEvidenceErrors(oldWide, [{ referee_ts_ms: 1600 }]).includes("challenge_latency_out_of_range"),
+   "a receipt with no result.rule still rejects 1700 ms");
+const rule2 = structuredClone(good); rule2.result.latency_ms = 1700; rule2.result.rule = 2;
+ok(challengeEvidenceErrors(rule2, [{ referee_ts_ms: 1600 }]).length === 0,
+   "result.rule 2 accepts 1700 ms");
+const bogus = structuredClone(good); bogus.result.latency_ms = 1700; bogus.result.rule = 9;
+const bogusErr = challengeEvidenceErrors(bogus, [{ referee_ts_ms: 1600 }]);
+ok(bogusErr.includes("challenge_rule_unknown") && bogusErr.includes("challenge_latency_out_of_range"),
+   "an unknown rule does not widen the 600 ms ceiling");
+const hid = "a".repeat(64);
+const claim = (phase, lat, rule) => ({ role: "home", phase, result: { ok: true, latency_ms: lat, rule } });
+ok(challengeConsistencyPartials([claim("kickoff", 1556, 2), claim("halftime", 1535, 2), claim("end", 1715, 2)], "home").length === 0,
+   "110028 rule-2 latencies are consistent");
+ok(challengeConsistencyPartials([claim("kickoff", 1556, 2), claim("halftime", 1535, 2), claim("end", 2200, 2)], "home")
+   .includes("home:challenge_latency_inconsistent"),
+   "a jittered rule-2 claim is challenge_latency_inconsistent");
+ok(challengeConsistencyPartials([claim("kickoff", 80, 1), claim("halftime", 1556, 2)], "home").includes("home:challenge_rule_mixed"),
+   "mixed rule ids are challenge_rule_mixed");
 const advOk = inputProofAdvisory({ input: { human_permille: 700, match_permille: 500, chance_permille: 100,
   haptic_events: 3, haptic_high_confidence: 2, inputs_sha256: "c".repeat(64) } });
 ok(advOk && advOk.ok, "inputProofAdvisory accepts strong human/align/haptic signals");

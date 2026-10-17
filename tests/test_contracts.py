@@ -117,6 +117,10 @@ def test_v0311_challenge_fixtures_partials():
     assert rules["window_ms"] == CH.DEFAULT_DEADLINE_MS and rules["max_window_ms"] == CH.MAX_WINDOW_MS
     assert rules["legacy_window_ms"] == CH.LEGACY_DEADLINE_MS and rules["phases"] == list(CH.PHASES)
     assert rules["pause_latency_ms"] == [CH.MIN_LATENCY_MS, CH.MAX_LATENCY_MS]
+    versions = rules["rule_versions"]
+    assert versions["1"]["pause_latency_ms"] == [0, 600] and versions["1"]["clock"] == "segment_ranges"
+    assert versions["2"]["id"] == 2 and versions["2"]["pause_latency_ms"] == [0, CH.RULE2_MAX_LATENCY_MS]
+    assert versions["2"]["consistency_ms"] == CH.RULE2_CONSISTENCY_MS and versions["2"]["clock"] == "fragment_pts"
     js = (ROOT / "verify" / "verify.js").read_text(encoding="utf-8")
     assert f"MAX_WINDOW_MS = {CH.MAX_WINDOW_MS};" in js
 
