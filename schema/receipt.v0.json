@@ -75,7 +75,8 @@
           "result": {"oneOf": [{"type": "null"}, {"type": "object", "required": ["ok", "reason"],
                      "properties": {"ok": {"type": "boolean"}, "reason": {"type": "string"},
                                     "pause_press_ms": {"type": ["integer", "null"]}, "done_ms": {"type": ["integer", "null"]},
-                                    "latency_ms": {"type": ["integer", "null"]}, "hid_sha256": {"$ref": "#/$defs/hex64"}}}]}
+                                    "latency_ms": {"type": ["integer", "null"]}, "hid_sha256": {"$ref": "#/$defs/hex64"},
+                                    "rule": {"description": "Measurement rule. Absent or 1 keeps the 0..600 ms segment_ranges meaning. 2 is the fragment-PTS rule (0..2500 ms, ±300 ms consistency), stamped by the referee that measured it.", "enum": [1, 2]}}}]}
         }
       }
     },

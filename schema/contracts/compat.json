@@ -56,6 +56,21 @@
     "pattern": "OPTIONS then 4 face/d-pad buttons from sha256(nonce)",
     "response": "first OPTIONS press inside [issued_ms, deadline_ms] followed by exactly the pattern",
     "pause_latency_ms": [0, 600],
+    "rule_versions": {
+      "1": {
+        "id": 1,
+        "pause_latency_ms": [0, 600],
+        "clock": "segment_ranges",
+        "default_when": "bundle.json has no challenge_rule, or result.rule is absent"
+      },
+      "2": {
+        "id": 2,
+        "pause_latency_ms": [0, 2500],
+        "consistency_ms": 300,
+        "clock": "fragment_pts",
+        "opt_in": "bundle.json challenge_rule = 2; the referee stamps result.rule = 2"
+      }
+    },
     "recorder_result": "QorCap >= 0.3.11 re-runs each challenge on its own bundle at finalize; an ok result is written to the receipt (reverified_by recorder), anything else stays null with the reason in challenge_results.jsonl",
     "gate_log": "challenge_gates.jsonl: one line per opened window with the gate basis and scorebug state"
   },
