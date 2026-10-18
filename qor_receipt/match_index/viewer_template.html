@@ -99,6 +99,17 @@ input[type=range]::-moz-range-track{height:3px;background:var(--line2)}input[typ
 .hx{color:#b8c7da}.hx .u{color:var(--aqua)}
 #eid{font:11px var(--mono);color:var(--dim)}
 footer{color:var(--dim);font-size:11px;margin-top:18px;line-height:1.6}footer kbd{font:10px var(--mono);border:1px solid var(--line2);border-radius:4px;padding:1px 5px;color:var(--mute)}
+/* published pages: receipt bar + verified highlights (only rendered when the page was built by `qortime publish`) */
+#rcpt{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 18px;margin-bottom:16px;font-size:12px;color:var(--mute)}
+#rcpt a{color:var(--aqua)}#rcpt .err{flex-basis:100%;font:11px var(--mono);color:var(--warn)}
+.back{color:var(--mute);text-decoration:none;font-size:12px;padding:10px 0}.back:hover{color:var(--aqua)}
+#hls{margin-top:16px}.hlgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.hl{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:rgba(4,8,15,.5);transition:border-color .3s,transform .5s var(--ease)}
+.hl:hover{border-color:rgba(63,224,208,.4)}.hl.on{border-color:var(--aqua);box-shadow:0 0 0 4px rgba(63,224,208,.15);transform:translateY(-3px)}
+.hl video{display:block;width:100%;aspect-ratio:16/9;background:#02050a}
+.hl .b{padding:10px 12px}.hl .s{font:700 20px var(--mono)}.hl .k{font:10.5px var(--mono);color:var(--dim);word-break:break-all;margin-top:4px}
+.cbtn{display:inline-flex;align-items:center;gap:6px;margin-top:12px;padding:10px 14px;border-radius:99px;border:1px solid rgba(63,224,208,.5);color:var(--aqua);font-size:12px}
+.cbtn:hover{background:rgba(63,224,208,.08)}
 /* intro */
 #intro{position:fixed;inset:0;z-index:50;display:grid;place-items:center;background:radial-gradient(80% 60% at 50% 50%,#081428,#02050b);transition:opacity .7s var(--ease),visibility 0s .7s}
 #intro.out{opacity:0;visibility:hidden}
@@ -117,7 +128,7 @@ footer{color:var(--dim);font-size:11px;margin-top:18px;line-height:1.6}footer kb
 /* touch / small screens: no live backdrop blur over the animated aurora (it re-blurs every frame); same colours, flat glass */
 @media (pointer:coarse),(max-width:640px){.glass{backdrop-filter:none;-webkit-backdrop-filter:none;background:rgba(10,19,35,.86)}#aurora{filter:saturate(1.2)}input[type=range]::-webkit-slider-thumb{width:20px;height:20px;margin-top:-8.5px}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}.reveal{opacity:1;transform:none}#aurora{opacity:.35}}
-</style></head><body>
+</style>__HEAD__</head><body>
 <canvas id="aurora" aria-hidden="true"></canvas><div class="grain" aria-hidden="true"></div>
 <div id="intro" role="presentation"><div class="box"><svg id="isvg" viewBox="0 0 800 120" aria-hidden="true"></svg>
 <div class="t1" id="it1">sealing hash chain</div><div class="t2" id="it2"></div><div class="t3">tap or press any key to skip</div></div></div>
@@ -127,6 +138,7 @@ footer{color:var(--dim);font-size:11px;margin-top:18px;line-height:1.6}footer kb
  <div><div class="brand">QOR<span>TIME</span> · WHAT THE AI SAW</div><div class="meta" id="meta"></div></div></div>
  <div class="final glass" id="final"></div>
 </header>
+<section id="rcpt" class="glass reveal" aria-label="Receipt status" hidden></section>
 <section id="tlw" class="glass reveal" aria-label="Match timeline">
  <div class="tlhead"><span class="lbl">Play-by-play</span><span class="tag a" id="evn"></span><span class="hint">drag to scrub · markers snap · ← → events</span><span class="tlnav"><button id="prv" aria-label="Previous event"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M8 1L3 6l5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button><button id="nxt" aria-label="Next event"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M4 1l5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></span></div>
  <div id="track" tabindex="0" role="slider" aria-label="Event timeline" aria-valuemin="1"><div class="rail"></div><div class="fill" id="fill"></div><div id="ph"><div class="k"></div><div class="pl" id="phl"></div></div></div>
@@ -151,6 +163,7 @@ footer{color:var(--dim);font-size:11px;margin-top:18px;line-height:1.6}footer kb
   <section class="glass card reveal" aria-label="Chain binding"><h2><span class="lbl">Chain binding</span><span id="chtag"></span></h2><div id="chain"></div></section>
  </div>
 </main>
+<section id="hls" class="glass card reveal" aria-label="Verified highlight clips" hidden></section>
 <footer class="reveal" id="foot"></footer>
 </div>
 <script>
@@ -206,6 +219,23 @@ $('#meta').innerHTML=`${v(D.match_id)} · role ${v(D.role)} · qorcap ${v(D.qorc
   f.innerHTML=`<span class="tag w">final not confirmed</span><span class="meta">last scorebug read<br>${v(rr.method)}</span><span class="fs ${last?'unl':''}" id="fsc"></span><span class="lbl">away – home</span>`;
   f._s=last}
  f._s=f._s||(conf?R.final:null);}
+
+/* ---------- published page: receipt status + verified highlights ---------- */
+const P=D.publish||null;const HL=P&&Array.isArray(P.highlights)?P.highlights:[];
+if(P){const r=P.receipt||{};const ok=r.status==='VERIFIED';const el=$('#rcpt');el.hidden=false;
+ $('.mark').insertAdjacentHTML('beforebegin','<a class="back" href="../">← All matches</a>');
+ el.innerHTML=`<span class="lbl">Receipt</span><span class="tag ${ok?'a':'w'}">${esc(r.status||'?')}</span><span>${esc(r.label||'')}</span>
+ ${r.url?`<a href="${esc(r.url)}" download>receipt.json</a><a href="${esc(r.verify_url||'../../verify/')}">check it in the verifier</a>`:''}
+ ${(r.errors||[]).length?`<span class="err">verifier errors: ${(r.errors||[]).map(esc).join(' · ')}</span>`:''}`;
+ if(HL.length){const h=$('#hls');h.hidden=false;
+  h.innerHTML=`<h2><span class="lbl">Verified highlights · ${HL.length} clips around locked score changes</span><span class="tag a">overlay: locked score · lock hash · receipt hash</span>${P.highlights_manifest?`<a class="tag" href="${esc(P.highlights_manifest)}">manifest.json</a>`:''}</h2>
+  <div class="hlgrid">${HL.map((c,i)=>{const l=c.lock||{};return `<div class="hl" id="hl${i}"><video controls playsinline preload="metadata" src="${esc(c.url)}#t=0.1" aria-label="clip ${esc(sc(l.score_after)||'')}">${c.vtt?`<track kind="captions" src="${esc(c.vtt)}" srclang="en" label="lock overlay">`:''}</video>
+  <div class="b"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="s ${c.locked?'lockg':'unl'}">${esc(sc(l.score_after)||'?')}</span>${c.locked?'<span class="tag g">locked · in receipt</span>':l.in_receipt?`<span class="tag w">in receipt · receipt ${esc(r.status||'?')}</span>`:'<span class="tag w">not in receipt</span>'}${l.play?`<span class="tag">${esc(l.play)}</span>`:''}</div>
+  <div style="color:var(--mute);font-size:11.5px;margin-top:4px">Q${v(l.quarter)} · ${v(clk(l.clock_s))} · lock #${v(l.seq)} at ${v(c.lock_at_s)} s · ${v(c.duration_s)} s clip</div>
+  <div class="k">lock ${esc(String(l.hash||'').slice(0,24))}… · sha256 ${esc(String(c.sha256||'').slice(0,16))}…</div></div></div>`}).join('')}</div>
+  <div class="adv">Clips are re-encoded from the hash-chained recording; check the lock hash against receipt.json and the source segments in manifest.json, not the clip bytes. They show what was on screen, not who held the controller.</div>`}}
+function openClip(i){const c=$('#hl'+i);if(!c)return;document.querySelectorAll('.hl.on').forEach(x=>x.classList.remove('on'));c.classList.add('on');
+ c.scrollIntoView({behavior:RM?'auto':'smooth',block:'center'});const vd=c.querySelector('video');if(vd){vd.play().catch(()=>{})}}
 
 /* ---------- timeline ---------- */
 const track=$('#track'),ph=$('#ph'),fill=$('#fill');
@@ -318,6 +348,7 @@ function side(e){const after=e.score_after,gold=e.locked===true;const s=$('#scor
  <b>wall time</b><span>${nil(e.t_ms)?M:esc(new Date(e.t_ms).toISOString().replace('T',' ').replace('Z',' UTC'))}</span><b>recording</b><span>${nil(e.recording_s)?M:esc(e.recording_s)+' s'}</span>
  ${nil(e.pre_roll_s)?'':`<b>burst</b><span>from ${esc(e.pre_roll_s)} s before the event${e.pre_roll_s>3.5?' (pre-roll back to the last read of the old score, to cover the scoring play)':''}</span>`}<b>confidence</b><span>${v(e.confidence)} <span style="color:var(--dim)">${v(e.confidence_note)}</span></span><b>basis</b><span>${v(e.basis)}</span>
  ${e.kind==='end_of_game'?`<b>final confirmed</b><span>${e.final_confirmed?'yes':'<span class="miss">no</span>'}</span><b>method</b><span>${v(e.final_method)}</span>`:''}</div>`;
+ if(!nil(e.highlight)&&HL[e.highlight]){s.insertAdjacentHTML('beforeend',`<button class="cbtn" id="cbtn"><svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 1l9 5-9 5z" fill="currentColor"/></svg>Watch the verified clip</button>`);$('#cbtn').addEventListener('click',()=>openClip(e.highlight))}
  flipScore($('#bigs'),e.score_before||(isScore?{away:0,home:0}:after),after);
  if(gold&&!RM){const b=$('#bigs');requestAnimationFrame(()=>b.classList.add('go'))}
  const c=e.checkpoints||{};$('#chtag').innerHTML=c.trigger_match?'<span class="tag a">trigger checkpoint found</span>':'';

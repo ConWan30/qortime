@@ -1,0 +1,20 @@
+{
+  "schema": "qortime-match-page/v0",
+  "slug": "125430",
+  "match_id": "local-20261016-125430",
+  "url": "125430/",
+  "started_ms": 1792173271916,
+  "game": "madden27",
+  "final": null,
+  "final_confirmed": false,
+  "receipt_result": {
+    "away": 7,
+    "home": 14,
+    "method": "last_scorebug_read_unconfirmed"
+  },
+  "receipt_status": "FAIL",
+  "receipt_label": "FAIL \u00b7 this receipt does not verify; nothing on this page is a verified result",
+  "clips": 6,
+  "events": 11,
+  "touchdowns": 3
+}
