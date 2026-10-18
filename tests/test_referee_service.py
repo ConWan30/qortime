@@ -308,6 +308,50 @@ def test_write_js_vector(tmp_path):
 
 
 # ---------------------------------------------------------------- HTTP layer
+def test_rule_v2_presentation_clock_ignores_a_close_stamp_lag(tmp_path):
+    """A 4 s lag on every close stamp must not move the pause once the bundle opts into rule v2.
+
+    segment_ranges on this shifted manifest dates the menu about 4.2 s after OPTIONS, which fails
+    even the 2500 ms ceiling. The fragment PTS does not move, so the measured latency stays the
+    fixture's ~200 ms and result.rule is 2.
+    """
+    e = Env(tmp_path, tail_ms=8_000, k=2)
+    lines = []
+    for line in e.fx["files"]["manifest.jsonl"].decode().splitlines():
+        if not line.strip():
+            continue
+        m = json.loads(line)
+        if m.get("kind") != "init":
+            m["mono_ms"] = int(m["mono_ms"]) + 4_000
+            m["wall_ms"] = int(m["wall_ms"]) + 4_000
+            m["frames"] = int(round(m["mono_ms"] * 30 / 1000))
+        lines.append(json.dumps(m))
+    e.fx["files"]["manifest.jsonl"] = ("\n".join(lines) + "\n").encode()
+    meta = json.loads(e.fx["files"]["bundle.json"])
+    meta["challenge_rule"] = 2
+    e.fx["files"]["bundle.json"] = json.dumps(meta).encode()
+    sub = e.submit()
+    e.upload_all(sub)
+    out = e.ref.review(sub)
+    assert out["state"] == "awaiting_player_signature", json.dumps(out.get("review", out), indent=1)[:2000]
+    ch = out["review"]["checks"]["challenges"]
+    assert ch["state"] == "pass" and ch["detail"]["rule"] == 2, ch
+    lats = []
+    for c in out["receipt"]["challenges"]:
+        res = c["result"]
+        assert res["ok"] and res["rule"] == 2 and res["reverified_by"] == "official-referee", res
+        assert 0 <= res["latency_ms"] <= 400, res
+        lats.append(res["latency_ms"])
+    assert len(lats) == 3
+    final = e.player_sign(sub)
+    v = R.verify_receipt(final["receipt"], referee_pub=e.key.pubkey_hex, allowlist_path=e.allow)
+    # The stamp lag also shifts motion bins relative to the controller log. That can lower the
+    # motion score; it must not create a challenge error or partial.
+    assert not any("challenge" in e for e in v["errors"]), v
+    assert not any("challenge" in p for p in v["partial"]), v
+    assert v["status"] in ("VERIFIED", "PARTIAL"), v
+
+
 def test_http_flow(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
 

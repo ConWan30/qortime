@@ -19,6 +19,10 @@ from qor_receipt import receipt as R
 from qor_receipt.challenge import (
     DEFAULT_DEADLINE_MS,
     PHASES,
+    RULE_V2,
+    apply_consistency,
+    challenge_rule_of,
+    latency_ceiling_ms,
     motion_correlation_permille,
     new_nonce,
     pattern_for,
@@ -29,6 +33,7 @@ from qor_receipt.jcs import canonicalize, sha256_hex
 from qor_receipt.keys import KeyProvider, kid, verify
 from qor_receipt.review import bundle as B
 from qor_receipt.review import media as M
+from qor_receipt.review.clock import capture_clock, fragment_pts0_ms, frame_mono_ms
 from qor_receipt.review.policy import (
     ANCHOR_TYPE,
     CHALLENGE_TOKEN_TYPE,
@@ -379,6 +384,10 @@ class Referee:
         b = sub.bundle
         toks = {t.get("nonce"): t for t in b.jsonl("official_challenges.jsonl")}
         presses = B.press_events(b)
+        rule = challenge_rule_of(b.meta)
+        clock = capture_clock(b.segments) if rule == RULE_V2 else None
+        ceiling = latency_ceiling_ms(rule)
+        hz = 30.0
         out, notes, bad = [], [], False
         for c in b.receipt.get("challenges") or []:
             c2 = {k: c.get(k) for k in ("id", "role", "phase", "nonce", "pattern", "issued_ms", "deadline_ms")}
@@ -405,10 +414,17 @@ class Referee:
             seqs = _challenge_seqs(b, c, presses, wmm)
             pause_seen = None
             if M.ffmpeg_bin() and all(s in sub.received for s in seqs if int(b.segments[s].get("offset", 0)) > 0):
-                def frames():
+                def frames(seqs=seqs):
                     for run in M.runs(seqs, b):
-                        for t, img in M.decode_run(b, run, rd, hz=30.0, size=(640, 360)):
-                            yield t + wmm, img
+                        pts0 = None
+                        if rule == RULE_V2:
+                            init = M.init_seq_for(b, run[0])
+                            if init is not None:
+                                pts0 = fragment_pts0_ms(rd(init) or b"", rd(run[0]) or b"")
+                        for n, (t, img) in enumerate(M.decode_run(b, run, rd, hz=hz, size=(640, 360))):
+                            # No tfdt: keep the segment_ranges time. That stamp is late, so it fails the ceiling.
+                            mono = t if pts0 is None else frame_mono_ms(clock, pts0, n, hz)
+                            yield mono + wmm, img
                 try:
                     onsets = M.pause_onsets(frames())
                 except Exception as e:  # never silent
@@ -417,12 +433,17 @@ class Referee:
                 pp = response_press_ms(c2["pattern"] or [], win, issued_ms=issued, deadline_ms=deadline)
                 pause_seen = pause_seen_for(pp, onsets)
             res = verify_response(c2["pattern"] or [], [{"t_ms": p["t_ms"], "button": p["button"], "down": True} for p in win],
-                                  issued_ms=issued, deadline_ms=deadline, pause_seen_ms=pause_seen).to_dict()
+                                  issued_ms=issued, deadline_ms=deadline, pause_seen_ms=pause_seen,
+                                  max_latency_ms=ceiling).to_dict()
+            res["rule"] = rule
             res["hid_sha256"] = sha256_hex(win)
             res["reverified_by"] = "official-referee"
             out.append(dict(c2, result=res))
             if not res["ok"]:
                 notes.append(f"{c.get('phase')}: {res['reason']}")
+        if rule == RULE_V2:
+            for i in apply_consistency(out):
+                notes.append(f"{out[i].get('phase')}: latency_inconsistent")
         phases = {c.get("phase") for c in out if c.get("issuer") and (c.get("result") or {}).get("ok")}
         if bad:
             state = FAIL_CHECK
@@ -432,7 +453,7 @@ class Referee:
             state = PARTIAL_CHECK
             missing = [p for p in PHASES if p not in phases]
             notes.append(f"official challenges passed for {sorted(phases) or 'none'}; missing/failed: {missing}")
-        return out, {"state": state, "detail": {"count": len(out), "notes": notes}}
+        return out, {"state": state, "detail": {"count": len(out), "rule": rule, "notes": notes}}
 
     def _motion(self, sub: Submission, rd) -> tuple[int | None, dict[str, Any]]:
         b = sub.bundle

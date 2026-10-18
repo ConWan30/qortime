@@ -10,6 +10,9 @@ const ALPHABET = ["CROSS", "CIRCLE", "SQUARE", "TRIANGLE", "UP", "DOWN", "LEFT",
 const MAX_GAP_MS = 10000, MAX_SKEW_MS = 3000, MOTION_MIN = 300;
 const DEFAULT_LEN = 4;
 const MAX_WINDOW_MS = 120000; // v0.3.11: challenge windows are 90 s; longer is not a timed challenge
+// Challenge measurement. Absent result.rule is v1. Rule 2 is opt-in (bundle challenge_rule = 2).
+const RULE_V1 = 1, RULE_V2 = 2;
+const MAX_LATENCY_MS = 600, RULE2_MAX_LATENCY_MS = 2500, RULE2_CONSISTENCY_MS = 300;
 const RESULT_METHODS = new Set(["agreed_scorebug_final", "end_menu_read", "last_scorebug_read_unconfirmed"]);
 const UNCONFIRMED = "last_scorebug_read_unconfirmed";
 
@@ -204,6 +207,31 @@ function isNonnegInt(v) {
 }
 
 
+function resultRuleId(res) {
+  if (!res || res.rule == null) return RULE_V1;
+  const rule = res.rule;
+  if (typeof rule !== "number" || !Number.isSafeInteger(rule) || (rule !== RULE_V1 && rule !== RULE_V2)) return null;
+  return rule;
+}
+
+function latencyCeiling(ruleId) {
+  return ruleId === RULE_V2 ? RULE2_MAX_LATENCY_MS : MAX_LATENCY_MS;
+}
+
+function medianMs(values) {
+  const s = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+
+function deviationsOver(latencies, windowMs = RULE2_CONSISTENCY_MS) {
+  if (latencies.length < 2) return [];
+  const med = medianMs(latencies);
+  const out = [];
+  latencies.forEach((lat, i) => { if (Math.abs(lat - med) > windowMs) out.push(i); });
+  return out;
+}
+
 export function challengeEvidenceErrors(c, cps) {
   const errs = [];
   const res = c.result || {};
@@ -216,12 +244,29 @@ export function challengeEvidenceErrors(c, cps) {
   else {
     if (!(issued <= pause && pause <= deadline)) errs.push("challenge_pause_outside_window");
     if (done < pause) errs.push("challenge_done_before_pause");
-    if (!(lat >= 0 && lat <= 600)) errs.push("challenge_latency_out_of_range");
+    const ruleId = resultRuleId(res);
+    if (ruleId == null) errs.push("challenge_rule_unknown");
+    if (!(lat >= 0 && lat <= latencyCeiling(ruleId))) errs.push("challenge_latency_out_of_range");
   }
   const winLo = issued - 3000, winHi = deadline + 5000;
   const bound = (cps || []).some((cp) => typeof cp.referee_ts_ms === "number" && cp.referee_ts_ms >= winLo && cp.referee_ts_ms <= winHi);
   if (!bound) errs.push("challenge_not_bound_to_live_checkpoint");
   return errs;
+}
+
+// Mirrors receipt.challenge_consistency_partials. Rule v1 latencies are not compared.
+export function challengeConsistencyPartials(challenges, role) {
+  const ok = (challenges || []).filter((c) => c && c.role === role && c.result && c.result.ok).map((c) => c.result);
+  const rules = ok.map(resultRuleId);
+  const out = [];
+  if (rules.includes(RULE_V1) && rules.includes(RULE_V2)) out.push(`${role}:challenge_rule_mixed`);
+  const lats = [];
+  for (const res of ok) {
+    if (resultRuleId(res) !== RULE_V2) continue;
+    if (typeof res.latency_ms === "number" && Number.isSafeInteger(res.latency_ms)) lats.push(res.latency_ms);
+  }
+  if (deviationsOver(lats).length) out.push(`${role}:challenge_latency_inconsistent`);
+  return out;
 }
 
 
@@ -400,6 +445,7 @@ export async function verifyReceipt(r, refereePub = null, opts = {}) {
           }
         }
       }
+      partial.push(...challengeConsistencyPartials(r.challenges, role));
       const mp = ((r.signals || {}).motion_permille || {})[role];
       if (mp == null) partial.push(`${role}:motion_signal_missing`);
       else if (mp < MOTION_MIN) partial.push(`${role}:motion_correlation_low`);
