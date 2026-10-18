@@ -190,6 +190,21 @@ QORTIME_REFEREE_SEED=<hex> QORCAP_SIDECAR=/path/to/qorcap/sidecar qortime refere
 - Since QorCap `67853bf` (v0.3.11, PR #17), the image also pins Sunday Night (`madden27_sunday_night`, QorCap `qorcap_snp.py` + `madden27_sunday_night_v1.npz`) and Thursday Night
   (`madden27_thursday_night`, `qorcap_tnp.py` + `madden27_thursday_night_v1.npz`); the Dockerfile `test -f`s both so a stale pin fails the build.
   `/v1/referee` now reports `scorebug_profiles`.
+- Since QorCap `6f7fd79` (v0.3.23, PR #37), the image pins the sidecar that ships `qorcap_standard.py` with the
+  real-glyph standard packs (`madden27_standard_score_110028.npz`, `madden27_standard_score_084523.npz`; the Dockerfile
+  `test -f`s them). The referee now builds its final-read `ReaderCore` with `qorcap_standard.standard_reader()`, exactly
+  as QorCap does. Before this it used QorTime's bare `ScorebugReader()`, read no scorebug in the tail of
+  match-20261018-084523 (the red home "14" scores under the 0.70 gate on the bare pack) and failed `final_reread`.
+  The tail is still decoded at 2 Hz: with the standard reader 084523 gets 156 agreed reads at 2 Hz, and 6/15 Hz with the
+  bare reader still read nothing, so a higher rate buys nothing here.
+- **End-of-game menu without a tail scorebug (fail closed).** If QorCap's ReaderCore rejects the menu only because no
+  Q4 scorebug was read before it, the referee accepts the menu when all of these hold: real templates (not a partly
+  covered "corroborated" panel), confidence >= 0.90 over >= 2 agreeing frames, not tied, no locked read (the referee's
+  own tail reads, else the bundle's committed `timeline.jsonl` locks) above the menu on either side, and reachable from
+  the last locked read (a lone +1 only as a single try). `final_confirmed` is true only when the menu equals the last
+  locked read, or is one legal play past a Q4/OT lock; otherwise it is posted unconfirmed and `final_reread` is PARTIAL.
+  Clock, illegal-step and tie rejections stay refused, and an unreadable tail still fails. Locks never supply a score;
+  they can only refuse one. Challenges and trust tiers are unchanged.
 
 ## Head-to-head challenges (`/v1/h2h`, free, not for betting)
 

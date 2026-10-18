@@ -2,7 +2,7 @@
 # The signing key is NOT in the image: it comes from the QORTIME_REFEREE_SEED service variable at runtime.
 FROM python:3.12-slim
 # Must equal schema/contracts/compat.json referee_image.qorcap_sidecar_sha (tests/test_contracts.py checks).
-ARG QORCAP_SHA=67853bfc78beaf3b46297ef501436b7670fb65c5
+ARG QORCAP_SHA=6f7fd79b0cfc9503e97b79b887bae9bd95fef5e8
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg curl ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY pyproject.toml README.md LICENSE ./
@@ -16,7 +16,9 @@ RUN curl -fsSL "https://github.com/ConWan30/qorcap/archive/${QORCAP_SHA}.tar.gz"
  && test -f /opt/qorcap-sidecar/packs/madden27_monday_night_v1.npz \
  && test -f /opt/qorcap-sidecar/qorcap_snp.py && test -f /opt/qorcap-sidecar/packs/madden27_sunday_night_v1.npz \
  && test -f /opt/qorcap-sidecar/qorcap_tnp.py && test -f /opt/qorcap-sidecar/packs/madden27_thursday_night_v1.npz \
- && test -f /opt/qorcap-sidecar/packs/madden27_end_menu_v2.npz
+ && test -f /opt/qorcap-sidecar/packs/madden27_end_menu_v2.npz \
+ && test -f /opt/qorcap-sidecar/qorcap_standard.py && test -f /opt/qorcap-sidecar/packs/madden27_standard_score_110028.npz \
+ && test -f /opt/qorcap-sidecar/packs/madden27_standard_score_084523.npz
 ENV QORCAP_SIDECAR=/opt/qorcap-sidecar \
     QORTIME_REFEREE_WORKDIR=/tmp/qortime-referee \
     PYTHONUNBUFFERED=1
