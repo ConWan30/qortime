@@ -33,7 +33,7 @@ button,.btn{font:600 14px/1 inherit;font-family:inherit;color:#03121a;background
 button:hover,.btn:hover{transform:translateY(-2px);box-shadow:0 10px 30px -10px rgba(63,224,208,.6)}button:disabled{opacity:.5;cursor:default;transform:none}
 button.ghost{background:none;color:var(--aqua);border:1px solid rgba(63,224,208,.45)}
 :focus-visible{outline:2px solid var(--aqua);outline-offset:3px}
-.vs{display:flex;align-items:center;gap:14px;flex-wrap:wrap;font:750 clamp(24px,4.5vw,40px)/1.1 ui-sans-serif,system-ui,sans-serif}.vs i{font-style:normal;color:var(--dim);font-size:.6em}
+.vs{display:flex;align-items:center;gap:14px;flex-wrap:wrap;font:750 clamp(24px,4.5vw,40px)/1.1 ui-sans-serif,system-ui,sans-serif}.vs i{font-style:normal;color:var(--dim);font-size:.6em}.vs span{display:inline-flex;flex-direction:column}.vs .psn{font-size:12px;font-weight:500;color:var(--dim);letter-spacing:.02em;margin-top:4px}
 .rules{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
 .res{text-align:center;padding:26px 18px}.res .st{margin-bottom:10px}.res .big{font:750 clamp(48px,11vw,96px)/1 var(--mono);margin:8px 0}
 .res .win{font:700 clamp(20px,3.5vw,28px)/1.2 ui-sans-serif,system-ui,sans-serif;margin-top:6px}
@@ -49,7 +49,7 @@ ol{margin:8px 0 0;padding-left:20px;color:#b8c7da}ol li{margin:4px 0}
 <div class="wrap">
 <nav><a class="brand" href="../">QOR<span>TIME</span></a><div class="lk"><a href="../matches/">Matches</a><a href="../verify/">Verifier</a><a href="../how-it-works/">How it works</a></div></nav>
 <div id="app" aria-live="polite"></div>
-<p class="muted" style="font-size:12px;margin-top:26px">Settlement uses only receipts the QorTime verifier computes as VERIFIED (co-signed by the QorTime referee after <i>Submit for Verification</i>). A SELF_ATTESTED, failing or missing receipt shows <b>unverified</b>, never a winner. Handles are typed by players and are not verified accounts; quarter length and other rules are agreed between players and are not checked by QorTime. Controller signals are advisory evidence, not proof.</p>
+<p class="muted" style="font-size:12px;margin-top:26px">Settlement uses only receipts the QorTime verifier computes as VERIFIED (co-signed by the QorTime referee after <i>Submit for Verification</i>). A SELF_ATTESTED, failing or missing receipt shows <b>unverified</b>, never a winner. Handles are typed by players and are not verified accounts. PSN IDs are compared only with the names Madden showed on screen in the recording (on-screen evidence, not account proof); names that differ show <b>players don't match</b>, names that could not be read show <b>players unverified</b>, neither with a winner. Quarter length and other rules are agreed between players and are not checked by QorTime. Controller signals are advisory evidence, not proof.</p>
 </div>
 <script>
 (()=>{"use strict";
@@ -69,6 +69,9 @@ function createView(){
  <section class="glass card" aria-label="Create a challenge"><form id="f">
   <label>Your handle<input name="creator" required maxlength="33" placeholder="@you" autocomplete="nickname"></label>
   <label>Opponent's handle<input name="opponent" required maxlength="33" placeholder="@rival"></label>
+  <label>Your PSN ID<input name="creator_psn" required minlength="3" maxlength="16" pattern="[A-Za-z][A-Za-z0-9_\-]{2,15}" placeholder="as shown in Madden" autocomplete="off" spellcheck="false"></label>
+  <label>Opponent's PSN ID<input name="opponent_psn" required minlength="3" maxlength="16" pattern="[A-Za-z][A-Za-z0-9_\-]{2,15}" placeholder="their PSN Online ID" autocomplete="off" spellcheck="false"></label>
+  <p class="muted full" style="font-size:12px;margin:0">PSN IDs are checked against the names Madden shows on screen in your recording. That is <b>on-screen evidence, not account proof</b>: Sony and EA offer no public login, so QorTime never sees your PSN account.</p>
   <label>Game<select name="game"><option value="madden27">Madden NFL 27</option></select></label>
   <label>Quarter length<select name="quarter_min">${[...Array(15)].map((_,i)=>`<option value="${i+1}" ${i+1===6?'selected':''}>${i+1} min</option>`).join('')}</select></label>
   <label>Difficulty (optional)<select name="difficulty"><option value="">—</option><option>Rookie</option><option>Pro</option><option>All-Pro</option><option>All-Madden</option></select></label>
@@ -78,19 +81,22 @@ function createView(){
  <section class="glass card" aria-label="How it works"><span class="lbl">How it works</span><ol>
   <li>Create the link and send it to your opponent. They open it and tap <b>Accept</b>; no install needed.</li>
   <li>Play online. You record with QorCap (<b>Start Match</b>); set QorCap's side to the one you play on the scoreboard (home or away).</li>
-  <li>After the game run <b>Submit for Verification</b>, then upload <span class="mono">receipt.official.json</span> here.</li>
+  <li>After the game QorCap reads both PSN names off the screen (<b>Finalize</b> with <i>PSN names</i>), then run <b>Submit for Verification</b> and upload <span class="mono">receipt.official.json</span> here.</li>
+  <li>The result counts only if the names Madden showed match the two PSN IDs above. Different names: <i>players don't match</i>. Names that could not be read: <i>players unverified</i>. Neither shows a winner.</li>
   <li>One verified receipt settles it, labeled <i>recorded by</i> you. If your opponent also records and submits, matching receipts read <i>confirmed by both players</i>; different ones read <i>disputed</i>, with no winner.</li></ol></section>`;
  $('#f').addEventListener('submit',async ev=>{ev.preventDefault();const fd=new FormData(ev.target);$('#go').disabled=true;$('#err').textContent='';
   const rules={quarter_min:+fd.get('quarter_min')};if(fd.get('difficulty'))rules.difficulty=fd.get('difficulty');if(fd.get('notes'))rules.notes=fd.get('notes');
-  try{const r=await api('/v1/h2h',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({game:fd.get('game'),creator:fd.get('creator'),opponent:fd.get('opponent'),rules})});
+  try{const r=await api('/v1/h2h',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({game:fd.get('game'),creator:fd.get('creator'),opponent:fd.get('opponent'),creator_psn:fd.get('creator_psn'),opponent_psn:fd.get('opponent_psn'),rules})});
    const id=r.challenge.id;setTok(id,{role:'creator',token:r.creator_token});location.href=`?c=${id}${API.startsWith('http://')?'&api='+encodeURIComponent(API):''}#k=${r.creator_token}&new=1`}
   catch(e){$('#err').textContent=e.message;$('#go').disabled=false}})}
 
 function resultHTML(c){const s=c.settlement||{},st=s.status;
- const tag={recorded:'<span class="tag g">verified · recorded</span>',confirmed:'<span class="tag g">verified · confirmed</span>',disputed:'<span class="tag w">disputed</span>',unverified:'<span class="tag w">unverified</span>',accepted:'<span class="tag a">accepted · waiting for the receipt</span>',open:'<span class="tag">waiting for the opponent</span>'}[st]||`<span class="tag">${esc(st)}</span>`;
+ const tag={recorded:'<span class="tag g">verified · recorded</span>',confirmed:'<span class="tag g">verified · confirmed</span>',disputed:'<span class="tag w">disputed</span>',unverified:'<span class="tag w">unverified</span>',players_mismatch:'<span class="tag w">players don\'t match</span>',players_unverified:'<span class="tag w">players unverified</span>',accepted:'<span class="tag a">accepted · waiting for the receipt</span>',open:'<span class="tag">waiting for the opponent</span>'}[st]||`<span class="tag">${esc(st)}</span>`;
  if(st==='recorded'||st==='confirmed'){const sc=s.score||{};const w=s.winner==='tie'?'Tie game':`${esc(s.winner)} wins`;
   return `<div class="st">${tag}</div><div class="big lockg">${esc(sc.away)}<span style="opacity:.4"> – </span>${esc(sc.home)}</div><div class="muted lbl">away – home</div><div class="win">${w}</div><div class="muted" style="margin-top:6px">${esc(s.label)}</div>`}
  if(st==='disputed')return `<div class="st">${tag}</div><div class="big unv">—</div><div class="win unv">No winner</div><div class="muted">${esc(s.label)}${s.why?' · '+esc(s.why):''}</div>`;
+ if(st==='players_mismatch')return `<div class="st">${tag}</div><div class="big unv">≠</div><div class="win unv">Players don't match · no winner</div><div class="muted">${esc(s.why||'')}</div><div class="muted" style="font-size:12px;margin-top:6px">On-screen evidence, not account proof.</div>`;
+ if(st==='players_unverified')return `<div class="st">${tag}</div><div class="big unv">?</div><div class="win unv">Players unverified · no winner</div><div class="muted">${esc(s.why||'')}</div><div class="muted" style="font-size:12px;margin-top:6px">On-screen evidence, not account proof.</div>`;
  if(st==='unverified')return `<div class="st">${tag}</div><div class="big unv">?</div><div class="win unv">Unverified · no winner</div><div class="muted">${esc(s.why||s.label)}</div>`;
  return `<div class="st">${tag}</div><div class="win muted" style="margin-top:14px">${esc(s.label)}</div>`}
 
@@ -98,8 +104,9 @@ async function challengeView(){
  const h=new URLSearchParams(location.hash.slice(1));if(h.get('k')){const cur=getTok(cid);if(!cur||cur.token!==h.get('k'))setTok(cid,{role:'creator',token:h.get('k')})}
  let c;try{c=await api('/v1/h2h/'+encodeURIComponent(cid))}catch(e){app.innerHTML=`<h1>Challenge <em>not found</em></h1><p class="lede">${esc(e.message)}</p><a class="btn" href="./">Create a challenge</a>`;return}
  const me=getTok(cid),link=location.origin+location.pathname+'?c='+cid+(API.startsWith('http://')?'&api='+encodeURIComponent(API):'');
- const r=c.rules||{};const settled=['recorded','confirmed','disputed'].includes(c.settlement.status);
- app.innerHTML=`<h1 class="vs" style="margin-top:22px"><span>${esc(c.creator.handle)}</span><i>vs</i><span>${esc(c.opponent.handle)}</span></h1>
+ const r=c.rules||{};const settled=['recorded','confirmed','disputed','players_mismatch'].includes(c.settlement.status);
+ const psn=x=>x.psn?`<span class="psn mono">PSN ${esc(x.psn)}</span>`:'';
+ app.innerHTML=`<h1 class="vs" style="margin-top:22px"><span>${esc(c.creator.handle)}${psn(c.creator)}</span><i>vs</i><span>${esc(c.opponent.handle)}${psn(c.opponent)}</span></h1>
  <div class="rules"><span class="tag a">${esc(c.game_name)}</span><span class="tag">${esc(r.quarter_min)} min quarters</span>${r.difficulty?`<span class="tag">${esc(r.difficulty)}</span>`:''}${r.notes?`<span class="tag" style="white-space:normal">${esc(r.notes)}</span>`:''}<span class="tag">created ${esc(fmtT(c.created_ms))}</span></div>
  <div style="height:16px"></div>${FREE}
  <section class="glass card res" aria-label="Result">${resultHTML(c)}</section>
@@ -112,6 +119,7 @@ async function challengeView(){
   <input type="file" id="rf" accept="application/json,.json" aria-label="receipt.json"> <button id="up" disabled>Submit receipt</button><div class="err" id="uerr"></div></section>`:''}
  <section class="glass card" aria-label="Receipts"><span class="lbl">Receipts</span>${(c.submissions||[]).length?c.submissions.map(s=>`<div class="sub"><b>${esc(s.handle)}</b><span>${s.counts?'<span class="tag g">VERIFIED · counts</span>':`<span class="tag w">${esc(s.status)} · not counted</span>`} <span class="muted">side ${esc(s.role||'?')} · ${esc(s.result.away)}–${esc(s.result.home)} · ${esc(fmtT(s.submitted_ms))}</span></span>
   <span class="muted">receipt</span><span class="mono"><a href="${esc(API)}/v1/h2h/${esc(c.id)}/receipts/${esc(s.receipt_sha256.slice(0,16))}" download="receipt-${esc(s.handle.slice(1))}.json">${esc(s.receipt_sha256.slice(0,24))}…</a> · <a href="../verify/">verify it</a></span>
+  ${s.observed?`<span class="muted">on screen</span><span>${['away','home'].map(k=>{const o=s.observed[k]||{};return `${k} <span class="mono">${esc(o.handle||o.pattern||'not read')}</span>${o.confidence_permille!=null?` <span class="muted">(${Math.round(o.confidence_permille/10)}% · ${esc(o.agree)}/${esc(o.sightings)} frames)</span>`:''}`}).join(' · ')} ${s.players?`<span class="tag ${s.players.status==='match'?'a':'w'}">${esc({match:'names match',mismatch:'names differ',unverified:'names unverified'}[s.players.status]||s.players.status)}</span>`:''}<br><span class="muted" style="font-size:11.5px">PSN names read from the video: on-screen evidence, not account proof.</span></span>`:s.counts?`<span class="muted">on screen</span><span class="miss">no PSN names in this receipt</span>`:''}
   ${(s.problems||[]).length?`<span class="muted">why</span><span class="miss">${s.problems.map(esc).join(' · ')}</span>`:''}</div>`).join(''):'<p class="muted" style="margin:8px 0 0">No receipt yet. No receipt means no result.</p>'}</section>`;
  $('#cp').onclick=()=>{navigator.clipboard&&navigator.clipboard.writeText(link);$('#cp').textContent='Copied'};
  if($('#sh'))$('#sh').onclick=()=>navigator.share({title:`${c.creator.handle} vs ${c.opponent.handle} · QorTime`,text:'Head-to-head challenge (free, not for betting)',url:link}).catch(()=>{});

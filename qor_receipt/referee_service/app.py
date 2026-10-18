@@ -117,6 +117,8 @@ class H2HCreate(BaseModel):
     game: str = "madden27"
     creator: str
     opponent: str
+    creator_psn: str | None = None
+    opponent_psn: str | None = None
     rules: dict[str, Any] = {}
 
 

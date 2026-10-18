@@ -210,13 +210,21 @@ QORTIME_REFEREE_SEED=<hex> QORCAP_SIDECAR=/path/to/qorcap/sidecar qortime refere
 
 | Route | Auth | What it does |
 |---|---|---|
-| `POST /v1/h2h` | none | `{creator, opponent?, rules{quarter_min, difficulty, notes}}` → `{challenge, creator_token}` |
-| `GET /v1/h2h/{id}` | none | public challenge + settlement (`open`/`accepted`/`unverified`/`recorded`/`confirmed`/`disputed`) |
+| `POST /v1/h2h` | none | `{creator, opponent?, creator_psn, opponent_psn, rules{quarter_min, difficulty, notes}}` → `{challenge, creator_token}`. PSN IDs must match `^[A-Za-z][A-Za-z0-9_-]{2,15}$` and must not be look-alikes of each other (400 otherwise) |
+| `GET /v1/h2h/{id}` | none | public challenge + settlement (`open`/`accepted`/`unverified`/`players_unverified`/`players_mismatch`/`recorded`/`confirmed`/`disputed`); each counted receipt carries `observed` and `players_check` |
 | `POST /v1/h2h/{id}/accept` | none | once only → `{opponent_token}` |
 | `POST /v1/h2h/{id}/receipts` | `Bearer <player token>` | upload a receipt (≤4 MB); verified with the same rules as the verifier |
 | `GET /v1/h2h/{id}/receipts/{sha16}` | none | download a submitted receipt |
 
 Tokens are returned once and only their sha256 is stored (`$STATE_DIR/h2h/`). A receipt can settle one challenge only.
+
+PSN check: a VERIFIED receipt counts only when its signed `match.observed_handles` (names QorCap read from Madden's
+on-screen banners) match `creator.psn`/`opponent.psn`. Characters are compared one by one, case-insensitive, with
+look-alike groups (`0Oo QDd`, `1lIi|j`, `gyq9`, `5Ss`, `2Zz`, `8B`, …). Both side assignments are tried. A mismatch needs
+a complete read with confidence ≥ 850‰ and ≥ 3 agreeing frames; otherwise the result is `players_unverified`. A receipt
+whose role contradicts the on-screen side is `players_unverified`. Neither status has a winner. This is on-screen
+evidence, not account proof: QorTime cannot tell look-alike names apart, and anyone who controls the console account
+controls the name shown. Challenges created before this check (no PSN IDs) settle as `players_unverified`.
 Money words (bet, wager, $, stake, payout...) are rejected in rules. CORS: `QORTIME_CORS_ORIGINS`
 (default `https://conwan30.github.io`). Rate limit: `QORTIME_RATE_H2H_HOUR` (default 300/hour per client).
 Settlement never signs anything; it reads receipts and fails closed.

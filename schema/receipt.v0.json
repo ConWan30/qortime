@@ -7,6 +7,13 @@
   "required": ["schema", "match", "result", "players", "referee", "challenges", "checkpoints", "agreement", "signals", "trust_tier", "signatures"],
   "additionalProperties": false,
   "$defs": {
+    "observed": {"type": "object", "additionalProperties": false,
+                 "required": ["handle", "pattern", "confidence_permille", "sightings", "agree"],
+                 "properties": {"handle": {"type": ["string", "null"], "maxLength": 32},
+                                "pattern": {"type": ["string", "null"], "maxLength": 32},
+                                "confidence_permille": {"type": "integer", "minimum": 0, "maximum": 1000},
+                                "sightings": {"type": "integer", "minimum": 0}, "agree": {"type": "integer", "minimum": 0},
+                                "screen_side": {"enum": ["left", "right"]}}},
     "hex64": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "hex128": {"type": "string", "pattern": "^[0-9a-f]{128}$"},
     "keyid": {"type": "string", "pattern": "^[0-9a-f]{16}$"},
@@ -33,7 +40,16 @@
       "properties": {
         "match_id": {"type": "string", "minLength": 1}, "game": {"type": "string"}, "platform": {"type": "string"},
         "scorebug_profile": {"type": "string"}, "mode": {"enum": ["dual", "single"]},
-        "started_ms": {"$ref": "#/$defs/ms"}, "ended_ms": {"$ref": "#/$defs/ms"}
+        "started_ms": {"$ref": "#/$defs/ms"}, "ended_ms": {"$ref": "#/$defs/ms"},
+        "observed_handles": {
+          "description": "Optional. PSN names Madden showed on screen in the recorded video, read by QorCap (qorcap psn-names). On-screen evidence, not account proof. A '?' in pattern is a character that could not be read; handle is null unless every character was read.",
+          "type": "object", "additionalProperties": false, "required": ["source", "away", "home"],
+          "properties": {
+            "source": {"const": "on_screen"}, "platform": {"type": "string"}, "reader": {"type": "string"},
+            "pack": {"type": "string"}, "claims": {"type": "string"},
+            "away": {"$ref": "#/$defs/observed"}, "home": {"$ref": "#/$defs/observed"}
+          }
+        }
       }
     },
     "result": {
