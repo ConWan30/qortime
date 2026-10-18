@@ -197,6 +197,10 @@ QORTIME_REFEREE_SEED=<hex> QORCAP_SIDECAR=/path/to/qorcap/sidecar qortime refere
   match-20261018-084523 (the red home "14" scores under the 0.70 gate on the bare pack) and failed `final_reread`.
   The tail is still decoded at 2 Hz: with the standard reader 084523 gets 156 agreed reads at 2 Hz, and 6/15 Hz with the
   bare reader still read nothing, so a higher rate buys nothing here.
+- Since QorCap `1680734` (v0.3.24, PR #39), the pinned sidecar's `ReaderCore` also has the guarded touchdown fast path
+  (template margin >= 0.15 on every fast-path read, look-alike single-digit jumps held for 2 confirming reads, every
+  fast-path lock held 1 s). The referee builds no Glimpse listener and no veto, so its read is local-only, same as
+  QorCap's offline finalize. QorCap's 15-match replay gate: 0 new wrong locks vs v0.3.21.
 - **End-of-game menu without a tail scorebug (fail closed).** If QorCap's ReaderCore rejects the menu only because no
   Q4 scorebug was read before it, the referee accepts the menu when all of these hold: real templates (not a partly
   covered "corroborated" panel), confidence >= 0.90 over >= 2 agreeing frames, not tied, no locked read (the referee's
