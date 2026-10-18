@@ -98,6 +98,6 @@
   "submit_auth": {"scheme": "install-key-v1", "header": "X-Qor-Submit", "challenge": "/v1/submit/challenge",
                   "request_type": "qortime-submit/v1", "pow_prefix": "qortime-pow/v1|", "min_client": "0.3.10",
                   "legacy_status": 426, "install_key": "the bundle's device (recorder) key"},
-  "referee_image": {"qorcap_sidecar_sha": "6f7fd79b0cfc9503e97b79b887bae9bd95fef5e8",
+  "referee_image": {"qorcap_sidecar_sha": "1680734b3ffbff3ee0d15c39fbbf702ab931ea91",
                     "scorebug_profiles": ["madden27_standard", "madden27_monday_night", "madden27_sunday_night", "madden27_thursday_night"]}
 }

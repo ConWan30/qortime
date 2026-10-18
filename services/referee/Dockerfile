@@ -2,7 +2,7 @@
 # The signing key is NOT in the image: it comes from the QORTIME_REFEREE_SEED service variable at runtime.
 FROM python:3.12-slim
 # Must equal schema/contracts/compat.json referee_image.qorcap_sidecar_sha (tests/test_contracts.py checks).
-ARG QORCAP_SHA=6f7fd79b0cfc9503e97b79b887bae9bd95fef5e8
+ARG QORCAP_SHA=1680734b3ffbff3ee0d15c39fbbf702ab931ea91
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg curl ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY pyproject.toml README.md LICENSE ./
