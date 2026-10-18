@@ -190,3 +190,18 @@ QORTIME_REFEREE_SEED=<hex> QORCAP_SIDECAR=/path/to/qorcap/sidecar qortime refere
 - Since QorCap `67853bf` (v0.3.11, PR #17), the image also pins Sunday Night (`madden27_sunday_night`, QorCap `qorcap_snp.py` + `madden27_sunday_night_v1.npz`) and Thursday Night
   (`madden27_thursday_night`, `qorcap_tnp.py` + `madden27_thursday_night_v1.npz`); the Dockerfile `test -f`s both so a stale pin fails the build.
   `/v1/referee` now reports `scorebug_profiles`.
+
+## Head-to-head challenges (`/v1/h2h`, free, not for betting)
+
+| Route | Auth | What it does |
+|---|---|---|
+| `POST /v1/h2h` | none | `{creator, opponent?, rules{quarter_min, difficulty, notes}}` → `{challenge, creator_token}` |
+| `GET /v1/h2h/{id}` | none | public challenge + settlement (`open`/`accepted`/`unverified`/`recorded`/`confirmed`/`disputed`) |
+| `POST /v1/h2h/{id}/accept` | none | once only → `{opponent_token}` |
+| `POST /v1/h2h/{id}/receipts` | `Bearer <player token>` | upload a receipt (≤4 MB); verified with the same rules as the verifier |
+| `GET /v1/h2h/{id}/receipts/{sha16}` | none | download a submitted receipt |
+
+Tokens are returned once and only their sha256 is stored (`$STATE_DIR/h2h/`). A receipt can settle one challenge only.
+Money words (bet, wager, $, stake, payout...) are rejected in rules. CORS: `QORTIME_CORS_ORIGINS`
+(default `https://conwan30.github.io`). Rate limit: `QORTIME_RATE_H2H_HOUR` (default 300/hour per client).
+Settlement never signs anything; it reads receipts and fails closed.

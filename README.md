@@ -141,3 +141,25 @@ score change with before/after score, end of game; each with nearby button press
 clip hash that bind it to the video chain, and a heuristic confidence), ~10 burst frames + a contact sheet per event,
 and a self-contained `viewer.html`. Inputs/haptics are advisory evidence, not proof; fields the bundle does not carry
 are shown as missing. Tail clips (e.g. `last150s.mp4`) are aligned to the end of the recording.
+
+## Match pages (`/matches/<id>/`)
+
+`qortime publish BUNDLE --site site --video match.mp4 [--highlights BUNDLE/highlights]` turns a finished bundle into
+`site/matches/<id>/` (score timeline, motion playback, touchdown highlights, controller advisory data) and rebuilds the
+`/matches/` index (`qortime matches-index --site site` rebuilds the index alone). It publishes only when the bundle has
+a `receipt.json`, verifies it, and labels the page with the status it gets: a FAIL receipt is refused unless
+`--allow-fail`, and then every page element says the result is not verified. A clip is tagged "locked" only when its
+score lock is in a receipt that does not FAIL. Raw `inputs.jsonl`, haptics, device ids and local paths are never copied;
+the page carries only the summarised advisory data, and publish refuses if a private field leaks into the output.
+Highlight clips come from `qorcap highlights BUNDLE` (QorCap repo); their manifest must name the same receipt.
+
+## Head-to-head challenges (`/challenge/`)
+
+Free links to settle bragging rights: no money, wagering, entry fees or Stripe. The creator makes a link
+(`POST /v1/h2h` on the referee service), the opponent opens it and accepts, nothing to install. Only one player needs
+QorCap: the creator's receipt alone settles it ("recorded by @handle"), because online Madden shows both players the same
+scoreboard. If both players submit receipts that agree it says "confirmed by both players"; if they disagree it says
+"disputed" and shows no winner. Only receipts the verifier computes as VERIFIED count (match started after the challenge
+was made, final score confirmed); a SELF_ATTESTED, FAIL or missing receipt shows "unverified", never a winner. Handles
+are typed by players and are not verified; quarter length and other rules are agreed, not checked. The challenge record
+is not signed with the referee key. API details: `docs/REFEREE_SERVICE.md`.

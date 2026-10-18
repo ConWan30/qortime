@@ -9,6 +9,7 @@
   qortime referee-ai BUNDLE [--vision scorebug|meta|none] [--no-jev]   AI referee verdict (exit 0 accept, 1 abstain, 2 dispute)
   qortime referee-ai-verify VERDICT.json [--pub HEX]      check a signed referee verdict
   qortime index BUNDLE [--video V] [--out DIR]            play-by-play match index + burst frames + viewer.html
+  qortime publish BUNDLE --site site [--video V] [--highlights DIR]   public match page site/matches/<slug>/ + index
   qortime referee-service [--host H] [--port P]           official referee service (verified uploads); key from env
 """
 from __future__ import annotations
@@ -69,6 +70,15 @@ def main(argv: list[str] | None = None) -> int:
     ix.add_argument("--out", default="qt-index", help="output dir")
     ix.add_argument("--no-frames", action="store_true")
     ix.add_argument("--force", action="store_true", help="ignore cached match_index.json")
+    pb = sub.add_parser("publish", help="public match page under SITE/matches/<slug>/ (needs a signed receipt.json)")
+    pb.add_argument("bundle", help="QorCap bundle dir (with receipt.json), bundle-meta.zip, or a dir holding one")
+    pb.add_argument("--site", default="site", help="site root (default: site)")
+    pb.add_argument("--video", help="match video (full recording or a tail clip)")
+    pb.add_argument("--highlights", help="qorcap highlights folder (default: BUNDLE/highlights if present)")
+    pb.add_argument("--slug", help="URL slug (default: HHMMSS of the match id)")
+    pb.add_argument("--allow-fail", action="store_true", help="publish even if the receipt FAILs (labeled as failing)")
+    pb.add_argument("--no-frames", action="store_true")
+    sub.add_parser("matches-index", help="rebuild SITE/matches/index.html").add_argument("--site", default="site")
     rs = sub.add_parser("referee-service", help="official referee service for verified uploads (QORTIME_REFEREE_SEED env)")
     rs.add_argument("--host", default="0.0.0.0")
     rs.add_argument("--port", type=int, default=int(__import__("os").getenv("PORT", "8080")))
@@ -79,6 +89,22 @@ def main(argv: list[str] | None = None) -> int:
         from qor_receipt.referee_service.app import create_app
 
         uvicorn.run(create_app(), host=a.host, port=a.port)
+        return 0
+    if a.cmd == "publish":
+        from qor_receipt.match_index.publish import PublishRefused, publish
+
+        try:
+            out = publish(a.bundle, a.site, video=a.video, highlights=a.highlights, slug=a.slug, allow_fail=a.allow_fail,
+                          frames=not a.no_frames)
+        except PublishRefused as e:
+            print(json.dumps({"published": False, "reason": str(e)}))
+            return 4
+        print(json.dumps({"published": True, **out}))
+        return 0
+    if a.cmd == "matches-index":
+        from qor_receipt.match_index.publish import write_index
+
+        print(write_index(a.site))
         return 0
     if a.cmd == "index":
         from qor_receipt.match_index import build_index

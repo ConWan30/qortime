@@ -24,6 +24,10 @@ Flow (spot-check):
   POST /v1/submissions/{id}/player-signature       -> device key signs the same bytes; receipt complete
 Live helpers (optional, during Start Match):
   POST /v1/challenges   signed nonce (+ optional chain-head anchor)     POST /v1/anchors   signed chain-head timestamp
+Head-to-head challenge links (free, not for betting; qor_receipt/h2h.py; state in $QORTIME_STATE_DIR/h2h):
+  POST /v1/h2h  GET /v1/h2h/{id}  POST /v1/h2h/{id}/accept  POST /v1/h2h/{id}/receipts (Bearer player token)
+  GET /v1/h2h/{id}/receipts/{sha16}
+  QORTIME_CORS_ORIGINS (default https://conwan30.github.io) / QORTIME_RATE_H2H_HOUR (default 300)
 """
 from __future__ import annotations
 
@@ -35,10 +39,12 @@ import threading
 import time
 from typing import Any
 
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from qor_receipt import delegation as D
+from qor_receipt import h2h as H
 from qor_receipt.keys import SoftwareKey
 from qor_receipt.referee_service.submit_auth import AuthError, SubmitGuard, Window
 from qor_receipt.review import bundle as B
@@ -107,8 +113,22 @@ def _state_dir() -> str:
     return "/data" if os.path.isdir("/data") else os.getenv("QORTIME_REFEREE_WORKDIR", "/tmp/qortime-referee")
 
 
-def create_app(referee: Referee | None = None, guard: SubmitGuard | None = None) -> FastAPI:
+class H2HCreate(BaseModel):
+    game: str = "madden27"
+    creator: str
+    opponent: str
+    rules: dict[str, Any] = {}
+
+
+class H2HAccept(BaseModel):
+    handle: str | None = None
+
+
+def create_app(referee: Referee | None = None, guard: SubmitGuard | None = None, h2h: H.Store | None = None) -> FastAPI:
     app = FastAPI(title="QorTime official referee", version=VERSION)
+    origins = [o.strip() for o in os.getenv("QORTIME_CORS_ORIGINS", "https://conwan30.github.io").split(",") if o.strip()]
+    app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["GET", "POST"],
+                       allow_headers=["Authorization", "Content-Type"], max_age=600)
     if referee is None:
         key, cert = _key_from_env()
         if key is None:
@@ -132,6 +152,10 @@ def create_app(referee: Referee | None = None, guard: SubmitGuard | None = None)
             guard = SubmitGuard(secret=sec.encode() if sec else None, state_dir=state)
     ref = referee
     guard = guard or SubmitGuard()
+    if h2h is None:
+        h2h = H.Store(os.path.join(_state_dir(), "h2h"))
+    h2h_cap = Window()
+    h2h_cap_hour = int(os.getenv("QORTIME_RATE_H2H_HOUR", "300"))
     live_cap = Window()
     live_cap_hour = int(os.getenv("QORTIME_RATE_LIVE_HOUR", "1200"))
     sub_pub: dict[str, str] = {}
@@ -221,6 +245,48 @@ def create_app(referee: Referee | None = None, guard: SubmitGuard | None = None)
             return ref.issue_anchor(req.match_id, req.anchor)
         except ValueError as e:
             raise HTTPException(400, str(e)) from None
+
+    # ---------------- head-to-head challenge links (free; no money; settlement only from VERIFIED receipts)
+    def h2h_ok():
+        now = int(time.time() * 1000)
+        with lock:
+            if h2h_cap.count(now, 3_600_000) >= h2h_cap_hour:
+                raise HTTPException(429, "challenge rate limit reached; try again later")
+            h2h_cap.t.append(now)
+
+    def h2h_call(fn, *a):
+        try:
+            return fn(*a)
+        except H.H2HError as e:
+            raise HTTPException(e.status, str(e)) from None
+
+    @app.post("/v1/h2h")
+    def h2h_create(req: H2HCreate):
+        h2h_ok()
+        return h2h_call(h2h.create, req.model_dump())
+
+    @app.get("/v1/h2h/{cid}")
+    def h2h_get(cid: str):
+        return h2h_call(h2h.get, cid)
+
+    @app.post("/v1/h2h/{cid}/accept")
+    def h2h_accept(cid: str, req: H2HAccept):
+        h2h_ok()
+        return h2h_call(h2h.accept, cid, req.handle)
+
+    @app.post("/v1/h2h/{cid}/receipts")
+    async def h2h_receipt(cid: str, request: Request, authorization: str | None = Header(default=None)):
+        h2h_ok()
+        body = bytearray()
+        async for chunk in request.stream():
+            body += chunk
+            if len(body) > H.MAX_RECEIPT_BYTES:
+                raise HTTPException(413, "receipt too large")
+        return h2h_call(h2h.submit, cid, authorization, bytes(body))
+
+    @app.get("/v1/h2h/{cid}/receipts/{sha16}")
+    def h2h_receipt_get(cid: str, sha16: str):
+        return Response(h2h_call(h2h.receipt, cid, sha16), media_type="application/json")
 
     @app.post("/v1/submissions")
     async def submit(request: Request, mode: str = SPOT, authorization: str | None = Header(default=None),
