@@ -312,7 +312,8 @@ class Referee:
                         yield t + wmm, img
             corr = M.sidecar_corroboration(str(sub.dir / "meta"), self.sidecar_dir)
             try:
-                final = M.reread_final(frames(), self.core_factory, corroboration=corr)
+                final = M.reread_final(frames(), self.core_factory, corroboration=corr,
+                                       timeline_locks=M.timeline_locks_from_bytes(b.files.get("timeline.jsonl")))
                 checks["final_reread"] = _final_check(final, b.receipt.get("result") or {})
             except Exception as e:  # undecodable video is a failed check, never a crash or a silent pass
                 final = None
@@ -577,7 +578,8 @@ def _final_summary(final: dict | None) -> dict[str, Any] | None:
     return {"basis": f.get("basis"), "home": f.get("home", lr.get("home")), "away": f.get("away", lr.get("away")),
             "quarter": f.get("quarter", lr.get("quarter")), "final_confirmed": f.get("final_confirmed"),
             "notes": f.get("notes"), "scorebug_reads": final.get("reads"), "stats": final.get("stats"),
-            "end_menu_rejected": (final.get("end_menu_rejected") or {}).get("why")}
+            "end_menu_rejected": (final.get("end_menu_rejected") or {}).get("why"),
+            "end_menu_fallback": final.get("end_menu_fallback")}
 
 
 def _final_check(final: dict, claimed: dict) -> dict[str, Any]:
@@ -591,6 +593,12 @@ def _final_check(final: dict, claimed: dict) -> dict[str, Any]:
     if mine != theirs:
         return {"state": FAIL_CHECK, "detail": f"referee read HOME {mine[0]} - AWAY {mine[1]} but the laptop claimed "
                                                f"HOME {theirs[0]} - AWAY {theirs[1]}"}
+    if f and f.get("fallback") == "end_menu_without_tail_scorebug":
+        if f.get("final_confirmed") is True:
+            return {"state": PASS, "detail": "end-of-game menu re-read by the referee matches the claimed final (no Q4 "
+                                             "scorebug read in the tail; menu checked against the last locked read)"}
+        return {"state": PARTIAL_CHECK, "detail": "end-of-game menu read with no Q4 scorebug in the tail; not confirmed "
+                                                  "against a locked read"}
     if f and f.get("basis") == "end_menu" and f.get("final_confirmed") is not False:
         return {"state": PASS, "detail": "end-of-game menu re-read by the referee matches the claimed final"}
     if f and f.get("basis") == "end_menu":

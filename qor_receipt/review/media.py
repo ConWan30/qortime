@@ -115,14 +115,31 @@ def sidecar_core_factory(sidecar_dir: str | None = None):
     from qorcap_reader import ReaderCore, madden_final_screen, prep  # type: ignore
 
     from qor_receipt._vendor.qoresence.vision.local_scorebug.agreement import AgreementWindow
-    from qor_receipt._vendor.qoresence.vision.local_scorebug.reader import ScorebugReader
     from qor_receipt.agent.pause_detect import PauseDetector
     from qor_receipt.final_detect import detect_final
 
+    make_reader = sidecar_standard_reader(d)
+
     def factory(post):
-        return ReaderCore(post, AutoProfileReader(ScorebugReader(), prep=prep), AgreementWindow(), PauseDetector(),
+        return ReaderCore(post, AutoProfileReader(make_reader(), prep=prep), AgreementWindow(), PauseDetector(),
                           detect_final, final_screen_detector=madden_final_screen, end_menu_reader=EndMenuReader())
     return factory
+
+
+def sidecar_standard_reader(sidecar_dir: str | None = None):
+    """Constructor for the standard-scorebug reader QorCap itself uses: ``qorcap_standard.standard_reader()``
+    (QorTime's ``madden27_standard`` pack plus QorCap's real-glyph variants, e.g. the 084523 red "4"; same 0.70 gate).
+    QorCap builds every ReaderCore with it (Start Match, finalize, offline re-read). The referee used QorTime's bare
+    ``ScorebugReader()`` and so could not read scorebugs QorCap reads (match-20261018-084523: 0 tail reads ->
+    final_reread FAIL). Older sidecars without ``qorcap_standard`` fall back to the bare reader."""
+    d = sidecar_dir or os.getenv("QORCAP_SIDECAR")
+    if d and (Path(d) / "qorcap_standard.py").exists():
+        if d not in sys.path:
+            sys.path.insert(0, d)
+        from qorcap_standard import standard_reader  # type: ignore
+        return standard_reader
+    from qor_receipt._vendor.qoresence.vision.local_scorebug.reader import ScorebugReader
+    return ScorebugReader
 
 
 def sidecar_corroboration(bundle_dir: str | None, sidecar_dir: str | None = None) -> list[dict]:
@@ -138,8 +155,12 @@ def sidecar_corroboration(bundle_dir: str | None, sidecar_dir: str | None = None
         return []
 
 
-def reread_final(frames: Iterable[tuple[int, Any]], core_factory, *, corroboration: list[dict] | None = None) -> dict[str, Any]:
-    """Feed the referee's decoded tail frames (t_ms = wall clock) through a fresh ReaderCore. No laptop timeline seed."""
+def reread_final(frames: Iterable[tuple[int, Any]], core_factory, *, corroboration: list[dict] | None = None,
+                 timeline_locks: list[dict] | None = None) -> dict[str, Any]:
+    """Feed the referee's decoded tail frames (t_ms = wall clock) through a fresh ReaderCore. No laptop timeline seed.
+
+    ``timeline_locks`` (the bundle's committed ``timeline.jsonl`` score locks) never supply a score. They are only
+    used by ``end_menu_fallback`` to REFUSE an end-of-game menu that conflicts with, or cannot follow, a locked read."""
     events: list[dict] = []
     core = core_factory(lambda e: events.append(e) or {})
     core.delta_corroboration = list(corroboration or [])
@@ -148,9 +169,112 @@ def reread_final(frames: Iterable[tuple[int, Any]], core_factory, *, corroborati
         if getattr(core, "end_menu", None) is not None:
             break
     reads = [e for e in events if e.get("type") == "score"]
-    return {"final": core.final, "last_read": reads[-1] if reads else None, "reads": len(reads),
-            "end_menu": getattr(core, "end_menu", None), "end_menu_rejected": getattr(core, "end_menu_rejected", None),
-            "stats": dict(core.stats)}
+    rejected = getattr(core, "end_menu_rejected", None)
+    final = core.final
+    fallback = None
+    if final is None and rejected:
+        final, why = end_menu_fallback(rejected, reads, timeline_locks)
+        fallback = {"accepted": final is not None, "why": why}
+    return {"final": final, "last_read": reads[-1] if reads else None, "reads": len(reads),
+            "end_menu": getattr(core, "end_menu", None), "end_menu_rejected": rejected,
+            "end_menu_fallback": fallback, "stats": dict(core.stats)}
+
+
+# ---------------------------------------------------------------- end-of-game menu without a tail scorebug read
+END_MENU_FALLBACK_REASON = "no Q4 scorebug read before the end-of-game menu"
+END_MENU_FALLBACK_MIN_CONF = 0.90
+END_MENU_FALLBACK_MIN_FRAMES = 2
+LEGAL_STEPS = frozenset({1, 2, 3, 6, 7, 8})
+
+
+def _int(v: Any) -> bool:
+    return isinstance(v, int) and not isinstance(v, bool)
+
+
+def locked_reads(rows: Iterable[dict] | None) -> list[dict]:
+    """Agreed score locks (``home``/``away`` ints, not an ``obs`` row) in time order."""
+    out = [r for r in rows or [] if isinstance(r, dict) and "obs" not in r and _int(r.get("home")) and _int(r.get("away"))
+           and r["home"] >= 0 and r["away"] >= 0]
+    return sorted(out, key=lambda r: r.get("t_ms") if _int(r.get("t_ms")) else 0)
+
+
+def timeline_locks_from_bytes(raw: bytes | None) -> list[dict]:
+    import json
+
+    rows = []
+    for line in (raw or b"").decode("utf-8", "replace").splitlines():
+        try:
+            o = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(o, dict):
+            rows.append(o)
+    return locked_reads(rows)
+
+
+def end_menu_fallback(rejected: dict, tail_reads: list[dict] | None, timeline_locks: list[dict] | None
+                      ) -> tuple[dict | None, str]:
+    """Accept an end-of-game menu that QorCap's ReaderCore rejected ONLY because no Q4 scorebug was read in the tail.
+
+    Fail closed. Every one of these must hold, otherwise ``(None, reason)``:
+      * the rejection reason is exactly "no Q4 scorebug read before the end-of-game menu" (a clock, illegal-step,
+        tie or any other rejection stays refused);
+      * the menu read is real-template (not a partly covered "corroborated" panel), confidence >= 0.90 over >= 2
+        agreeing frames, not tied;
+      * there is at least one locked read to compare with (the referee's own tail reads first, else the bundle's
+        committed timeline locks); none of them is above the menu score on either side (scores never go down);
+      * the menu is reachable from the last locked read (each side's increase is 0 or made of legal plays).
+    ``final_confirmed`` is true only when the menu equals the last locked read, or is one legal play past a last
+    locked read in Q4/OT. Anything else is posted unconfirmed, which the referee reports as PARTIAL, never PASS."""
+    if not isinstance(rejected, dict) or rejected.get("why") != END_MENU_FALLBACK_REASON:
+        return None, f"end menu rejected for another reason: {(rejected or {}).get('why')}"
+    away, home = rejected.get("away"), rejected.get("home")
+    if not (_int(away) and _int(home)) or away < 0 or home < 0:
+        return None, "end menu score missing"
+    conf, frames = rejected.get("conf"), rejected.get("frames")
+    if not isinstance(conf, (int, float)) or isinstance(conf, bool) or conf < END_MENU_FALLBACK_MIN_CONF:
+        return None, f"end menu confidence {conf} below {END_MENU_FALLBACK_MIN_CONF}"
+    if not _int(frames) or frames < END_MENU_FALLBACK_MIN_FRAMES:
+        return None, f"end menu agreed on {frames} frame(s), need {END_MENU_FALLBACK_MIN_FRAMES}"
+    if "corroborated" in (rejected.get("template_sources") or []):
+        return None, "end menu panel partly covered (corroboration only confirms a scorebug final)"
+    if home == away:
+        return None, "tied score on the end-of-game menu"
+    if 1 in (home, away):
+        return None, "a final of 1 point is not a legal football score here"
+    tail = locked_reads(tail_reads)
+    tl = locked_reads(timeline_locks)
+    every = tail + tl
+    if not every:
+        return None, "no locked score read to check the end menu against"
+    for r in every:
+        if r["away"] > away or r["home"] > home:
+            return None, (f"end menu AWAY {away} - HOME {home} conflicts with locked read AWAY {r['away']} - "
+                          f"HOME {r['home']} (scores never go down)")
+    ref = tail[-1] if tail else tl[-1]
+    d = [away - ref["away"], home - ref["home"]]
+    exact = d == [0, 0]
+    one_step = min(d) == 0 and max(d) in LEGAL_STEPS
+    # +1 alone is only a try after a touchdown already on the board; any other side total is a sum of 2/3/6/7/8.
+    if 1 in d and not one_step:
+        return None, f"end menu is not reachable from AWAY {ref['away']} - HOME {ref['home']}"
+    q = ref.get("quarter")
+    late = _int(q) and q >= 4
+    confirmed = exact or (one_step and late)
+    src = "referee tail read" if tail else "bundle timeline lock"
+    notes = [f"referee end-menu fallback: menu read at {conf:.3f} over {frames} frames with no Q4 scorebug read in "
+             f"the tail; checked against the last locked read ({src}) AWAY {ref['away']} - HOME {ref['home']}"
+             + (f" Q{q}" if _int(q) else "")]
+    if not confirmed:
+        notes.append("end menu not equal to (or one legal play past a Q4) locked read: final_confirmed=false")
+    final = {"type": "final", "basis": "end_menu", "method": "end_menu_read", "home": home, "away": away,
+             "quarter": max(4, int(q) if _int(q) else 4), "t_ms": rejected.get("t_ms"),
+             "end_menu": {k: rejected.get(k) for k in ("away", "home", "t_ms", "until_ms", "frames", "conf", "margin",
+                                                       "template_sources", "xcheck")},
+             "scorebug_last": {k: ref.get(k) for k in ("home", "away", "quarter", "t_ms")},
+             "notes": notes, "final_confirmed": bool(confirmed), "fallback": "end_menu_without_tail_scorebug",
+             "fallback_reference": src}
+    return final, "accepted"
 
 
 # ---------------------------------------------------------------- pause onset (challenges) + motion
