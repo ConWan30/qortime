@@ -104,3 +104,17 @@ def test_highlights_link_to_score_events(tmp_path):
 def test_default_slug():
     assert P.default_slug("local-20261017-021003") == "021003"
     assert P.default_slug("Weird ID/../x") == "weird-id-x"
+
+
+def test_receipt_with_on_screen_names_needs_explicit_opt_in(tmp_path):
+    b = _bundle(tmp_path)
+    rec = json.loads((b / "receipt.json").read_text())
+    o = {"handle": "Qortrola30", "pattern": "Qortrola30", "confidence_permille": 990, "sightings": 9, "agree": 9}
+    rec["match"]["observed_handles"] = {"source": "on_screen", "away": o, "home": dict(o, handle="Rival_Opp_77",
+                                                                                     pattern="Rival_Opp_77")}
+    (b / "receipt.json").write_text(json.dumps(rec))
+    with pytest.raises(P.PublishRefused, match="PSN names"):
+        P.publish(b, tmp_path / "site", frames=False, slug="101500")
+    # opting in gets past the name guard (this edited receipt then FAILs verification, which is refused on its own)
+    with pytest.raises(P.PublishRefused, match="does not verify"):
+        P.publish(b, tmp_path / "site", frames=False, slug="101500", include_names=True)

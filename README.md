@@ -163,3 +163,14 @@ scoreboard. If both players submit receipts that agree it says "confirmed by bot
 was made, final score confirmed); a SELF_ATTESTED, FAIL or missing receipt shows "unverified", never a winner. Handles
 are typed by players and are not verified; quarter length and other rules are agreed, not checked. The challenge record
 is not signed with the referee key. API details: `docs/REFEREE_SERVICE.md`.
+
+**PSN name check (on-screen evidence, not account proof).** Sony and EA offer no public login or API, so QorTime never
+sees a PSN account. Instead the creator enters both players' PSN IDs, and QorCap (`qorcap finalize --psn-names` or
+`qorcap psn-names`) reads the names Madden draws on screen in online head-to-head games (the player banners at the top
+of the play-call screen and the pause/end-of-game menu cards) from the recorded video. The consensus read goes into the
+signed receipt as `match.observed_handles` (away/home, with the pattern, confidence in permille and how many frames
+agreed). The challenge counts a receipt only if those names match the challenge's PSN IDs, ignoring case and look-alike
+characters such as 0/O, 1/l and g/y. A reliable read of a different name shows **players don't match**; a missing,
+partial or low-confidence read, or a receipt side that contradicts the on-screen side, shows **players unverified**.
+Neither shows a winner. Because a signed receipt can't be redacted, `qortime publish` refuses a receipt that carries
+both players' names unless `--include-names` is passed.

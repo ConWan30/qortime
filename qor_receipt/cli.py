@@ -77,6 +77,8 @@ def main(argv: list[str] | None = None) -> int:
     pb.add_argument("--highlights", help="qorcap highlights folder (default: BUNDLE/highlights if present)")
     pb.add_argument("--slug", help="URL slug (default: HHMMSS of the match id)")
     pb.add_argument("--allow-fail", action="store_true", help="publish even if the receipt FAILs (labeled as failing)")
+    pb.add_argument("--include-names", action="store_true",
+                    help="publish a receipt that carries both players' on-screen PSN names (match.observed_handles)")
     pb.add_argument("--no-frames", action="store_true")
     sub.add_parser("matches-index", help="rebuild SITE/matches/index.html").add_argument("--site", default="site")
     rs = sub.add_parser("referee-service", help="official referee service for verified uploads (QORTIME_REFEREE_SEED env)")
@@ -95,7 +97,7 @@ def main(argv: list[str] | None = None) -> int:
 
         try:
             out = publish(a.bundle, a.site, video=a.video, highlights=a.highlights, slug=a.slug, allow_fail=a.allow_fail,
-                          frames=not a.no_frames)
+                          frames=not a.no_frames, include_names=a.include_names)
         except PublishRefused as e:
             print(json.dumps({"published": False, "reason": str(e)}))
             return 4

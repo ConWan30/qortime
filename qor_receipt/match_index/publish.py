@@ -83,22 +83,28 @@ def _compress(jpg: Path) -> None:
 
 
 def publish(bundle: str | Path, site: str | Path, video: str | Path | None = None, highlights: str | Path | None = None,
-            slug: str | None = None, allow_fail: bool = False, frames: bool = True, now_ms: int | None = None) -> dict:
+            slug: str | None = None, allow_fail: bool = False, frames: bool = True, now_ms: int | None = None,
+            include_names: bool = False) -> dict:
     bdir, tmp = open_bundle(bundle)
     try:
         return _publish(bdir, Path(site), Path(video) if video else None, Path(highlights) if highlights else None,
-                        slug, allow_fail, frames, now_ms)
+                        slug, allow_fail, frames, now_ms, include_names)
     finally:
         if tmp:
             shutil.rmtree(tmp, ignore_errors=True)
 
 
 def _publish(bdir: Path, site: Path, video: Path | None, hdir: Path | None, slug: str | None, allow_fail: bool,
-             frames: bool, now_ms: int | None) -> dict:
+             frames: bool, now_ms: int | None, include_names: bool = False) -> dict:
     rp = bdir / "receipt.json"
     if not rp.exists():
         raise PublishRefused("no receipt.json: pages are published only for matches with a signed receipt")
     receipt = json.loads(rp.read_text(encoding="utf-8"))
+    if (receipt.get("match") or {}).get("observed_handles") and not include_names:
+        # the signed receipt carries both players' on-screen PSN names; it cannot be redacted without breaking the
+        # signature, so publishing it is an explicit choice (the opponent's name would be public)
+        raise PublishRefused("receipt carries on-screen PSN names (match.observed_handles) of both players; pass "
+                             "include_names to publish them")
     ver = verify_receipt(receipt)
     status = ver["status"]
     if status == FAIL and not allow_fail:
