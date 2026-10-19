@@ -14,8 +14,8 @@ animation:drift 24s ease-in-out infinite alternate}
 a{color:inherit}.wrap{max-width:1200px;margin:0 auto;padding:0 clamp(14px,3vw,32px) 48px}
 .glass{background:var(--panel);border:1px solid var(--line);border-radius:18px;backdrop-filter:blur(14px) saturate(1.2);-webkit-backdrop-filter:blur(14px);
 box-shadow:0 1px 0 rgba(255,255,255,.04) inset,0 20px 50px -30px rgba(0,0,0,.8)}
-nav{display:flex;align-items:center;gap:18px;padding:18px 0;flex-wrap:wrap}.brand{font-weight:750;letter-spacing:.22em;font-size:12px;text-decoration:none}.brand span{color:var(--aqua)}
-nav .lk{margin-left:auto;display:flex;gap:16px;font-size:13px;color:var(--mute)}nav .lk a{text-decoration:none;padding:10px 2px}nav .lk a:hover{color:var(--aqua)}
+nav{display:flex;align-items:center;gap:18px;padding:18px 0;flex-wrap:wrap}.brand{display:inline-flex;align-items:center;min-height:44px;font-weight:750;letter-spacing:.22em;font-size:12px;text-decoration:none}.brand span{color:var(--aqua)}
+nav .lk{margin-left:auto;display:flex;gap:16px;font-size:13px;color:var(--mute)}nav .lk a{display:inline-flex;align-items:center;min-height:44px;text-decoration:none;padding:10px 2px}nav .lk a:hover{color:var(--aqua)}
 h1{font:800 clamp(34px,6vw,64px)/1.02 ui-sans-serif,system-ui,sans-serif;letter-spacing:-.02em;margin:28px 0 10px}h1 em{font-style:normal;color:var(--aqua)}
 .lede{color:var(--mute);max-width:720px;margin:0 0 30px}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
@@ -26,7 +26,7 @@ h1{font:800 clamp(34px,6vw,64px)/1.02 ui-sans-serif,system-ui,sans-serif;letter-
 .top{display:flex;justify-content:space-between;align-items:center;gap:10px}
 .lbl{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--mute);font-weight:600}
 .tag{font-size:10px;letter-spacing:.12em;text-transform:uppercase;padding:2px 9px;border-radius:99px;border:1px solid var(--line2);color:var(--mute);white-space:nowrap}
-.tag.a{color:var(--aqua);border-color:rgba(63,224,208,.45)}.tag.w{color:var(--warn);border-color:rgba(243,154,107,.45)}
+.tag.a{color:var(--aqua);border-color:rgba(63,224,208,.45)}.tag.w{color:var(--warn);border-color:rgba(243,154,107,.45)}.tag.x{color:#ff6d6d;border-color:rgba(255,109,109,.55)}
 .sc{font:750 54px/1 var(--mono);margin:16px 0 4px}.sc i{font-style:normal;opacity:.4;margin:0 .15em}
 .lockg{color:var(--gold);text-shadow:0 0 18px rgba(240,201,92,.35)}.unl{color:var(--aqua);text-shadow:0 0 14px rgba(63,224,208,.25)}
 .sub{color:var(--mute);font-size:12px}.meta{display:flex;gap:14px;margin-top:14px;font-size:12px;color:#b8c7da;flex-wrap:wrap}
@@ -42,7 +42,7 @@ h1{font:800 clamp(34px,6vw,64px)/1.02 ui-sans-serif,system-ui,sans-serif;letter-
 <p class="lbl" style="margin:0 0 12px">2 published</p>
 <div class="grid">
 <a class="mc glass" href="021003/"><div class="top"><span class="lbl">madden27 · Oct 17, 2026</span><span class="tag w">SELF_ATTESTED</span></div><div class="sc"><span class="unl">22<i>–</i>41</span></div><div class="sub">away – home · final confirmed in the recording · not referee-signed</div><div class="meta"><span>20 events</span><span>9 TDs</span><span>0 highlight clips</span></div><div class="id mono">local-20261017-021003</div></a>
-<a class="mc glass" href="125430/"><div class="top"><span class="lbl">madden27 · Oct 16, 2026</span><span class="tag w">FAIL</span></div><div class="sc"><span class="unl">7<i>–</i>14</span></div><div class="sub">away – home · receipt FAILS verification · not a verified result</div><div class="meta"><span>11 events</span><span>3 TDs</span><span>6 highlight clips</span></div><div class="id mono">local-20261016-125430</div></a>
+<a class="mc glass" href="125430/"><div class="top"><span class="lbl">madden27 · Oct 16, 2026</span><span class="tag x">FAIL</span></div><div class="sc"><span class="unl">7<i>–</i>14</span></div><div class="sub">away – home · receipt FAILS verification · not a verified result</div><div class="meta"><span>11 events</span><span>3 TDs</span><span>6 highlight clips</span></div><div class="id mono">local-20261016-125430</div></a>
 </div>
-<div class="note glass"><b>How to read these pages.</b> Gold marks a referee-verified result only. Aqua marks a scorebug read that is not a verified result, including a final confirmed from the recording when the receipt was not signed by the QorTime referee. Controller input and haptic signals are <b>advisory evidence, not proof</b>: they show activity in sync with the video, not who held the controller. SELF_ATTESTED means the receipt was signed on the player's own PC. Raw controller logs are never published.</div>
+<div class="note glass"><b>How to read these pages.</b> Gold marks a referee-verified result only. Aqua marks a scorebug read that is not a verified result, including a final confirmed from the recording when the receipt was not signed by the QorTime referee. A FAIL tag is red, the same as in the match viewer. Controller input and haptic signals are <b>advisory evidence, not proof</b>: they show activity in sync with the video, not who held the controller. SELF_ATTESTED means the receipt was signed on the player's own PC. Raw controller logs are never published. These pages are separate recordings, not a ranking. No page here is referee-verified, so the scores are not a verified comparison.</div>
 </div></body></html>

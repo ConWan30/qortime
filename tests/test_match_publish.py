@@ -1,6 +1,7 @@
 """qortime publish: receipt-gated public match pages, privacy scan, highlights linking, /matches/ index."""
 import json
 import shutil
+from pathlib import Path
 
 import pytest
 
@@ -169,6 +170,21 @@ def test_index_gold_only_when_referee_verified(tmp_path):
     assert html.count('class="lockg"') == 1
     assert "not referee-signed" in html
     assert "receipt FAILS verification" in html
+    assert 'class="tag x"' in html
+    assert "not a ranking" in html
+    assert "not a verified comparison" not in html  # one card on this index is referee-verified
+
+
+def test_verifier_paid_tag_is_not_gold_and_can_preload_a_receipt():
+    root = Path(__file__).resolve().parents[1]
+    page = (root / "verify" / "index.html").read_text()
+    assert "paid, test mode" in page
+    assert 'q.get("receipt")' in page
+    assert "og:image" in page
+    assert 'sigStatus === "VERIFIED"' in page
+    missing = (root / "site" / "404.html").read_text()
+    assert "This page is not on QorTime." in missing
+    assert "matches/" in missing
 
 
 def test_default_slug():
