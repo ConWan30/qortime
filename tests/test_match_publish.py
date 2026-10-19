@@ -147,6 +147,10 @@ def test_viewer_does_not_inline_frames_or_claim_verified_highlights(tmp_path):
     assert "advisory evidence, not proof" in html.lower()
     assert "SCOREBUG LOCK" in html
     assert "Proof chain" in html
+    assert "Video segment bytes are not on this page" in html
+    assert "Highlight clips are re-encoded" in html
+    assert "not a check of the picture" in html
+    assert "advisory evidence, not proof" in html.lower()
 
 
 def test_index_gold_only_when_referee_verified(tmp_path):
