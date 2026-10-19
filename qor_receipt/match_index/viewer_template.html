@@ -623,7 +623,9 @@ function rcCard(e){const ck=e.checkpoints||{},c=!nil(e.highlight)?CL[e.highlight
  ${cpLine(ck.before,"Before")}${cpLine(ck.after,"After")}
  ${c?chk(c.lock&&c.lock.in_receipt===true,`Clip lock #${esc(c.lock&&c.lock.seq)} ${c.lock&&c.lock.in_receipt?"is in the receipt":"is not in the receipt"}${VERIFIED?"":" · receipt is not a verified result"}`,`lock ${short(c.lock&&c.lock.hash)} · clip sha256 ${short(c.sha256)}`):chk(null,"Highlight clip",P0.footage_note?esc(P0.footage_note):"none for this moment")}
  ${chk(null,`Chain · ${v(CH.checkpoints)} checkpoints · ${v(CH.segments)} segments`,`head ${short(CH.chain_head)}`)}
- <div class="note">${RCPT.url?`<a href="${esc(RCPT.url)}">receipt.json</a> · `:""}<a id="verifyLink" href="${esc(verifyHref())}">check it in the verifier</a></div>${how}`}
+ <div class="note">${RCPT.url?`<a href="${esc(RCPT.url)}">receipt.json</a> · `:""}<a id="verifyLink" href="${esc(verifyHref())}">check it in the verifier</a></div>
+ ${RCPT.submission?`<div class="note">${esc(RCPT.submission)}</div>`:""}
+ ${RCPT.history_url?`<div class="note"><a href="${esc(RCPT.history_url)}">${esc(RCPT.history_label||"earlier receipt")}</a></div>`:""}${how}`}
 function drawScope(){const e=S.ev,cv=$("#scope"),cx=cv.getContext("2d");const I=e&&e.inputs,s=I&&I.strip;
  const dpr=Math.min(2,devicePixelRatio||1),w=cv.clientWidth||320,h=120;
  if(cv.width!==Math.round(w*dpr)){cv.width=Math.round(w*dpr);cv.height=Math.round(h*dpr)}
@@ -649,7 +651,7 @@ function clipsCard(){const k=$("#clipsCard");
   <div class="sub">Q${v(lk.quarter)} · ${clk(lk.clock_s)} · lock #${v(lk.seq)} · ${v(c.duration_s)}s</div>
   <div class="k">${lk.in_receipt?"lock is in the receipt":"lock is not in the receipt"} · receipt ${esc(STATUS||"?")}</div></div></button>
   <a class="dl" href="${esc(c.url)}" download>Download clip · receipt ${esc(STATUS||"?")}</a></div>`}).join("")}</div>
- ${VERIFIED?"":`<div class="note">These published mp4s still burn “LOCKED SCORE”. qorcap is changing that burn to SCOREBUG LOCK, and the original match bundle is not in this repo, so these clips were not regenerated. This page covers the burned panel, the caption says SCOREBUG LOCK, and the receipt status sits beside the clip and on the download. The mp4 bytes are unchanged, so the manifest sha256 still matches.</div>`}`;
+ ${VERIFIED?"":`<div class="note">These published mp4s still burn “LOCKED SCORE”. qorcap can burn SCOREBUG LOCK instead, but the source videos are not in this repo, so these clips were not regenerated. This page covers the burned panel, the caption says SCOREBUG LOCK, and the receipt status sits beside the clip and on the download. The mp4 bytes are unchanged, so each clip sha256 still matches the highlights manifest.</div>`}`;
  k.querySelectorAll(".clipbtn").forEach(b=>b.onclick=()=>{const n=+b.dataset.k;const i=EV.findIndex(e=>e.highlight===n);S.flip=b.querySelector("img")||b;if(i>=0)select(i)})}
 function playsCard(){const box=$("#playsCard");if(!box)return;
  const rows=EV.map((e,i)=>({e,i})).filter(x=>["score_change","quarter_change","kickoff","end_of_game"].includes(x.e.kind));
@@ -770,6 +772,13 @@ async function checkClip(c){if(!c||!c.url||!c.sha256||!crypto.subtle)return;if(c
    :"Clip file sha256 does not match the highlights manifest."}
  catch(e){mine.bad=true;mine.text="Could not hash the clip file in this browser."}
  paintFiles()}
+function chainRole(rec){const cps=rec&&rec.checkpoints;const players=(rec&&rec.players||[]).map(p=>p&&p.role).filter(r=>r==="home"||r==="away");
+ if(players.length===1&&cps&&Array.isArray(cps[players[0]])&&cps[players[0]].length)return players[0];
+ const page=D.role||"home";
+ if(cps&&Array.isArray(cps[page])&&cps[page].length)return page;
+ if(cps&&Array.isArray(cps.home)&&cps.home.length)return "home";
+ if(cps&&Array.isArray(cps.away)&&cps.away.length)return "away";
+ return page}
 async function runProof(){const live=$("#proofLive");
  if(!crypto.subtle){if(live)live.textContent="This browser has no WebCrypto SHA-256 here, so checkpoint hashes were not recomputed.";return}
  if(!RCPT.url){if(live)live.textContent=RAIL&&RAIL.sparse?"No receipt.json on this page, so checkpoint hashes were not recomputed here. This rail is only the checkpoints bound to these moments."
@@ -785,7 +794,7 @@ async function runProof(){const live=$("#proofLive");
     :{ok:false,bad:true,text:"receipt.json sha256 does not match the highlights manifest. The file on this page was not altered to force a match."});
    paintFiles()}
  }catch(e){if(live)live.textContent="The receipt could not be read in this browser, so checkpoint hashes were not recomputed.";return}
- const role=D.role||"home",cps=(rec.checkpoints&&(rec.checkpoints[role]||rec.checkpoints.home||rec.checkpoints.away))||[];
+ const role=chainRole(rec),cps=(rec.checkpoints&&rec.checkpoints[role])||[];
  if(!RAIL||!Array.isArray(cps)||cps.length!==RAIL.n){if(live)live.textContent=`Receipt has ${cps.length} checkpoints and this rail has ${RAIL?RAIL.n:0}. They were not treated as the same chain.`;return}
  const start=rec.match&&rec.match.started_ms||0,end=rec.match&&rec.match.ended_ms||0;
  PROOF=cps.map(()=>({why:[],hashOk:null,sig:null,lit:false}));PROOF._cps=cps;PF._man=man||null;PF.tailNote="";
@@ -853,6 +862,7 @@ function paintFinal(){const R=D.result||{},fin=R.final,h=$("#finalSum"),w=$("#fi
  else{if(h)h.textContent="No confirmed final.";
   if(w)w.textContent=miss?String(miss):"bundle.final is missing, so this page does not state a final score.";
   sentence="No confirmed final."}
+ if(w&&P0.recorded)w.textContent=(w.textContent?w.textContent+" ":"")+P0.recorded;
  const sub=$("#railSub");if(sub&&sentence&&!(sub.textContent||"").includes(sentence))sub.textContent=sub.textContent?`${sub.textContent} · ${sentence}`:sentence}
 function pickStart(){const ht=hashParts();const first=NAV.find(i=>EV[i].kind==="score_change");
  let i=nil(first)?(NAV[0]||0):first;

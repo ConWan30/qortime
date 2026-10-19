@@ -3,7 +3,7 @@
   "slug": "021003",
   "match_id": "local-20261017-021003",
   "url": "021003/",
-  "started_ms": 1792221107514,
+  "started_ms": 1792221013372,
   "game": "madden27",
   "final": {
     "away": 22,
@@ -11,12 +11,12 @@
   },
   "final_confirmed": true,
   "receipt_result": {
-    "away": 0,
-    "home": 0,
-    "method": "last_scorebug_read_unconfirmed"
+    "away": 22,
+    "home": 41,
+    "method": "end_menu_read"
   },
   "receipt_status": "SELF_ATTESTED",
-  "receipt_label": "SELF_ATTESTED \u00b7 not submitted to the referee; final 22\u201341 from the end-of-game menu frame (the v0.3.10 receipt result 0\u20130 is wrong)",
+  "receipt_label": "SELF_ATTESTED \u00b7 referee rejected the submission with HTTP 422; not a referee-verified result",
   "clips": 0,
   "events": 20,
   "touchdowns": 9,
