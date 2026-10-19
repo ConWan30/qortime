@@ -82,6 +82,106 @@ def _compress(jpg: Path) -> None:
         tmp.unlink()
 
 
+def _ffmpeg(args: list[str]) -> bool:
+    r = subprocess.run(["ffmpeg", "-y", "-loglevel", "error", *args], check=False, capture_output=True)
+    return r.returncode == 0
+
+
+def _thumb(jpg: Path) -> bool:
+    """160px-wide filmstrip thumb next to a burst frame. The page loads these instead of full JPEGs."""
+    thumb = jpg.with_name(jpg.stem + "_t.jpg")
+    ok = _ffmpeg(["-i", str(jpg), "-vf", "scale=160:-2", "-q:v", "8", str(thumb)])
+    if not (ok and thumb.exists() and thumb.stat().st_size > 0):
+        if thumb.exists():
+            thumb.unlink()
+        return False
+    return True
+
+
+def _poster(mp4: Path, t: float, dest: Path, *, cover_burn: bool = False) -> bool:
+    """One frame for the clip card. cover_burn paints over qorcap's burned LOCKED SCORE panel.
+
+    The panel is drawn at k = height/360, box (10, 10, 330×58). The mp4 itself is not touched,
+    so the manifest sha256 still matches the file qorcap wrote.
+    """
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    vf = "scale=320:-2"
+    if cover_burn:
+        vf = ("drawbox=x='6*ih/360':y='6*ih/360':w='344*ih/360':h='70*ih/360':color=0x081122:t=fill,"
+              "drawbox=x='6*ih/360':y='6*ih/360':w='3*ih/360':h='70*ih/360':color=0x3fe0d0:t=fill,"
+              "scale=320:-2")
+    ok = _ffmpeg(["-ss", f"{max(0.0, t):.3f}", "-i", str(mp4), "-frames:v", "1", "-vf", vf, "-q:v", "5", str(dest)])
+    if not (ok and dest.exists() and dest.stat().st_size > 0):
+        if dest.exists():
+            dest.unlink()
+        return False
+    return True
+
+
+def honest_vtt(text: str, status: str) -> str:
+    """Caption track follows the receipt. qorcap highlights burns the word LOCKED before anyone verifies."""
+    if status == "VERIFIED":
+        return text
+    return text.replace("LOCKED ", "SCOREBUG LOCK ").replace("score locked here", "scorebug read here")
+
+
+_CP_ERR = re.compile(r"cp\[(\d+)\]:([A-Za-z0-9_]+)")
+
+
+def _checkpoint_rows(receipt: dict) -> list[dict]:
+    cps = receipt.get("checkpoints") or {}
+    if isinstance(cps, list):
+        return [c for c in cps if isinstance(c, dict) and "t_ms" in c]
+    if not isinstance(cps, dict):
+        return []
+    ordered = []
+    for key in ("home", "away"):
+        rows = cps.get(key)
+        if isinstance(rows, list) and rows:
+            ordered.append(rows)
+    for rows in cps.values():
+        if isinstance(rows, list) and rows and rows not in ordered:
+            ordered.append(rows)
+    for rows in ordered:
+        if isinstance(rows[0], dict) and "t_ms" in rows[0]:
+            return rows
+    return []
+
+
+def _recording_fn(events: list[dict], origin_ms: float):
+    pairs = sorted((e["t_ms"], float(e["recording_s"])) for e in events
+                   if isinstance(e.get("t_ms"), (int, float)) and isinstance(e.get("recording_s"), (int, float)))
+    if len(pairs) >= 2:
+        (t0, r0), (t1, r1) = pairs[0], pairs[-1]
+        span = (t1 - t0) or 1.0
+        return lambda t: r0 + (t - t0) * (r1 - r0) / span
+    return lambda t: (t - origin_ms) / 1000.0
+
+
+def chain_rail(receipt: dict, events: list[dict], status: str, errors: list[str]) -> dict | None:
+    """Compact 2s proof-chain for the viewer. A crack is a verifier error. seal is true only for VERIFIED."""
+    rows = _checkpoint_rows(receipt)
+    if len(rows) < 2:
+        return None
+    rec = _recording_fn(events, float(rows[0]["t_ms"]))
+    faults: dict[int, list[str]] = {}
+    for err in errors or []:
+        m = _CP_ERR.search(str(err))
+        if m:
+            faults.setdefault(int(m.group(1)), []).append(m.group(2))
+    cracks = [{"i": i, "why": ", ".join(why)} for i, why in sorted(faults.items()) if 0 <= i < len(rows)]
+    sealed = status == "VERIFIED"
+    note = "Each link is one checkpoint, about 2 seconds of the recording. "
+    if cracks:
+        note += "Cracks are where the verifier reported a gap or a clock skew. "
+    note += "Referee-verified seal." if sealed else "This receipt is not referee-verified, so the rail is not a seal."
+    return {
+        "n": len(rows), "dt_s": 2.0,
+        "t0_s": round(rec(float(rows[0]["t_ms"])), 3), "t1_s": round(rec(float(rows[-1]["t_ms"])), 3),
+        "cracks": cracks, "seal": sealed, "sparse": False, "note": note,
+    }
+
+
 def publish(bundle: str | Path, site: str | Path, video: str | Path | None = None, highlights: str | Path | None = None,
             slug: str | None = None, allow_fail: bool = False, frames: bool = True, now_ms: int | None = None,
             include_names: bool = False) -> dict:
@@ -139,15 +239,19 @@ def _publish(bdir: Path, site: Path, video: Path | None, hdir: Path | None, slug
         if hman:
             for c in hman.get("clips") or []:
                 lk = c.get("lock") or {}
+                src = c.get("source") or {}
                 clips_pub.append({
                     "id": c["id"], "url": f"clips/{c['file']}", "vtt": f"clips/{c['vtt']}" if c.get("vtt") else None,
                     "sha256": c.get("sha256"), "duration_s": c.get("duration_s"), "lock_at_s": c.get("lock_at_s"),
                     "overlay": c.get("overlay"),
+                    "overlay_label": "LOCKED SCORE" if status == "VERIFIED" else "SCOREBUG LOCK",
+                    "poster": None,
+                    "source_start_s": src.get("start_s"), "source_end_s": src.get("end_s"),
                     "lock": {k: lk.get(k) for k in ("source", "seq", "t_ms", "hash", "frames_hash", "frames_hash_matches_evidence",
                                                     "in_receipt", "score_before", "score_after", "quarter", "clock_s", "play",
                                                     "delta")},
-                    # gold only when the lock is inside a receipt that does not FAIL (fail closed)
-                    "locked": bool(lk.get("in_receipt") and lk.get("frames_hash_matches_evidence") and status != FAIL),
+                    # gold / "locked" only for a referee-verified receipt. A FAIL or self-attested lock is not a seal.
+                    "locked": bool(status == "VERIFIED" and lk.get("in_receipt") and lk.get("frames_hash_matches_evidence")),
                 })
         _link_clips(idx["events"], clips_pub)
         if status == FAIL:
@@ -168,6 +272,7 @@ def _publish(bdir: Path, site: Path, video: Path | None, hdir: Path | None, slug
                         "verify_url": "../../verify/"},
             "highlights": clips_pub, "highlights_manifest": "clips/manifest.json" if hman else None,
             "advisory": PUBLIC_ADVISORY,
+            "chain_rail": chain_rail(receipt, idx["events"], status, ver["errors"]),
         }
         idx["claims"] = (f"Receipt status (computed by the QorTime verifier when this page was built): {label}. " + idx["claims"])
         blob = json.dumps(idx)
@@ -189,13 +294,26 @@ def _publish(bdir: Path, site: Path, video: Path | None, hdir: Path | None, slug
                     dst.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(src, dst)
                     _compress(dst)
+                    if _thumb(dst):
+                        f["thumb"] = str(Path(f["file"]).with_name(dst.stem + "_t.jpg")).replace("\\", "/")
             e["contact_sheet"] = None
         if clips_pub:
             (out / "clips").mkdir()
-            for c in hman["clips"]:
-                for n in (c["file"], c.get("vtt")):
-                    if n and (hdir / n).exists():
-                        shutil.copy2(hdir / n, out / "clips" / n)
+            by_id = {c["id"]: c for c in hman["clips"]}
+            for c in clips_pub:
+                src_clip = by_id.get(c["id"]) or {}
+                for n in (src_clip.get("file"), src_clip.get("vtt")):
+                    if not n or not (hdir / n).exists():
+                        continue
+                    dest = out / "clips" / n
+                    if str(n).endswith(".vtt"):
+                        dest.write_text(honest_vtt((hdir / n).read_text(encoding="utf-8"), status), encoding="utf-8")
+                    else:
+                        shutil.copy2(hdir / n, dest)
+                mp4 = out / "clips" / src_clip.get("file", "")
+                poster = out / "clips" / f"{c['id']}_poster.jpg"
+                if mp4.is_file() and _poster(mp4, float(c.get("lock_at_s") or 0) + 0.15, poster, cover_burn=status != "VERIFIED"):
+                    c["poster"] = f"clips/{c['id']}_poster.jpg"
             (out / "clips" / "manifest.json").write_text(json.dumps(hman, indent=2), encoding="utf-8")
         if publish_receipt:
             (out / "receipt.json").write_text(rtext, encoding="utf-8")
@@ -226,15 +344,21 @@ def _card(m: dict) -> str:
     fin = m.get("final") if m.get("final_confirmed") else None
     rr = m.get("receipt_result") or {}
     shown = fin or ({"away": rr.get("away"), "home": rr.get("home")} if rr.get("away") is not None else None)
-    gold = bool(fin)
     st = m.get("receipt_status") or "?"
+    # gold is a referee-verified seal, not "we read a final on the recording"
+    gold = bool(fin) and st == "VERIFIED"
     cls = {"VERIFIED": "a", "FAIL": "w"}.get(st, "w" if st in ("SELF_ATTESTED", "PARTIAL") else "")
     when = time.strftime("%b %d, %Y", time.gmtime((m.get("started_ms") or 0) / 1000 - 5 * 3600)) if m.get("started_ms") else ""
     score = (f'<span class="{"lockg" if gold else "unl"}">{e(str(shown["away"]))}<i>–</i>{e(str(shown["home"]))}</span>'
              if shown else '<span class="miss">no score read</span>')
-    basis = "final confirmed · locked" if gold else "last scorebug read · not confirmed"
     if st == "FAIL":
         basis = "receipt FAILS verification · not a verified result"
+    elif gold:
+        basis = "final confirmed · referee-verified"
+    elif fin:
+        basis = "final confirmed in the recording · not referee-signed"
+    else:
+        basis = "last scorebug read · not a verified result"
     return (f'<a class="mc glass" href="{e(m["url"])}"><div class="top"><span class="lbl">{e(m.get("game") or "match")} · {e(when)}</span>'
             f'<span class="tag {cls}">{e(st)}</span></div><div class="sc">{score}</div><div class="sub">away – home · {e(basis)}</div>'
             f'<div class="meta"><span>{e(str(m.get("events", 0)))} events</span><span>{e(str(m.get("touchdowns", 0)))} TDs</span>'

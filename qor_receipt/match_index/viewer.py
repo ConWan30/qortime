@@ -17,13 +17,20 @@ def _embed(out: Path, rel: str | None) -> str | None:
 
 
 def write_viewer(idx: dict, out: Path, embed: bool = True, name: str = "viewer.html") -> Path:
-    """embed=True: one self-contained file (frames as base64). embed=False: frames stay files next to the page."""
+    """embed=True: one self-contained file (frames as base64). embed=False: frames and thumbs stay files, loaded lazily."""
     data = copy.deepcopy(idx)
     for e in data["events"]:
+        e["contact_sheet"] = None  # never inlined; the viewer does not show contact sheets
         for f in e.get("frames") or []:
-            f["src"] = _embed(out, f["file"]) if embed else (f["file"] if (out / f["file"]).exists() else None)
-        # contact sheets stay on disk next to viewer.html; the viewer never shows them, so embedding them
-        # only made the single file ~25% bigger (slower to parse on phones)
+            rel = f.get("file")
+            thumb = f.get("thumb")
+            if embed:
+                f["src"] = _embed(out, rel)
+                f.pop("thumb", None)
+            else:
+                f["src"] = rel if rel and (out / rel).exists() else None
+                if not (thumb and (out / thumb).exists()):
+                    f.pop("thumb", None)
     blob = json.dumps(data).replace("</", "<\\/")
     title = html.escape(f"QorTime · what the AI saw · {idx.get('match_id') or 'match'}")
     p = out / name
