@@ -647,11 +647,12 @@ function clipsCard(){const k=$("#clipsCard");
  if(!CL.length){k.innerHTML=`<div class="h"><span class="lbl">Highlight clips</span><span class="tag w">none</span></div><div class="sub">${esc(P0.footage_note||"No clips for this match. The stage plays burst stills, which are not continuous video.")}</div>`;return}
  k.innerHTML=`<div class="h"><span class="lbl">Highlight clips · ${CL.length}</span><span class="sub">tap a card · it opens in the player</span></div>
  <div class="cgrid">${CL.map((c,n)=>{const lk=c.lock||{};const seal=VERIFIED&&c.locked===true;
+  const win=(c.source_start_s!=null&&c.source_end_s!=null)?(" · "+(+c.source_start_s).toFixed(3)+"–"+(+c.source_end_s).toFixed(3)+"s in the recording"):"";
   return `<div class="clip" data-k="${n}"><button type="button" class="clipbtn" data-k="${n}"><span class="pv">${c.poster?`<img loading="lazy" decoding="async" alt="" src="${esc(c.poster)}">`:`<div class="phimg"></div>`}${seal?"":'<span class="cov">SCOREBUG LOCK</span>'}</span><div class="b"><span class="s ${seal?"g":""}">${esc(sc(lk.score_after)||"?")}</span> <span class="tag">${esc(lk.play||"")}</span>
-  <div class="sub">Q${v(lk.quarter)} · ${clk(lk.clock_s)} · lock #${v(lk.seq)} · ${v(c.duration_s)}s</div>
-  <div class="k">${lk.in_receipt?"lock is in the receipt":"lock is not in the receipt"} · receipt ${esc(STATUS||"?")}</div></div></button>
+  <div class="sub">${esc(c.id||"")} · ${v(c.duration_s)}s · Q${v(lk.quarter)} ${clk(lk.clock_s)} · lock #${v(lk.seq)}</div>
+  <div class="k">${lk.in_receipt?"lock is in the receipt":"lock is not in the receipt"} · receipt ${esc(STATUS||"?")}${esc(win)}</div></div></button>
   <a class="dl" href="${esc(c.url)}" download>Download clip · receipt ${esc(STATUS||"?")}</a></div>`}).join("")}</div>
- ${VERIFIED?"":`<div class="note">These published mp4s still burn “LOCKED SCORE”. qorcap can burn SCOREBUG LOCK instead, but the source videos are not in this repo, so these clips were not regenerated. This page covers the burned panel, the caption says SCOREBUG LOCK, and the receipt status sits beside the clip and on the download. The mp4 bytes are unchanged, so each clip sha256 still matches the highlights manifest.</div>`}`;
+ ${VERIFIED?"":`<div class="note">These clips burn SCOREBUG LOCK. Each file is the 12-second window named on its card. Receipt status stays ${esc(STATUS||"missing")}, so a clip is not a verified result.</div>`}`;
  k.querySelectorAll(".clipbtn").forEach(b=>b.onclick=()=>{const n=+b.dataset.k;const i=EV.findIndex(e=>e.highlight===n);S.flip=b.querySelector("img")||b;if(i>=0)select(i)})}
 function playsCard(){const box=$("#playsCard");if(!box)return;
  const rows=EV.map((e,i)=>({e,i})).filter(x=>["score_change","quarter_change","kickoff","end_of_game"].includes(x.e.kind));

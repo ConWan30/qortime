@@ -1,7 +1,7 @@
 {
   "schema": "qorcap-highlights/v0",
   "tool": "qorcap-highlights 0.1.0",
-  "generated_ms": 1792331115123,
+  "generated_ms": 1792447559907,
   "match_id": "local-20261016-125430",
   "params": {
     "pre_s": 8.0,
@@ -52,8 +52,8 @@
     {
       "id": "hl00-q1-a0-h6",
       "file": "hl00-q1-a0-h6.mp4",
-      "sha256": "680e5834ee778f0ed5bd83a233df23d2ce204884cedd8a9c63d92db88f746397",
-      "bytes": 1208144,
+      "sha256": "03c73d30e21aeb0df3ed07212d840d35c3d457bca30de45b6af3c2578f08e941",
+      "bytes": 7287952,
       "vtt": "hl00-q1-a0-h6.vtt",
       "duration_s": 12.0,
       "lock_at_s": 8.0,
@@ -165,8 +165,8 @@
     {
       "id": "hl01-q1-a0-h7",
       "file": "hl01-q1-a0-h7.mp4",
-      "sha256": "6956815a4dc1bb4905d16f36b10b714ecbb2bc43a4e3c80f1ce79dea6d941ffb",
-      "bytes": 1451195,
+      "sha256": "f1e3453e32ccc9b770ec560a70898c174f3e684137874e8e95fa11198bcb1f99",
+      "bytes": 9182884,
       "vtt": "hl01-q1-a0-h7.vtt",
       "duration_s": 12.0,
       "lock_at_s": 8.0,
@@ -278,8 +278,8 @@
     {
       "id": "hl02-q2-a6-h7",
       "file": "hl02-q2-a6-h7.mp4",
-      "sha256": "2aa68c8fbb196640f02893fb06324bea051cdcea81e1a20dc97cd08a3a80fde8",
-      "bytes": 1678709,
+      "sha256": "6938b77fc1042dd7717191b73307191cffca5f1c18b713f0535ce9932926ddc7",
+      "bytes": 7371127,
       "vtt": "hl02-q2-a6-h7.vtt",
       "duration_s": 12.0,
       "lock_at_s": 8.0,
@@ -391,8 +391,8 @@
     {
       "id": "hl03-q2-a7-h7",
       "file": "hl03-q2-a7-h7.mp4",
-      "sha256": "f45170f4569b3dfb9913b7537643c20de24eb13ed6517188362ccad59388fc62",
-      "bytes": 1488549,
+      "sha256": "de4fc039e6f317072fce502389d8c50fbae55767745b67a9f7733ce227cf2847",
+      "bytes": 9153451,
       "vtt": "hl03-q2-a7-h7.vtt",
       "duration_s": 12.0,
       "lock_at_s": 8.0,
@@ -504,8 +504,8 @@
     {
       "id": "hl04-q2-a7-h13",
       "file": "hl04-q2-a7-h13.mp4",
-      "sha256": "a48a0e2903acc2fa2e287089717390af8cdc2b0a5fc9691f35e337506adba048",
-      "bytes": 1381502,
+      "sha256": "fbbae2546460fe1d51f51fe5b82f08597b96ee233f4e3139332716ca57551e1a",
+      "bytes": 6423442,
       "vtt": "hl04-q2-a7-h13.vtt",
       "duration_s": 12.0,
       "lock_at_s": 8.0,
@@ -617,8 +617,8 @@
     {
       "id": "hl05-q2-a7-h14",
       "file": "hl05-q2-a7-h14.mp4",
-      "sha256": "8797fc297378b9321406b0be79df6d1eee11637c4dc23a4e3cb749c093a23f71",
-      "bytes": 1083686,
+      "sha256": "d4fea146df825ffc18cdb3939cf5b9b2a4fecf84094f0251f8383c99f55c48f6",
+      "bytes": 7051514,
       "vtt": "hl05-q2-a7-h14.vtt",
       "duration_s": 12.0,
       "lock_at_s": 8.0,

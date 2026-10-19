@@ -201,7 +201,24 @@ def test_published_original_receipts_keep_their_real_verdicts():
     assert any("clock_skew" in e for e in failed["errors"])
     page = (root / "site/matches/125430/index.html").read_text()
     assert "Recorded Oct 16, 2026" in page and "12:54" in page
-    assert "source videos are not in this repo" in page
+    assert "source videos are not in this repo" not in page
+    assert "still burn" not in page
+    man_clips = {c["id"]: c for c in man["clips"]}
+    for cid, sha in (
+        ("hl00-q1-a0-h6", "03c73d30e21aeb0df3ed07212d840d35c3d457bca30de45b6af3c2578f08e941"),
+        ("hl01-q1-a0-h7", "f1e3453e32ccc9b770ec560a70898c174f3e684137874e8e95fa11198bcb1f99"),
+        ("hl02-q2-a6-h7", "6938b77fc1042dd7717191b73307191cffca5f1c18b713f0535ce9932926ddc7"),
+        ("hl03-q2-a7-h7", "de4fc039e6f317072fce502389d8c50fbae55767745b67a9f7733ce227cf2847"),
+        ("hl04-q2-a7-h13", "fbbae2546460fe1d51f51fe5b82f08597b96ee233f4e3139332716ca57551e1a"),
+        ("hl05-q2-a7-h14", "d4fea146df825ffc18cdb3939cf5b9b2a4fecf84094f0251f8383c99f55c48f6"),
+    ):
+        raw_clip = (root / "site/matches/125430/clips" / f"{cid}.mp4").read_bytes()
+        assert hashlib.sha256(raw_clip).hexdigest() == sha == man_clips[cid]["sha256"]
+        assert sha in page
+        assert man_clips[cid]["duration_s"] == 12.0
+        assert round(man_clips[cid]["source"]["end_s"] - man_clips[cid]["source"]["start_s"], 3) == 12.0
+    assert '"status": "FAIL"' in page
+    assert "These clips burn SCOREBUG LOCK" in page
 
     current = (root / "site/matches/021003/receipt.json").read_bytes()
     earlier = (root / "site/matches/021003/receipt-pre-psn-20261018.json").read_bytes()
