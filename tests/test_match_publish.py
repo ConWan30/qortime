@@ -101,6 +101,63 @@ def test_highlights_link_to_score_events(tmp_path):
         P.publish(b, tmp_path / "site", highlights=h, frames=False, slug="101500")
 
 
+def test_chain_rail_cracks_and_gold_seal_only_when_verified():
+    rec = {"checkpoints": {"home": [{"seq": i, "t_ms": 1_000 + i * 2_000} for i in range(6)]}}
+    events = [{"t_ms": 1_000, "recording_s": 0.0}, {"t_ms": 1_000 + 5 * 2_000, "recording_s": 10.0}]
+    rail = P.chain_rail(rec, events, "FAIL", ["home:cp[0]:gap_too_long", "home:cp[4]:clock_skew"])
+    assert rail["n"] == 6 and rail["seal"] is False and rail["dt_s"] == 2.0
+    assert {c["i"] for c in rail["cracks"]} == {0, 4}
+    assert "not a seal" in rail["note"]
+    sealed = P.chain_rail(rec, events, "VERIFIED", [])
+    assert sealed["seal"] is True and sealed["cracks"] == []
+    assert P.chain_rail({}, events, "FAIL", []) is None
+    assert P.honest_vtt("LOCKED AWAY 0\nscore locked here\n", "FAIL").startswith("SCOREBUG LOCK")
+    assert "scorebug read here" in P.honest_vtt("score locked here\n", "SELF_ATTESTED")
+    assert P.honest_vtt("LOCKED AWAY 0\n", "VERIFIED").startswith("LOCKED")
+
+
+def test_viewer_does_not_inline_frames_or_claim_verified_highlights(tmp_path):
+    from qor_receipt.match_index.viewer import write_viewer
+
+    out = tmp_path / "m"
+    (out / "events").mkdir(parents=True)
+    jpg = out / "events" / "f.jpg"
+    jpg.write_bytes(bytes.fromhex(
+        "ffd8ffe000104a46494600010100000100010000ffdb004300080606070605080707070909080a0c140d0c0b0b0c1912130f141d1a1f1e1d1a1c1c20242e2720222c231c1c2837292c30313434341f27393d38323c2e333432ffc0000b080001000101011100ffc4001f0000010501010101010100000000000000000102030405060708090a0bffda00080001000100003400ffd9"))
+    thumb = out / "events" / "f_t.jpg"
+    thumb.write_bytes(jpg.read_bytes())
+    idx = {"match_id": "m", "events": [{"id": "e", "kind": "score_change", "locked": False, "recording_s": 1,
+                                        "frames": [{"file": "events/f.jpg", "thumb": "events/f_t.jpg", "dt_s": 0, "video_s": 1}]}],
+           "publish": {"receipt": {"status": "FAIL", "label": "FAIL", "errors": ["gap_too_long"], "partial": []},
+                       "highlights": [], "advisory": "advisory evidence, not proof"}}
+    write_viewer(idx, out, embed=False, name="index.html")
+    html = (out / "index.html").read_text()
+    assert "data:image/jpeg;base64" not in html
+    assert "events/f_t.jpg" in html
+    assert "Verified highlights" not in html
+    assert "advisory evidence, not proof" in html.lower()
+    assert "SCOREBUG LOCK" in html
+    assert "Proof chain" in html
+
+
+def test_index_gold_only_when_referee_verified(tmp_path):
+    root = tmp_path / "site"
+    for slug, status, final in (("aa", "SELF_ATTESTED", True), ("bb", "VERIFIED", True), ("cc", "FAIL", False)):
+        d = root / "matches" / slug
+        d.mkdir(parents=True)
+        (d / "index.html").write_text("x")
+        (d / "match.json").write_text(json.dumps({
+            "url": f"{slug}/", "match_id": slug, "game": "madden27", "started_ms": 1_792_000_000_000,
+            "final": {"away": 22, "home": 41} if final else None, "final_confirmed": final,
+            "receipt_result": {"away": 7, "home": 14}, "receipt_status": status,
+            "events": 1, "touchdowns": 0, "clips": 0}))
+    P.write_index(root)
+    html = (root / "matches" / "index.html").read_text()
+    assert html.count('class="lockg"') == 1
+    assert "not referee-signed" in html
+    assert "receipt FAILS verification" in html
+
+
 def test_default_slug():
     assert P.default_slug("local-20261017-021003") == "021003"
     assert P.default_slug("Weird ID/../x") == "weird-id-x"
