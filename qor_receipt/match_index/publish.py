@@ -74,8 +74,11 @@ def _link_clips(events: list[dict], clips: list[dict]) -> None:
 
 def _compress(jpg: Path) -> None:
     tmp = jpg.with_suffix(".q.jpg")
-    r = subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(jpg), "-q:v", "7", str(tmp)], check=False,
-                       capture_output=True)
+    try:
+        r = subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(jpg), "-q:v", "7", str(tmp)], check=False,
+                           capture_output=True)
+    except FileNotFoundError:
+        return
     if r.returncode == 0 and tmp.exists() and tmp.stat().st_size < jpg.stat().st_size:
         tmp.replace(jpg)
     elif tmp.exists():
@@ -83,7 +86,11 @@ def _compress(jpg: Path) -> None:
 
 
 def _ffmpeg(args: list[str]) -> bool:
-    r = subprocess.run(["ffmpeg", "-y", "-loglevel", "error", *args], check=False, capture_output=True)
+    """False when ffmpeg is missing or the command fails. Posters and thumbs are optional; the clip bytes stay as published."""
+    try:
+        r = subprocess.run(["ffmpeg", "-y", "-loglevel", "error", *args], check=False, capture_output=True)
+    except FileNotFoundError:
+        return False
     return r.returncode == 0
 
 
