@@ -79,6 +79,15 @@ def test_will_not_overwrite_hand_built_or_other_match(tmp_path):
         P.publish(b, site, frames=False, slug="101500")
 
 
+def test_poster_skips_when_ffmpeg_is_missing(tmp_path, monkeypatch):
+    def missing(*_a, **_k):
+        raise FileNotFoundError(2, "No such file or directory", "ffmpeg")
+
+    monkeypatch.setattr(P.subprocess, "run", missing)
+    assert P._poster(tmp_path / "clip.mp4", 0.15, tmp_path / "out.jpg") is False
+    assert not (tmp_path / "out.jpg").exists()
+
+
 def test_highlights_link_to_score_events(tmp_path):
     import hashlib
 
