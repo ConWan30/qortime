@@ -1,4 +1,5 @@
 """qortime publish: receipt-gated public match pages, privacy scan, highlights linking, /matches/ index."""
+import hashlib
 import json
 import shutil
 from pathlib import Path
@@ -7,6 +8,7 @@ import pytest
 
 from qor_receipt.match_index import publish as P
 from qor_receipt.match_index.build import _jsonl  # noqa: F401  (import check)
+from qor_receipt.receipt import verify_receipt
 
 
 def _bundle(tmp, receipt=True, status_fail=False, private=False):
@@ -185,6 +187,33 @@ def test_verifier_paid_tag_is_not_gold_and_can_preload_a_receipt():
     missing = (root / "site" / "404.html").read_text()
     assert "This page is not on QorTime." in missing
     assert "matches/" in missing
+
+
+def test_published_original_receipts_keep_their_real_verdicts():
+    """The laptop receipts are published byte-for-byte. Verification is whatever verify_receipt returns."""
+    root = Path(__file__).resolve().parents[1]
+    raw = (root / "site/matches/125430/receipt.json").read_bytes()
+    man = json.loads((root / "site/matches/125430/clips/manifest.json").read_text())
+    assert hashlib.sha256(raw).hexdigest() == man["receipt"]["sha256"]
+    failed = verify_receipt(json.loads(raw))
+    assert failed["status"] == "FAIL"
+    assert "home:cp[0]:gap_too_long" in failed["errors"]
+    assert any("clock_skew" in e for e in failed["errors"])
+    page = (root / "site/matches/125430/index.html").read_text()
+    assert "Recorded Oct 16, 2026" in page and "12:54" in page
+    assert "source videos are not in this repo" in page
+
+    current = (root / "site/matches/021003/receipt.json").read_bytes()
+    earlier = (root / "site/matches/021003/receipt-pre-psn-20261018.json").read_bytes()
+    assert hashlib.sha256(current).hexdigest().startswith("182d3a02")
+    assert hashlib.sha256(earlier).hexdigest().startswith("2ea2645d")
+    attested = verify_receipt(json.loads(current))
+    assert attested["status"] == "SELF_ATTESTED" and attested["errors"] == []
+    page2 = (root / "site/matches/021003/index.html").read_text()
+    assert "HTTP 422" in page2 and "receipt-pre-psn-20261018.json" in page2
+    assert "not submitted" not in page2.lower()
+    assert '"status": "SELF_ATTESTED"' in page2
+    assert '"status": "VERIFIED"' not in page2
 
 
 def test_default_slug():
