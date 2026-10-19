@@ -7,9 +7,11 @@
 <meta property="og:title" content="QorTime verifier">
 <meta property="og:description" content="In-browser receipt check. Verified Match is early access and Stripe test mode, not a live paid product.">
 <meta property="og:url" content="https://conwan30.github.io/qortime/verify/">
+<meta property="og:image" content="https://conwan30.github.io/qortime/assets/og.png">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="QorTime verifier">
 <meta name="twitter:description" content="Check a signed match receipt in the browser. Verified Match stays TEST until KYC.">
+<meta name="twitter:image" content="https://conwan30.github.io/qortime/assets/og.png">
 <meta name="twitter:site" content="@QorTimeHQ">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@800;900&family=Inter+Tight:wght@500;600;700&display=swap" rel="stylesheet">
@@ -24,7 +26,8 @@ pre{background:#161b22;padding:.75rem;border-radius:6px;white-space:pre-wrap}sma
 .vm{margin:1.25rem 0;padding:1.1rem 1.15rem;border-radius:18px;border:1px solid rgba(228,197,109,.4);background:radial-gradient(420px 180px at 100% 0%,rgba(46,242,255,.14),transparent 60%),linear-gradient(165deg,#0c1c33,#071018)}
 .vm h2{margin:.2rem 0 .4rem;font:900 28px/1 "Big Shoulders Display",Impact,sans-serif;letter-spacing:.08em;text-transform:uppercase}
 .vm-test{margin-left:.4rem;font:700 11px ui-monospace,monospace;letter-spacing:.16em;color:#8ee7f2;border:1px solid rgba(142,231,242,.5);border-radius:999px;padding:.15rem .45rem;vertical-align:middle}
-.vm-badge{display:inline-flex;align-items:center;gap:.7rem;margin:.7rem 0;padding:.7rem 1rem;border-radius:999px;font:900 18px/1 "Big Shoulders Display",Impact,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:#1a1408;background:linear-gradient(105deg,#f8efc8,#e4c56d 55%,#7fe7f2);box-shadow:0 0 0 1px rgba(228,197,109,.7),0 12px 36px rgba(228,197,109,.28)}
+.vm-badge{display:inline-flex;align-items:center;gap:.7rem;margin:.7rem 0;padding:.7rem 1rem;border-radius:999px;font:700 16px/1.2 "Inter Tight",system-ui,sans-serif;letter-spacing:.04em;color:#d5deea;background:#121a28;border:1px solid rgba(130,170,210,.45);box-shadow:none}
+.vm-badge.gold{font:900 18px/1 "Big Shoulders Display",Impact,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:#1a1408;background:linear-gradient(105deg,#f8efc8,#e4c56d 55%,#7fe7f2);border-color:transparent;box-shadow:0 0 0 1px rgba(228,197,109,.7),0 12px 36px rgba(228,197,109,.28)}
 .vm-badge small{color:#3a3018;font:700 11px ui-monospace,monospace;letter-spacing:.18em}
 #vm-buy{color:#1a1408;background:linear-gradient(105deg,#f8efc8,#e4c56d 50%,#7fe7f2)}
 #vm-err{color:#ffb020;min-height:1.2em}
@@ -46,9 +49,9 @@ pre{background:#161b22;padding:.75rem;border-radius:6px;white-space:pre-wrap}sma
 </div>
 <section class="vm" id="vm">
  <h2>Verified Match <span class="vm-test">test mode</span></h2>
- <p><small>Gold badge means this receipt id has a paid Stripe test Checkout for Verified Match ($9.99). It is separate from the signature verdict. Live payouts stay off until KYC is done.</small></p>
+ <p><small>A test payment alone shows a neutral “paid, test mode” tag. Gold appears only when this page’s signature verdict is VERIFIED. The payment does not change that verdict. Live payouts stay off until KYC is done.</small></p>
  <p id="vm-return" hidden></p>
- <div id="vm-badge" class="vm-badge" hidden>Verified Match <small>TEST MODE</small></div>
+ <div id="vm-badge" class="vm-badge" hidden>paid, test mode</div>
  <p id="vm-state"><small>Paste a receipt to look up its id.</small></p>
  <button id="vm-buy" type="button" disabled>Checkout this receipt (test)</button>
  <p id="vm-err"></p>
@@ -75,6 +78,7 @@ const q = new URLSearchParams(location.search);
     $("pub").parentNode.insertBefore(warn, $("pub").nextSibling);
   }
 let pollTimer = 0;
+let sigStatus = null;
 
 function currentReceipt() {
   try { return JSON.parse($("json").value); } catch { return null; }
@@ -86,11 +90,28 @@ async function receiptContentSha(receipt) {
   try { return await sha256Hex(body); } catch { return null; }
 }
 
+function paintPaidBadge(paid) {
+  const badge = $("vm-badge");
+  const gold = paid && sigStatus === "VERIFIED";
+  badge.hidden = !paid;
+  badge.classList.toggle("gold", gold);
+  badge.replaceChildren();
+  if (!paid) return;
+  if (gold) {
+    badge.append("Verified Match ");
+    const small = document.createElement("small");
+    small.textContent = "TEST MODE";
+    badge.append(small);
+  } else {
+    badge.textContent = "paid, test mode";
+  }
+}
+
 function setPaid(data, id, contentSha) {
   const paid = badgeMatchesReceipt(data, contentSha);
-  $("vm-badge").hidden = !paid;
+  paintPaidBadge(paid);
   if (data?.paid === true && data?.receipt_sha256 && !paid) {
-    $("vm-err").textContent = "A test payment exists for this receipt id, but it was bound to different receipt bytes. The gold badge stays hidden.";
+    $("vm-err").textContent = "A test payment exists for this receipt id, but it was bound to different receipt bytes. The paid tag stays hidden.";
   }
   const status = data?.payment_status;
   if (!apiBase()) {
@@ -127,19 +148,43 @@ function watchReceipt() {
   refreshPaid(id).catch((err) => { $("vm-err").textContent = err instanceof Error ? err.message : "Paid lookup failed"; });
 }
 
-$("file").onchange = async (e) => { $("json").value = await e.target.files[0].text(); watchReceipt(); };
+$("file").onchange = async (e) => { sigStatus = null; $("json").value = await e.target.files[0].text(); watchReceipt(); };
 $("sample").onclick = async () => {
   $("vm-err").textContent = "";
   try {
     const res = await fetch("./sample-receipt.json");
     if (!res.ok) throw new Error("Demo receipt failed to load");
+    sigStatus = null;
     $("json").value = await res.text();
     watchReceipt();
   } catch (err) {
     $("vm-err").textContent = err instanceof Error ? err.message : "Demo receipt failed to load";
   }
 };
-$("json").addEventListener("input", watchReceipt);
+$("json").addEventListener("input", () => { sigStatus = null; watchReceipt(); });
+
+function sameOriginReceipt(raw) {
+  if (!raw) return null;
+  try {
+    const u = new URL(raw, location.href);
+    if (u.origin !== location.origin) return null;
+    if (!u.pathname.endsWith("receipt.json")) return null;
+    return u.href;
+  } catch { return null; }
+}
+const preloaded = sameOriginReceipt(q.get("receipt"));
+if (preloaded) {
+  fetch(preloaded).then((res) => {
+    if (!res.ok) throw new Error("receipt");
+    return res.text();
+  }).then((text) => {
+    sigStatus = null;
+    $("json").value = text;
+    watchReceipt();
+  }).catch(() => {
+    $("vm-err").textContent = "Could not load the receipt from that URL.";
+  });
+}
 $("vm-buy").onclick = async () => {
   const id = receiptIdFrom(currentReceipt());
   $("vm-err").textContent = "";
@@ -167,7 +212,7 @@ $("vm-buy").onclick = async () => {
 const returned = q.get("receipt_id");
 if (q.get("checkout") === "success" && isValidReceiptId(returned)) {
   $("vm-return").hidden = false;
-  $("vm-return").textContent = "Test checkout returned. The gold badge appears after the webhook records this receipt. Still test mode.";
+  $("vm-return").textContent = "Test checkout returned. After the webhook records this receipt, the tag says paid, test mode. Gold appears only if the signature verdict is VERIFIED.";
   let tries = 0;
   const tick = () => refreshPaid(returned).catch((err) => { $("vm-err").textContent = err instanceof Error ? err.message : "Paid lookup failed"; });
   tick();
@@ -181,6 +226,7 @@ if (q.get("checkout") === "success" && isValidReceiptId(returned)) {
 $("go").onclick = async () => {
   let r; try { r = JSON.parse($("json").value); } catch { $("badge").className = "FAIL"; $("badge").textContent = "FAIL: not JSON"; return; }
   const v = await verifyReceipt(r, $("pub").value.trim() || null);
+  sigStatus = v.status;
   $("badge").className = v.status;
   $("badge").innerHTML = `${v.status}<span class="tier">${v.trust_tier ?? "no tier"} · referee ${v.referee_trust ?? "?"}${v.referee_id ? " ("+v.referee_id+")" : ""}</span>`;
   const res = r.result || {};

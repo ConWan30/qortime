@@ -164,3 +164,56 @@ def test_scoring_play_labels_and_preroll_window():
     assert burst_window(sc[6], 700.0, clock)[3] == 5.0                     # last 5-15 read at 699 s, minus the 4 s pad
     gap = dict(sc[6], last_old_read_t_ms=W0 + 100_000)
     assert burst_window(gap, 700.0, clock)[3] == MAX_PRE_S                 # never more than MAX_PRE_S
+
+
+def test_viewer_audit_strings_stay_honest_without_network(tmp_path):
+    """Audit items that must be in the page source, with no https and no gold seal baked into a FAIL page."""
+    from qor_receipt.match_index.viewer import TEMPLATE, og_png, write_viewer
+
+    idx = {"match_id": "local-1", "events": [{"id": "e1", "kind": "score_change", "t_ms": W0, "recording_s": 12,
+                                              "score_after": {"away": 0, "home": 7}, "play": "touchdown", "confidence": 0.9,
+                                              "frames": []}],
+           "result": {"final": None, "final_confirmed": False}, "chain": {}, "input_summary": {}, "video": {},
+           "missing": ["bundle.final (end-of-game menu read)"]}
+    html = write_viewer(idx, tmp_path).read_text()
+    for needle in ("<h1", 'aria-hidden="true"', "No confirmed final.", "qorcap highlights --check",
+                   'id="share"', "Check hashes in this browser", "this match only", "Download clip",
+                   "How to check", "Tap play to load"):
+        assert needle in html
+    assert "https://" not in html and "<link" not in html
+    assert '"locked": true' not in html
+    fail = og_png({"match_id": "m", "result": {"final": None, "final_confirmed": False},
+                   "publish": {"slug": "m", "receipt": {"status": "FAIL"}}})
+    assert _goldish(fail) == 0
+    verified = og_png({"match_id": "m", "result": {"final": {"away": 1, "home": 2}, "final_confirmed": True},
+                       "publish": {"slug": "m", "receipt": {"status": "VERIFIED"}}})
+    assert _goldish(verified) > 0
+    assert "width:44px;height:44px" in TEMPLATE
+    assert "min-height:44px" in TEMPLATE
+
+
+def _goldish(png: bytes) -> int:
+    import struct
+    import zlib
+    assert png.startswith(b"\x89PNG\r\n\x1a\n")
+    i, w, h, idat = 8, 0, 0, b""
+    while i + 8 <= len(png):
+        n = struct.unpack(">I", png[i:i + 4])[0]
+        tag, data = png[i + 4:i + 8], png[i + 8:i + 8 + n]
+        if tag == b"IHDR":
+            w, h = struct.unpack(">II", data[:8])
+        elif tag == b"IDAT":
+            idat += data
+        i += 12 + n
+        if tag == b"IEND":
+            break
+    raw = zlib.decompress(idat)
+    stride = w * 3 + 1
+    n = 0
+    for y in range(h):
+        row = raw[y * stride + 1:(y + 1) * stride]
+        for x in range(0, len(row), 3):
+            r, g, b = row[x], row[x + 1], row[x + 2]
+            if r > 210 and 170 <= g <= 230 and b < 130:
+                n += 1
+    return n

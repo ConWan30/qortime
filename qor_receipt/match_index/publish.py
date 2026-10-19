@@ -354,7 +354,7 @@ def _card(m: dict) -> str:
     st = m.get("receipt_status") or "?"
     # gold is a referee-verified seal, not "we read a final on the recording"
     gold = bool(fin) and st == "VERIFIED"
-    cls = {"VERIFIED": "a", "FAIL": "w"}.get(st, "w" if st in ("SELF_ATTESTED", "PARTIAL") else "")
+    cls = "a" if st == "VERIFIED" else "x" if st == "FAIL" else "w" if st in ("SELF_ATTESTED", "PARTIAL") else ""
     when = time.strftime("%b %d, %Y", time.gmtime((m.get("started_ms") or 0) / 1000 - 5 * 3600)) if m.get("started_ms") else ""
     score = (f'<span class="{"lockg" if gold else "unl"}">{e(str(shown["away"]))}<i>–</i>{e(str(shown["home"]))}</span>'
              if shown else '<span class="miss">no score read</span>')
@@ -382,9 +382,17 @@ def write_index(site: str | Path) -> Path:
             ms.append(m)
     ms.sort(key=lambda m: m.get("started_ms") or 0, reverse=True)
     cards = "\n".join(_card(m) for m in ms) or '<p class="miss">No published matches yet.</p>'
+    if not ms:
+        compare = ""
+    elif any(m.get("receipt_status") == "VERIFIED" for m in ms):
+        compare = "These pages are separate recordings, not a ranking."
+    else:
+        compare = ("These pages are separate recordings, not a ranking. "
+                   "No page here is referee-verified, so the scores are not a verified comparison.")
     p = root / "index.html"
     root.mkdir(parents=True, exist_ok=True)
-    p.write_text(INDEX_TEMPLATE.replace("__CARDS__", cards).replace("__N__", str(len(ms))), encoding="utf-8")
+    p.write_text(INDEX_TEMPLATE.replace("__CARDS__", cards).replace("__N__", str(len(ms))).replace("__COMPARE__", html.escape(compare)),
+                 encoding="utf-8")
     return p
 
 
