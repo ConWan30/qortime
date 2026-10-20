@@ -2,6 +2,7 @@ import json
 import shutil
 import subprocess
 import zipfile
+from pathlib import Path
 
 import pytest
 
@@ -141,6 +142,41 @@ def test_viewer_mobile_contract(tmp_path):
     assert "pointercancel" in TEMPLATE and 'id="prv"' in TEMPLATE and 'id="nxt"' in TEMPLATE
     assert "width:44px;height:44px" in TEMPLATE  # markers / step buttons meet the 44px touch target
     assert "prefers-reduced-motion" in TEMPLATE and "(pointer:coarse)" in TEMPLATE
+
+
+def test_viewer_sticky_ticker_and_manual_hash_check():
+    """Sticky score ticker, and checkpoint hashes only after a click or tap.
+
+    overflow-x:hidden on html and body is a scroll container, so position:sticky never pins.
+    clip does not create one. hidden remains first so browsers without clip still block sideways scroll.
+    """
+    from qor_receipt.match_index.viewer import TEMPLATE
+
+    html_rule = TEMPLATE.split("html{", 1)[1].split("}", 1)[0]
+    body_rule = TEMPLATE.split("body{", 1)[1].split("}", 1)[0]
+    assert "overflow-x:hidden;overflow-x:clip" in html_rule
+    assert "overflow-x:hidden;overflow-x:clip" in body_rule
+    assert "position:sticky;top:0" in TEMPLATE
+    assert "new IntersectionObserver" not in TEMPLATE
+    assert "io.observe" not in TEMPLATE
+    assert 'proofBtn.onclick=()=>startProof()' in TEMPLATE
+    assert 'if(proofRunning){showProofBtn("run");return}' in TEMPLATE
+    assert 'b.textContent="Checking hashes…"' in TEMPLATE
+    assert 'textContent=proofStarted?"Check again"' in TEMPLATE
+    assert '.btn[aria-busy="true"]' in TEMPLATE
+    assert "b.disabled=true" not in TEMPLATE
+    # receipt status and the gold seal path are unchanged
+    assert 'STATUS==="VERIFIED"' in TEMPLATE
+    assert "Receipt FAIL · not a verified result" in TEMPLATE
+    root = Path(__file__).resolve().parents[1]
+    for rel in ("site/matches/125430/index.html", "site/matches/021003/index.html"):
+        page = (root / rel).read_text()
+        assert "overflow-x:hidden;overflow-x:clip" in page
+        assert "new IntersectionObserver" not in page
+        assert 'proofBtn.onclick=()=>startProof()' in page
+        assert 'textContent=proofStarted?"Check again"' in page
+        assert "Check hashes in this browser" in page
+        assert '"status": "VERIFIED"' not in page
 
 
 def test_scoring_play_labels_and_preroll_window():

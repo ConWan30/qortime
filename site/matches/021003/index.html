@@ -28,11 +28,12 @@ Motion spec (transform / opacity only, except the one-shot scorebug color and th
 --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Inter,Roboto,sans-serif}
 [hidden]{display:none!important}
 *{box-sizing:border-box}
-html{-webkit-text-size-adjust:100%;max-width:100%;overflow-x:hidden}
+/* clip (hidden only where clip is unsupported): hidden on html/body is a scroll container, so position:sticky never pins */
+html{-webkit-text-size-adjust:100%;max-width:100%;overflow-x:hidden;overflow-x:clip}
 body{margin:0;max-width:100%;background:
  radial-gradient(70% 46% at 80% -8%, rgba(24,58,92,.5), transparent 55%),
  radial-gradient(50% 36% at 0% 100%, rgba(14,48,52,.4), transparent 50%),
- #04080f;color:var(--ink);font:13.5px/1.45 var(--sans);font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+ #04080f;color:var(--ink);font:13.5px/1.45 var(--sans);font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased;overflow-x:hidden;overflow-x:clip}
 body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:40;opacity:.22;
  background:repeating-linear-gradient(to bottom, rgba(255,255,255,.05) 0 1px, transparent 1px 4px);mix-blend-mode:overlay}
 a{color:var(--aqua)}
@@ -48,7 +49,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;-webki
 .h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
 .btn{border:1px solid var(--line2);border-radius:99px;padding:8px 12px;min-height:44px;color:var(--aqua);font-size:12.5px}
 .btn:hover{border-color:var(--aqua)}.btn.round{width:44px;height:44px;padding:0;display:grid;place-items:center;font-size:22px;line-height:1}
-.btn:disabled{opacity:.35;cursor:default}
+.btn:disabled,.btn[aria-busy="true"]{opacity:.35;cursor:default}
 .enter{opacity:0;transform:translateY(12px)}
 body.ready .enter{opacity:1;transform:none;transition:opacity 420ms var(--ease),transform 420ms var(--ease)}
 body.ready .d1{transition-delay:80ms}body.ready .d2{transition-delay:160ms}body.ready .d3{transition-delay:240ms}
@@ -780,7 +781,7 @@ function chainRole(rec){const cps=rec&&rec.checkpoints;const players=(rec&&rec.p
  if(cps&&Array.isArray(cps.home)&&cps.home.length)return "home";
  if(cps&&Array.isArray(cps.away)&&cps.away.length)return "away";
  return page}
-async function runProof(){const live=$("#proofLive");
+async function runProof(){FILE.length=0;paintFiles();const live=$("#proofLive");
  if(!crypto.subtle){if(live)live.textContent="This browser has no WebCrypto SHA-256 here, so checkpoint hashes were not recomputed.";return}
  if(!RCPT.url){if(live)live.textContent=RAIL&&RAIL.sparse?"No receipt.json on this page, so checkpoint hashes were not recomputed here. This rail is only the checkpoints bound to these moments."
   :"No receipt.json on this page, so checkpoint hashes were not recomputed here.";return}
@@ -845,8 +846,11 @@ function noteLock(man,cps){const c=S.clip;if(!c||!man||!Array.isArray(cps)||!cps
   bits.push({ok:false,bad:false,text:n?`${n} source segment hashes are listed for this clip. Those bytes are not on this page, so they were not re-hashed.`:"No source segment hashes are listed for this clip."});
   const keep=FILE.filter(t=>!t._lock);bits.forEach(b=>{b._lock=true});FILE.splice(0,FILE.length,...keep,...bits);paintFiles()}}
 
-/* ---------- deep link, share, deferred proof ---------- */
-let proofStarted=false;
+/* ---------- deep link, share, manual proof (click or tap only; never auto-starts) ---------- */
+let proofStarted=false,proofRunning=false;
+function showProofBtn(state){const b=$("#proofGo");if(!b)return;
+ if(state==="run"){b.disabled=false;b.setAttribute("aria-busy","true");b.textContent="Checking hashes…"}
+ else{b.disabled=false;b.removeAttribute("aria-busy");b.textContent=proofStarted?"Check again":"Check hashes in this browser"}}
 function hashParts(){const out={event:null,t:null};const h=(location.hash||"").replace(/^#/,"");if(!h)return out;
  h.split("&").forEach(p=>{const i=p.indexOf("=");const k=decodeURIComponent(i<0?p:p.slice(0,i));const val=i<0?"":decodeURIComponent(p.slice(i+1));
   if(k==="event"||k==="e")out.event=val;if(k==="t"){const n=parseFloat(val);if(Number.isFinite(n))out.t=n}});return out}
@@ -873,8 +877,11 @@ function pickStart(){const ht=hashParts();const first=NAV.find(i=>EV[i].kind==="
  if((ht.event||ht.t!=null)&&e&&!nil(e.highlight)&&CL[e.highlight]){S.wantClip=true;
   if(ht.t!=null){const c=CL[e.highlight];const start=nil(c.source_start_s)?(e.recording_s||0)-(c.lock_at_s||0):c.source_start_s;S.wantSeek=Math.max(0,ht.t-start)}}
  return i}
-function startProof(){if(proofStarted)return;proofStarted=true;const b=$("#proofGo");if(b){b.disabled=true;b.textContent="Checking hashes…"}
- runProof();if(S.clip&&S.armed)checkClip(S.clip)}
+async function startProof(){if(proofRunning){showProofBtn("run");return}
+ proofRunning=true;proofStarted=true;showProofBtn("run");
+ CL.forEach(c=>{if(c)delete c._hex});
+ const job=runProof();if(S.clip&&S.armed)checkClip(S.clip);
+ try{await job}finally{proofRunning=false;showProofBtn("done")}}
 function boot(){const st=$("#status");
  const SHORT={FAIL:"Receipt FAIL · not a verified result",SELF_ATTESTED:"Self-attested · not referee-signed",PARTIAL:"Partial · not a verified result",VERIFIED:"Verified by the referee"};
  st.textContent=SHORT[STATUS]||STATUS||"receipt status missing";st.title=RCPT.label||"";st.classList.add(STATUS==="FAIL"?"fail":VERIFIED?"ok":"warn");
@@ -899,8 +906,6 @@ function boot(){const st=$("#status");
   const btn=$("#share");if(navigator.share){try{await navigator.share({title:document.title,text,url});return}catch(err){if(err&&err.name==="AbortError")return}}
   try{await navigator.clipboard.writeText(url);btn.textContent="Link copied";setTimeout(()=>{btn.textContent="Share"},1600)}catch(err){window.prompt("Copy this link",url)}};
  const proofBtn=$("#proofGo");if(proofBtn)proofBtn.onclick=()=>startProof();
- const clipsEl=$("#clipsCard");
- if(clipsEl&&"IntersectionObserver" in window){const io=new IntersectionObserver(es=>{if(es.some(x=>x.isIntersecting)){startProof();io.disconnect()}});io.observe(clipsEl)}
  $("#scopeCard").addEventListener("toggle",()=>{if($("#scopeCard").open)drawScope()});
  addEventListener("keydown",ev=>{if(ev.target.closest("input,textarea"))return;if(ev.key==="ArrowRight"){step(1);ev.preventDefault()}
   else if(ev.key==="ArrowLeft"){step(-1);ev.preventDefault()}else if(ev.key===" "&&!ev.target.closest("button,a")){ev.preventDefault();$("#play").click()}});
