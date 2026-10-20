@@ -1,176 +1,176 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/readme/hero-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="docs/readme/hero-light.svg">
+  <img alt="QorTime. One app. One recording. One receipt. No referee-verified match yet." src="docs/readme/hero-dark.svg" width="1280" height="640">
+</picture>
+
 # QorTime
 
-**One app. One recording. One receipt.**
+**QorTime is the open-source referee for [QorCap](https://github.com/ConWan30/qorcap):** it checks a signed capture receipt and publishes the verdict the math actually returns, including FAIL.
 
-- **Capture.** [QorCap](https://github.com/ConWan30/qorcap) is the single lightweight Windows app you run during the match. It records the capture card and fingerprints the video (a hash chain plus timestamped checkpoints). It also logs the controller's button presses from the same session (since v0.3.0).
-- **Prove.** After the match, QorTime works on the finished recording, not during play. It produces the signed receipt, then the [AI referee](docs/REFEREE_AI.md) (`qortime referee-ai <bundle>`) signs an **accept / dispute / abstain** verdict with plain reasons and evidence frames.
-- **Verify (official).** `qorcap submit` / "Submit for Verification" uploads the bundle to the [QorTime official referee](docs/REFEREE_SERVICE.md), which re-checks hash chains, video bytes (spot-check or full), the end-of-game score and challenges on its own, and only then countersigns with the official key, so the receipt can be **VERIFIED** instead of SELF_ATTESTED.
-- **Share.** Anyone can check the receipt in the [browser verifier](https://conwan30.github.io/qortime/verify/) or with `qortime verify`, and the referee verdict with `qortime referee-ai-verify`.
+QorCap, on the player's Windows PC, records an HDMI capture card, reads the scorebug locally, and signs a match receipt (ed25519). QorTime verifies that receipt and serves the public match pages. The package name is still `qor_receipt`. Both `qortime` and `qor-receipt` work. MIT licensed.
 
-Honest limit: QorTime proves the footage's integrity and timing (and, from v0.3, the controller inputs). It does not prove who held the controller.
+[![MIT license](https://img.shields.io/badge/license-MIT-2ef2ff?labelColor=04050a)](LICENSE)
+[![QorCap release](https://img.shields.io/github/v/release/ConWan30/qorcap?label=QorCap&color=2ef2ff&labelColor=04050a)](https://github.com/ConWan30/qorcap/releases/tag/v0.3.27)
+[![site live](https://img.shields.io/website?url=https%3A%2F%2Fconwan30.github.io%2Fqortime%2F&label=site&up_message=live&down_message=down&up_color=2ef2ff&down_color=ff4d5e&labelColor=04050a)](https://conwan30.github.io/qortime/)
+[![X @QorTimeHQ](https://img.shields.io/badge/X-@QorTimeHQ-111111?logo=x&logoColor=white)](https://x.com/QorTimeHQ)
 
-**Signed, verified match-result receipts for console money-match / escrow platforms**
-(Locked, TrustBridge, ArcadeBet, Wagr, and others). First title: **Madden 27 on PS5**.
+No published match is referee-verified. On a match page, gold digits mean the receipt status is `VERIFIED`. Neither page below uses them.
 
-QorTime (formerly qor-receipt) seals the moment a match ends. Site: https://conwan30.github.io/qortime/ · Verifier: https://conwan30.github.io/qortime/verify/ . The Python package stays `qor_receipt`; both `qortime` and `qor-receipt` commands work.
+Not affiliated with EA, the NFL, or Sony. Madden NFL is a trademark of its owner. Game footage in the shots below is the capture already published on those pages.
 
-## Try it
+## See it live
 
-- Site: https://conwan30.github.io/qortime/
-- Verify in the browser: https://conwan30.github.io/qortime/verify/
-- How it works: https://conwan30.github.io/qortime/how-it-works/
-- Pricing: https://conwan30.github.io/qortime/pricing/
-- **Verified Match** ($9.99 hosted-referee countersign): [early access](https://conwan30.github.io/qortime/early-access/) / Stripe **test** mode until business KYC. This is not a live paid product for real money. Test Payment Link: https://buy.stripe.com/test_3cI4gy7he9Uuarqczl00000
+**[Site](https://conwan30.github.io/qortime/)** — the public homepage. Diagrams on that page that are not a captured match are labeled illustrative.
 
-A platform holding escrow gets a small JSON receipt saying *who played, the final score, how it
-was observed*, signed by each player's agent and countersigned by an independent **referee**
-service. Anyone can check it offline (CLI) or in a browser ([verifier page](https://conwan30.github.io/qortime/verify/)).
-The verdict is **VERIFIED / PARTIAL / FAIL** plus a trust tier: **dual-attested** (both players ran
-agents and their timelines agree) or **single-attested**.
+[![QorTime homepage: one app, one recording, one receipt](docs/readme/shots/site-desktop.webp)](https://conwan30.github.io/qortime/)
 
-## Rig (per player)
+**[Match 021003](https://conwan30.github.io/qortime/matches/021003/)** — motion playback of burst stills, touchdown reads, and controller advisory. Status on the page: **SELF-ATTESTED · NOT REFEREE-SIGNED**. The official referee rejected the submission with HTTP 422 because receipt checkpoint 0 differs from `countersigned.jsonl`. Away 22 – home 41 is what this receipt and the end-of-game menu read. It is not a referee-verified result. The player UI itself says the burst is not continuous video.
 
+[![Match 021003 viewer, self-attested, not referee-signed, final 22 to 41](docs/readme/shots/match-021003-desktop.webp)](https://conwan30.github.io/qortime/matches/021003/)
+
+[![Phone-width view of match 021003, still marked self-attested](docs/readme/shots/match-021003-mobile.webp)](https://conwan30.github.io/qortime/matches/021003/)
+
+Playback of the 6–0 Q1 touchdown burst (12 stills). The header stays **SELF-ATTESTED** the whole time.
+
+[![Burst playback of the 021003 touchdown read, self-attested, not continuous video](docs/readme/shots/match-021003-playback.gif)](https://conwan30.github.io/qortime/matches/021003/)
+
+**[Match 125430](https://conwan30.github.io/qortime/matches/125430/)** — clips tied to the signed receipt. The page checks the proof in the browser and shows **RECEIPT FAIL · NOT A VERIFIED RESULT**. Published verifier errors:
+
+- `home:cp[0]:gap_too_long`
+- `home:cp[591]:gap_too_long`
+- `home:cp[591]:clock_skew`
+- `home:cp[592]:clock_skew`
+
+Two checkpoints are too far apart, and two show clock skew. The last scorebug read on the page is not a confirmed final. Clips stay visible and are not marked locked.
+
+[![Match 125430 viewer showing receipt FAIL, not a verified result](docs/readme/shots/match-125430-desktop.webp)](https://conwan30.github.io/qortime/matches/125430/)
+
+Browser verifier (no account, nothing uploaded): <https://conwan30.github.io/qortime/verify/>
+
+## How it works
+
+```mermaid
+flowchart LR
+  A[HDMI capture] --> B[Scorebug read]
+  B --> C[Signed receipt]
+  C --> D[QorTime referee]
+  D --> E[Public viewer]
 ```
-PS5 --HDMI--> USB capture card --> Windows PC (qor agent: scorebug reader + HID log)
-DualSense Edge --Bluetooth--> PS5      (plays the game)
-DualSense Edge --USB-------> PC        (same controller, also cabled to the PC: the agent logs its HID reports)
-```
 
-Both links are intended. The USB link is what lets the agent prove the inputs, so don't unplug it.
+1. **HDMI capture.** QorCap records the capture card on Windows and fingerprints the video as it is written (hash chain, timestamped checkpoints). Since v0.3.0 it also logs controller button reports from that same session.
+2. **Scorebug read.** The score is read off the recording, digit by digit, and locked only when consecutive frames agree. A refused read is dropped. The reader does not guess.
+3. **Signed receipt.** The laptop signs `qor-receipt/v0` with ed25519. That signature is **self-attested**: the signing key sits on the player's PC.
+4. **QorTime referee.** `qorcap submit` can upload the bundle to the official referee at `https://qortime-referee-production.up.railway.app`. It re-checks chains, video bytes, and the ending, and only then may countersign. Any check error is HTTP 422. Code and rules: [docs/REFEREE_SERVICE.md](docs/REFEREE_SERVICE.md).
+5. **Public viewer.** `qortime publish` writes `site/matches/<id>/`. The page is labeled with the status the verifier computed. A FAIL receipt is refused unless `--allow-fail`, and then every surface says the result is not verified.
 
-## How a receipt is made trustworthy
+QorTime proves integrity and timing of the footage, and, from QorCap v0.3, that controller reports were logged in the same session. It does not prove who held the controller.
 
-| Weak spot | Mitigation in v0 |
-|---|---|
-| Replay / wrong console / pre-recorded video | Referee **nonce challenges** at game start, second half and Q4, each opened only once Madden allows a pause (after the kickoff and a play call; 90 s window). The nonce maps to `OPTIONS` + 4 buttons. Verifier needs the pattern in the HID log **and** the pause menu on video 0–600 ms after the press. Input-to-video **motion correlation** is an extra signal. |
-| Signing key sits on the player's PC | Agent sends **rolling hash checkpoints** (frames + input) every ~4 s. The referee timestamps and countersigns each one. A receipt fabricated afterwards can't carry referee signatures from the past. Keys go through `KeyProvider`, so a TPM can drop in later ([PHASE2](docs/PHASE2.md)). |
-| Fake video source | The same live challenge, plus **dual mode**: both agents submit, and score/quarter timelines must agree. Single-agent matches get a lower tier. |
+## What makes it different
 
-Residual risks are written down plainly in [docs/RISKS.md](docs/RISKS.md) (account sharing, both players colluding, and others).
-
-## Layout
-
-```
-spec/match-receipt-v0.md      the format and verification rules
-schema/receipt.v0.json        JSON Schema (JCS canonical, Ed25519)
-qor_receipt/receipt.py        build / sign / verify
-qor_receipt/challenge.py      nonce -> button pattern, HID + vision verifier, motion correlation
-qor_receipt/checkpoints.py    hash chain + referee countersign
-qor_receipt/referee/app.py    FastAPI referee: start, challenge, checkpoint, timeline, finalize, sign
-qor_receipt/final_detect.py   end-of-game from agreed scorebug reads; dual timeline agreement
-qor_receipt/cli.py            qortime emit | verify | pattern
-qor_receipt/_vendor/          vendored Qoresence code (scorebug reader/agreement, signing, chain), see VENDORED.md
-verify/                       static verifier (index.html + verify.js + vendored @noble/ed25519)
-```
+- **The capture and the referee are different keys.** A laptop signature cannot mint `VERIFIED`. The official countersign is a second check, on Railway, under a delegated service key. The root key is not on the server. See [docs/REFEREE_KEYS.md](docs/REFEREE_KEYS.md).
+- **Anyone can recompute it.** The static verifier runs vendored `@noble/ed25519` in the browser. `qortime verify` does the same check offline.
+- **Gold is a status, not a theme.** Match pages paint a score gold only when receipt status is `VERIFIED`. Nothing published has that status.
+- **FAIL stays on the page.** 125430 is public, failed, and still shows its clips. The viewer does not get a quieter result by editing the receipt: the proof runs on the published bytes.
+- **Inputs are advisory.** Controller and haptic summaries can sit next to a play. They are activity in sync with the video, not identity and not a signed result.
 
 ## Quick start
 
 ```bash
 pip install -e ".[dev,vision]"
 pytest -q && node verify/test.mjs
-qortime emit --demo r.json            # synthetic match through the real referee code
+qortime emit --demo r.json          # synthetic match, real receipt code
 qortime verify r.json --referee-pub <hex>
-QOR_REFEREE_SEED=<64 hex> uvicorn qor_receipt.referee.app:app   # run a referee
 ```
 
-## Status
+The local demo referee is in-memory and is not the official key:
 
-**Real:** receipt format, JCS (Python and JS parity vector), Ed25519 signing and verification (Python
-and browser), the checkpoint chain with referee countersign, the challenge pattern and HID/latency verifier,
-motion correlation, final detection, dual timeline agreement, the referee API (in-memory), the CLI, the
-static verifier, and the tests and CI.
+```bash
+QOR_REFEREE_SEED=<64 hex> uvicorn qor_receipt.referee.app:app
+```
 
-**Windows capture agent: built** (PR #1, `scripts/qor-agent.cmd`): DualSense HID capture, a scorebug
-sampler that requires 3-read agreement, and nonce challenges. The reader fix landed in PR #2; in a live
-Madden test, of 233 sampled frames 143 were read correctly, 90 were refused, and 0 were read wrong.
+QorCap, the Windows capture app, is a separate repo. Latest release checked for this README: [v0.3.27](https://github.com/ConWan30/qorcap/releases/tag/v0.3.27).
 
-**Live:** site at <https://conwan30.github.io/qortime/>, verifier at <https://conwan30.github.io/qortime/verify/>.
+## Repo layout
 
-**Verified Match (early access / test):** $9.99 list price for a hosted-referee countersign. Stripe checkout is test mode until business KYC. It is not a live paid product for real money. See [docs/STRIPE_VERIFIED_MATCH_TEST.md](docs/STRIPE_VERIFIED_MATCH_TEST.md).
+```
+spec/match-receipt-v0.md     format and verification rules
+schema/receipt.v0.json       JSON Schema, JCS canonical form, Ed25519
+qor_receipt/receipt.py       build, sign, verify
+qor_receipt/challenge.py     nonce, HID plus vision check, motion
+qor_receipt/checkpoints.py   hash chain and referee countersign
+qor_receipt/referee/         in-memory demo referee
+qor_receipt/referee_service/ official review HTTP service
+qor_receipt/review/          checks the uploaded bundle
+qor_receipt/_vendor/         Qoresence scorebug reader and signing (MIT)
+verify/                      browser verifier, noble-ed25519, tests
+site/                        GitHub Pages site and published matches
+services/referee/            Railway image for the official referee
+docs/REFEREE_SERVICE.md      what the official referee will and will not sign
+docs/RISKS.md                residual risks, written plainly
+docs/PHASE2.md               not built yet
+```
 
-**Known gaps:**
-- End-of-game: red final-seconds clock is now read (fail-closed), with `scorebug_gone` / `final_screen` fallbacks
-  and `result.final_basis`. A Jev final-screen detector runs in shadow mode only (see above). Not yet validated on a real Q4 ending (none captured). Reader eval: `eval/`.
-- Halftime challenge and real pause timing are not yet confirmed in a full live match.
-- The referee is in-memory only (no persistence or auth beyond player signatures).
-- Phase 2 items (TPM, transparency log) are not started ([PHASE2](docs/PHASE2.md)). No platform integration.
+## Honesty rules
 
-## Jev final-screen detector (shadow mode)
+- **Gold only for `VERIFIED`.** A self-attested, partial, or failed receipt never gets a gold score.
+- **FAIL is a result.** It is shown. It is not rewritten into a quieter label.
+- **The page is not the signer.** Publishing refuses a FAIL receipt unless `--allow-fail`, strips raw inputs, haptics, device ids, and local paths, and refuses if a private field leaks. A clip is tagged locked only when its score lock sits in a receipt that does not FAIL.
+- **An observer cannot fix a receipt by editing the page.** The browser check hashes the published bytes. Change a score and verification fails.
+- **Handles are not accounts.** Names a player types, and names read off the screen, are not a PlayStation login. Sony and EA do not offer a public API for this. A mismatch or a low-confidence read does not produce a winner.
+- **Verified Match is not a live charge.** The $9.99 hosted countersign is [early access](https://conwan30.github.io/qortime/early-access/) in Stripe **test** mode until business KYC. [Test Payment Link](https://buy.stripe.com/test_3cI4gy7he9Uuarqczl00000). It is not a product you can pay for with real money.
+- **No partners and no customer counts** are claimed here. There is no verified match to count.
 
-`qor_receipt/agent/final_screen_jev.py` asks TypeSafe Jev 1.14 (model pinned to `jev-1.14.0`; `jev-latest`
-is still 1.13) one yes/no (Noul) question while the scorebug is absent: is this Madden's
-**post-game options menu with the final score**? Per the player (Madden 27): as soon as the game clock hits
-0:00, Madden goes straight to an end-of-game options menu (a list of menu options) that shows the final score
-(both team names and scores); the bottom scorebug bar is not shown. That menu is the final frame. The criteria
-explicitly reject the mid-game pause menu (the most likely false positive: it looks similar, so the criteria
-key on FINAL/post-game wording and a 4th-quarter 0:00 clock), halftime screens, touchdown/score graphics and
-broadcast scoreboard overlays. It runs in a background worker (at most one call per 5 s, 15 s timeout; a busy worker
-or the rate limit drops the frame), resizes frames to the image limits, and treats any error as `unknown`.
+## Roadmap
 
-**Shadow only.** Results go to the session log as `jev_final_screen` records (model, frame sha256, answer,
-p_yes, confidence, latency, plus `last_scorebug` = the last agreed scorebug `{t_ms, quarter, clock_s}` when
-one exists, so a later deterministic rule can require "last clock seen was Q4 near 0:00" + "menu with final
-score"). They are wired through `AgentCore.final_screen_shadow`, whose return value is
-ignored, so they never open a `final_screen` span, never set `final_basis`, and never feed the trust tier,
-the score digits, or the signed receipt.
+- **One countersigned match.** The official referee has not produced a published `VERIFIED` receipt. 021003 came back HTTP 422. 125430 fails the checkpoint gap and clock-skew checks above.
+- **Challenge timing that fits a real pause.** Rule v1 asks the pause menu to land within 600 ms. On captured Madden footage the drawn menu is later than that, so an honest press cannot pass v1. Rule v2 is opt-in. Detail: [docs/REFEREE_SERVICE.md](docs/REFEREE_SERVICE.md).
+- **Verified Match leaves test mode only after KYC.** Not before.
+- **Phase 2, not started.** TPM attestation, receipt inclusion proofs, a sealed capture device, C2PA on clips. [docs/PHASE2.md](docs/PHASE2.md).
 
-- `QORTIME_JEV_FINAL_SCREEN=shadow|off`. When it is unset: shadow if `TYPESAFE_API_KEY` is set, otherwise off.
-- `export_labels(session_log, out)` turns shadow records into weak labels for a future local detector.
-- Live smoke: `python scripts/jev_final_screen_smoke.py --root /workspace` (needs the key and the eval images).
-  First run (2026-10-14, 13 real negatives: gameplay, absent strip, pause, touchdown, broadcast overlay,
-  halftime report/stats): 0 false yes, p_yes 0.01-0.02, median latency about 200 ms. Re-run 2026-10-15 with
-the post-game-options-menu criteria on the same 13 frames: 0 false yes; both pause-menu frames `no`
-(p_yes 0.02); all others p_yes 0.01-0.02; median 194 ms. **No real final screen has
-  been captured yet**, so recall is untested.
+## License and credits
 
-## Credits
+[MIT](LICENSE). Copyright (c) 2026 Contravious Battle (ConWan30).
 
-Vendored from [ConWan30/Qoresence](https://github.com/ConWan30/Qoresence) (MIT). Design ideas (certificate
-shape, PORT-CERT VERIFIED/PARTIAL/FAIL honesty, clock-notary io ledger) come from
-[ConWan30/QorTroller](https://github.com/ConWan30/QorTroller) at pinned commit `51d1ab3`. It's referenced, not depended on.
-MIT licensed.
+The extra sentence in `LICENSE` points at bundled MIT code, which is why GitHub's license API currently classifies the file as "Other" rather than SPDX MIT. The terms are the MIT terms in that file.
 
-## AI referee
+- [`@noble/ed25519` v2.3.0](verify/vendor/README.md), MIT, Paul Miller, copied unmodified.
+- Scorebug reader, agreement, signing, and hash chain from [ConWan30/Qoresence](https://github.com/ConWan30/Qoresence) at `a062c9df`, MIT, import paths rewritten. Local reader fixes are listed in [qor_receipt/_vendor/VENDORED.md](qor_receipt/_vendor/VENDORED.md).
+- Receipt shape and the VERIFIED / PARTIAL / FAIL rule (missing evidence stays partial, never a false verified) are ideas from [ConWan30/QorTroller](https://github.com/ConWan30/QorTroller) at `51d1ab3`. Referenced, not a dependency.
 
-`qortime referee-ai <qorcap-bundle>` writes a signed accept / dispute / abstain verdict. It checks integrity in code, reads frames with the scorebug reader (a Meta Muse Spark stub is ready to wire up), and uses TypeSafe Jev to judge frames. See [docs/REFEREE_AI.md](docs/REFEREE_AI.md).
+<details>
+<summary>Rig, status, and the longer caveats</summary>
 
-## Match index ("what the AI saw")
+### Rig
 
-`qortime index BUNDLE --video match.mp4 --out qt-index/` writes `match_index.json` (kickoff, quarter changes, every
-score change with before/after score, end of game; each with nearby button presses/haptics, the checkpoints and
-clip hash that bind it to the video chain, and a heuristic confidence), ~10 burst frames + a contact sheet per event,
-and a self-contained `viewer.html`. Inputs/haptics are advisory evidence, not proof; fields the bundle does not carry
-are shown as missing. Tail clips (e.g. `last150s.mp4`) are aligned to the end of the recording.
+```
+PS5 --HDMI--> USB capture card --> Windows PC (QorCap: scorebug reader + HID log)
+DualSense Edge --Bluetooth--> PS5
+DualSense Edge --USB--------> PC   (same controller, also cabled; this is the logged link)
+```
 
-## Match pages (`/matches/<id>/`)
+Both links are intended. The USB link is what the agent logs. Unplugging it drops the input evidence.
 
-`qortime publish BUNDLE --site site --video match.mp4 [--highlights BUNDLE/highlights]` turns a finished bundle into
-`site/matches/<id>/` (score timeline, motion playback, touchdown highlights, controller advisory data) and rebuilds the
-`/matches/` index (`qortime matches-index --site site` rebuilds the index alone). It publishes only when the bundle has
-a `receipt.json`, verifies it, and labels the page with the status it gets: a FAIL receipt is refused unless
-`--allow-fail`, and then every page element says the result is not verified. A clip is tagged "locked" only when its
-score lock is in a receipt that does not FAIL. Raw `inputs.jsonl`, haptics, device ids and local paths are never copied;
-the page carries only the summarised advisory data, and publish refuses if a private field leaks into the output.
-Highlight clips come from `qorcap highlights BUNDLE` (QorCap repo); their manifest must name the same receipt.
+### What is actually built
 
-## Head-to-head challenges (`/challenge/`)
+Receipt format, JCS with a Python/JS parity vector, ed25519 sign and verify in Python and the browser, checkpoint chain with referee countersign, challenge pattern plus HID/latency check, motion correlation, final detection, dual timeline agreement, the referee API, the CLI, the static verifier, and CI.
 
-Free links to settle bragging rights: no money, wagering, entry fees or Stripe. The creator makes a link
-(`POST /v1/h2h` on the referee service), the opponent opens it and accepts, nothing to install. Only one player needs
-QorCap: the creator's receipt alone settles it ("recorded by @handle"), because online Madden shows both players the same
-scoreboard. If both players submit receipts that agree it says "confirmed by both players"; if they disagree it says
-"disputed" and shows no winner. Only receipts the verifier computes as VERIFIED count (match started after the challenge
-was made, final score confirmed); a SELF_ATTESTED, FAIL or missing receipt shows "unverified", never a winner. Handles
-are typed by players and are not verified; quarter length and other rules are agreed, not checked. The challenge record
-is not signed with the referee key. API details: `docs/REFEREE_SERVICE.md`.
+The Windows capture agent records DualSense HID, requires 3-read scorebug agreement, and runs nonce challenges. In the live test recorded in this repo, of 233 sampled frames 143 were read correctly, 90 were refused, and 0 were read wrong.
 
-**PSN name check (on-screen evidence, not account proof).** Sony and EA offer no public login or API, so QorTime never
-sees a PSN account. Instead the creator enters both players' PSN IDs, and QorCap (`qorcap finalize --psn-names` or
-`qorcap psn-names`) reads the names Madden draws on screen in online head-to-head games (the player banners at the top
-of the play-call screen and the pause/end-of-game menu cards) from the recorded video. The consensus read goes into the
-signed receipt as `match.observed_handles` (away/home, with the pattern, confidence in permille and how many frames
-agreed). The challenge counts a receipt only if those names match the challenge's PSN IDs, ignoring case and look-alike
-characters such as 0/O, 1/l and g/y. A reliable read of a different name shows **players don't match**; a missing,
-partial or low-confidence read, or a receipt side that contradicts the on-screen side, shows **players unverified**.
-Neither shows a winner. Because a signed receipt can't be redacted, `qortime publish` refuses a receipt that carries
-both players' names unless `--include-names` is passed.
+The official referee service is deployed. Its root key is offline. The online key is a 90-day delegate. Neither published match carries that countersignature.
+
+### AI referee
+
+`qortime referee-ai <bundle>` writes a separate accept / dispute / abstain verdict. Integrity is checked in code. The model does not override the deterministic tier. [docs/REFEREE_AI.md](docs/REFEREE_AI.md).
+
+The Jev final-screen detector (`qor_receipt/agent/final_screen_jev.py`) is shadow-only. Its answer is logged and never sets `final_basis`, the score digits, or the signed receipt.
+
+### Head-to-head links
+
+`/challenge/` is bragging rights only: no money, no entry fee, no Stripe. One QorCap receipt can settle it because both players see the same scoreboard. Only a receipt the verifier computes as `VERIFIED` can name a winner. Self-attested, failed, or missing receipts show unverified and no winner. The challenge record is not signed with the referee key.
+
+### Where the design can still break
+
+Replay and pre-recorded video are the problem the nonce challenges exist to catch. They are not finished business on a real full match: halftime challenge timing is not confirmed end to end, and rule v1 does not fit measured pause-menu latency. Two players can still collude. Account sharing is not solved. The full list is [docs/RISKS.md](docs/RISKS.md).
+
+</details>
