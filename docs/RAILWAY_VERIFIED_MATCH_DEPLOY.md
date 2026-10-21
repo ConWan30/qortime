@@ -7,7 +7,7 @@
 - Volume: qortime-vm-data mounted at /data
 - Domain: https://qortime-verified-match-production.up.railway.app
 - Vars set: STRIPE_PRICE_ID, SITE_ORIGIN, STORE_PATH=/data/receipts.json, NODE_ENV=production, STRIPE_WEBHOOK_SECRET (from Stripe API)
-- Stripe test webhook: we_1UQsBrCepyIJsHZurNt2WXvg -> /v1/webhook (checkout.session.completed, async_payment_succeeded, async_payment_failed)
+- Stripe test webhook: we_1UQsBrCepyIJsHZurNt2WXvg -> /v1/webhook (checkout.session.completed, async_payment_succeeded, async_payment_failed, charge.refunded)
 
 ## Operator steps (Con)
 1. Stripe Dashboard (test mode, acct_1UQVjjCepyIJsHZu) -> Developers -> API keys -> Create restricted key (rk_test_...).

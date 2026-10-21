@@ -239,10 +239,17 @@ def check_receipt_binding(b: Bundle) -> list[str]:
             errs.append(f"receipt checkpoint {i} hash differs from checkpoints.jsonl")
             break
     if b.countersigned:
-        for i, (x, y) in enumerate(zip(cps, b.countersigned)):
-            if x.get("hash") != y.get("hash") or x.get("referee_sig") != y.get("referee_sig"):
-                errs.append(f"receipt checkpoint {i} differs from countersigned.jsonl")
-                break
+        # zip() would ignore a longer live log or extra receipt checkpoints. Both are fail-open:
+        # a truncated chain can hide a tail, and an appended checkpoint was not in the live log.
+        if len(b.countersigned) != len(cps):
+            errs.append(
+                f"receipt has {len(cps)} checkpoints for {b.role}, countersigned.jsonl has {len(b.countersigned)}"
+            )
+        else:
+            for i, (x, y) in enumerate(zip(cps, b.countersigned)):
+                if x.get("hash") != y.get("hash") or x.get("referee_sig") != y.get("referee_sig"):
+                    errs.append(f"receipt checkpoint {i} differs from countersigned.jsonl")
+                    break
     if b.meta.get("match_id") and b.match_id and b.meta["match_id"] != b.match_id and b.meta["match_id"] != "unassigned":
         errs.append("receipt match_id differs from bundle.json")
     return errs

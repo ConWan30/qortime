@@ -7,7 +7,7 @@ import pytest
 from qor_receipt.cli import main
 from qor_receipt.demo import run_match
 from qor_receipt.keys import SoftwareKey
-from qor_receipt.receipt import DUAL, FAIL, SELF_ATTESTED, SINGLE, VERIFIED, sign_player, verify_receipt
+from qor_receipt.receipt import DUAL, FAIL, SELF_ATTESTED, SINGLE, VERIFIED, sign_player, sign_referee, verify_receipt
 
 
 def test_dual_verified(ref):
@@ -79,6 +79,38 @@ def test_tamper_fails(good, name):
     t = copy.deepcopy(rec)
     TAMPERS[name](t)
     assert verify_receipt(t, referee_pub=key.pubkey_hex)["status"] == FAIL
+
+
+def test_extra_field_and_truncated_chain_fail_closed(good):
+    rec, key, _ = good
+    extra = copy.deepcopy(rec)
+    extra["result"]["not_in_schema"] = "added after signing"
+    v = verify_receipt(extra, referee_pub=key.pubkey_hex)
+    assert v["status"] == FAIL and "bad_referee_signature" in v["errors"]
+
+    short = copy.deepcopy(rec)
+    role = next(iter(short["checkpoints"]))
+    short["checkpoints"][role] = short["checkpoints"][role][:1]
+    w = verify_receipt(short, referee_pub=key.pubkey_hex)
+    assert w["status"] == FAIL
+    assert any("chain_ends_before_match_end" in e for e in w["errors"])
+
+
+def test_resign_with_wrong_key_fails(good):
+    rec, key, pkeys = good
+    wrong = SoftwareKey()
+    edited = copy.deepcopy(rec)
+    edited["result"]["home_score"] = 1
+    edited = sign_player(sign_player(edited, "home", pkeys["home"]), "away", pkeys["away"])
+    edited = sign_referee(edited, wrong)
+    v = verify_receipt(edited, referee_pub=key.pubkey_hex)
+    assert v["status"] == FAIL and "bad_referee_signature" in v["errors"]
+
+    swapped = copy.deepcopy(edited)
+    swapped["referee"] = {"pubkey": wrong.pubkey_hex, "key_id": wrong.key_id, "key_kind": "software"}
+    swapped = sign_referee(swapped, wrong)
+    w = verify_receipt(swapped, referee_pub=key.pubkey_hex)
+    assert w["status"] == FAIL and "referee_key_mismatch" in w["errors"]
 
 
 def test_player_resign_without_referee_fails(good):

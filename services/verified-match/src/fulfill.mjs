@@ -1,6 +1,13 @@
-import { isValidReceiptId } from "./receipt-id.mjs";
+import { isValidReceiptId, isValidReceiptSha256 } from "./receipt-id.mjs";
 
 export const INTEGRATION_IDENTIFIER = "qortime_verified_match_hnqwlxpt";
+
+/** Catalog price is $9.99 USD. Stripe Prices are immutable; a different amount needs a new price id and a code change. */
+export const CATALOG_UNIT_AMOUNT = 999;
+export const CATALOG_CURRENCY = "usd";
+
+/** Stripe's default webhook tolerance. Reject signatures older than this. */
+export const WEBHOOK_TOLERANCE_SECONDS = 300;
 
 export const FULFILL_EVENTS = new Set([
   "checkout.session.completed",
@@ -75,6 +82,23 @@ export function lineItemsIncludePrice(items, priceId) {
   });
 }
 
+/**
+ * The paid line must be exactly one unit of the configured price, and that Price object
+ * (fetched from Stripe, not trusted from the event body) must be the $9.99 USD catalog price.
+ * A string price id is not enough: amount and currency have to be on the expanded Price.
+ */
+export function lineItemsMatchCatalog(items, priceId) {
+  if (!Array.isArray(items) || items.length !== 1) return false;
+  const item = items[0];
+  if (item?.quantity !== 1) return false;
+  const price = item?.price;
+  if (!price || typeof price !== "object") return false;
+  if (price.id !== priceId) return false;
+  if (price.unit_amount !== CATALOG_UNIT_AMOUNT) return false;
+  if (String(price.currency || "").toLowerCase() !== CATALOG_CURRENCY) return false;
+  return true;
+}
+
 export function decideFulfillment(event, session, { priceOk }) {
   const known =
     FULFILL_EVENTS.has(event.type) || event.type === "checkout.session.async_payment_failed";
@@ -87,14 +111,42 @@ export function decideFulfillment(event, session, { priceOk }) {
   if (event.type === "checkout.session.async_payment_failed") {
     return { action: "fail", reason: "async_failed", receiptId };
   }
+  const metaId = session?.metadata?.receipt_id;
+  const refId = session?.client_reference_id;
+  if (typeof metaId === "string" && metaId.length > 0 && typeof refId === "string" && refId.length > 0 && metaId !== refId) {
+    return { action: "ignore", reason: "receipt_binding", receiptId };
+  }
   if (session.mode && session.mode !== "payment") {
     return { action: "ignore", reason: "mode", receiptId };
   }
-  if (session.payment_status === "unpaid") {
-    return { action: "pending", reason: "unpaid", receiptId };
+  // paid is the only fulfilling status. unpaid waits. no_payment_required (a $0 session) must not grant.
+  if (session.payment_status !== "paid") {
+    if (session.payment_status === "unpaid") return { action: "pending", reason: "unpaid", receiptId };
+    return { action: "ignore", reason: "payment_status", receiptId };
   }
+  const discount = session?.total_details?.amount_discount;
+  if (typeof discount === "number" && discount > 0) {
+    return { action: "ignore", reason: "discount", receiptId };
+  }
+  const currency = typeof session.currency === "string" ? session.currency.toLowerCase() : "";
+  if (currency === CATALOG_CURRENCY && typeof session.amount_total === "number" && session.amount_total !== CATALOG_UNIT_AMOUNT) {
+    return { action: "ignore", reason: "amount", receiptId };
+  }
+  const sha = session?.metadata?.receipt_sha256;
+  if (!isValidReceiptSha256(sha)) return { action: "ignore", reason: "receipt_sha256", receiptId };
   if (!priceOk) return { action: "ignore", reason: "price", receiptId };
   return { action: "record", receiptId };
+}
+
+export function decideRefund(event, charge) {
+  if (event?.type !== "charge.refunded") return { action: "ignore", reason: "event" };
+  if (charge?.livemode === true || event.livemode === true) return { action: "ignore", reason: "livemode" };
+  const amount = charge?.amount;
+  const refunded = charge?.amount_refunded;
+  const full = charge?.refunded === true
+    || (typeof amount === "number" && amount > 0 && typeof refunded === "number" && refunded >= amount);
+  if (!full) return { action: "ignore", reason: "partial_refund" };
+  return { action: "revoke", reason: "refunded" };
 }
 
 export function isCheckoutUrl(url) {

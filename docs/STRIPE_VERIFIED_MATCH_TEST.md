@@ -39,11 +39,12 @@ Prefer a **restricted test key** (`rk_test_…`) with write access to Checkout S
 
 1. **Site CTA** on `site/index.html` (GitHub Pages: https://conwan30.github.io/qortime/). A navy/aqua/gold **Buy Verified Match (test)** button in the hero and in the `#verified-match` section opens the Payment Link above. The label says test. Cancel returns to `/?checkout=cancel#verified-match`.
 2. **Receipt-tied Checkout** in `services/verified-match/` (Node 22, Stripe Node SDK 23, API `2026-09-30.endive`). `POST /v1/checkout` creates a hosted Checkout Session for `STRIPE_PRICE_ID` with `metadata.receipt_id`, `client_reference_id`, and `payment_intent_data.metadata.receipt_id`. Success URL: `{SITE}/verify/?checkout=success&receipt_id=…&session_id={CHECKOUT_SESSION_ID}`. Dynamic payment methods stay on (`payment_method_types` is not sent). Tax is off (no registration). Adaptive Pricing is enabled.
-3. **Webhook** `POST /v1/webhook` verifies `Stripe-Signature` with `STRIPE_WEBHOOK_SECRET`, then handles:
+3. **Webhook** `POST /v1/webhook` verifies `Stripe-Signature` with `STRIPE_WEBHOOK_SECRET` (5 minute tolerance), then handles:
    - `checkout.session.completed`
    - `checkout.session.async_payment_succeeded`
    - `checkout.session.async_payment_failed`
-   A receipt is marked paid only when `livemode` is false, `payment_status` is not `unpaid`, and a line item price equals `STRIPE_PRICE_ID`. Live events are acknowledged and ignored.
+   - `charge.refunded`
+   A receipt is marked paid only when `livemode` is false, `payment_status` is `paid`, the session currency is not a discounted or non-$9.99 USD total, `metadata.receipt_id` matches `client_reference_id`, `metadata.receipt_sha256` is present, and the Stripe Price object on the single line item is `STRIPE_PRICE_ID` at 999 USD cents. A success-page redirect does not mark anything paid. A full refund of that PaymentIntent clears the flag, and a replay of the same PaymentIntent cannot grant it again. Live events are acknowledged and ignored.
 4. **Store** is a JSON object at `STORE_PATH` (default `/data/receipts.json`). On Railway, mount a volume at `/data` so a redeploy does not wipe paid receipts.
 5. **Verifier badge** on `verify/index.html`. The receipt id is `receipt_id` when present, otherwise `match.match_id`. `GET /v1/receipts/:receipt_id` drives a gold **Verified Match** badge labeled **TEST MODE**. The signature verdict is unchanged. The receipt JSON is not uploaded.
 
@@ -98,7 +99,7 @@ npm start
 Operator steps still required before a test card payment can stamp a badge:
 
 1. Put `STRIPE_SECRET_KEY` (a restricted test key) in the Railway service variables if it is not set. `STRIPE_WEBHOOK_SECRET` and `STRIPE_PRICE_ID` stay on the host. Do not commit them.
-2. The Stripe **test** webhook should aim at `https://qortime-verified-match-production.up.railway.app/v1/webhook` for the three `checkout.session.*` events above. Its signing secret stays in `STRIPE_WEBHOOK_SECRET`.
+2. The Stripe **test** webhook should aim at `https://qortime-verified-match-production.up.railway.app/v1/webhook` for the three `checkout.session.*` events above plus `charge.refunded`. Its signing secret stays in `STRIPE_WEBHOOK_SECRET`.
 3. `apiBase` in `verify/verified-match.js` is already that Railway origin with no trailing slash. GitHub Pages updates when `verify/**` lands on `main`.
 4. Keep the service awake. A sleeping host can miss the webhook that paints the badge.
 
