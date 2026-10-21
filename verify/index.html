@@ -124,6 +124,8 @@ function setPaid(data, id, contentSha) {
     $("vm-state").textContent = `Test payment recorded for ${id}. This badge is test-mode until live KYC. It does not change the signature verdict.`;
   } else if (status === "failed") {
     $("vm-state").textContent = `Test payment for ${id} did not succeed. You can start checkout again.`;
+  } else if (status === "refunded") {
+    $("vm-state").textContent = `Test payment for ${id} was refunded. The paid tag stays off.`;
   } else if (id) {
     $("vm-state").textContent = `No test payment recorded for ${id} yet.`;
   } else {

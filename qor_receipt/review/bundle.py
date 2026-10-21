@@ -239,10 +239,29 @@ def check_receipt_binding(b: Bundle) -> list[str]:
             errs.append(f"receipt checkpoint {i} hash differs from checkpoints.jsonl")
             break
     if b.countersigned:
-        for i, (x, y) in enumerate(zip(cps, b.countersigned)):
-            if x.get("hash") != y.get("hash") or x.get("referee_sig") != y.get("referee_sig"):
-                errs.append(f"receipt checkpoint {i} differs from countersigned.jsonl")
-                break
+        # v0.3.28 seals at the stop checkpoint and refuses later ones. Start Match puts the
+        # whole live log in the receipt, so a completed match has equal lengths. Finalize still
+        # signs live[:len(checkpoints.jsonl)] when the log is longer and does not truncate the
+        # file. That extra line is a signed checkpoint the receipt does not carry. Accepting the
+        # prefix would hide it. A shorter log is a truncated chain. Equal length still requires
+        # each hash and referee_sig (match 021003 stays a rejection).
+        n, m = len(cps), len(b.countersigned)
+        if m < n:
+            errs.append(
+                f"countersigned.jsonl ends before the receipt chain "
+                f"(receipt has {n} checkpoints for {b.role}, countersigned.jsonl has {m})"
+            )
+        elif m > n:
+            errs.append(
+                f"countersigned.jsonl continues past the receipt chain "
+                f"(receipt has {n} checkpoints for {b.role}, countersigned.jsonl has {m}); "
+                f"a signed checkpoint the receipt does not carry"
+            )
+        else:
+            for i, (x, y) in enumerate(zip(cps, b.countersigned)):
+                if x.get("hash") != y.get("hash") or x.get("referee_sig") != y.get("referee_sig"):
+                    errs.append(f"receipt checkpoint {i} differs from countersigned.jsonl")
+                    break
     if b.meta.get("match_id") and b.match_id and b.meta["match_id"] != b.match_id and b.meta["match_id"] != "unassigned":
         errs.append("receipt match_id differs from bundle.json")
     return errs

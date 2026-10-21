@@ -178,6 +178,37 @@ def test_unreadable_final_fails_closed_without_reader(tmp_path):
     assert out["state"] == "refused" and "unavailable" in out["review"]["checks"]["final_reread"]["detail"]
 
 
+def test_countersigned_mismatch_is_http_422(tmp_path, monkeypatch):
+    """Match 021003's open 422 is this rejection, not a parser bug.
+
+    The published receipt was re-signed offline after a side correction, so checkpoint 0
+    does not match countersigned.jsonl. The service must keep failing that closed.
+    """
+    from fastapi.testclient import TestClient
+
+    from qor_receipt.referee_service.app import create_app
+
+    monkeypatch.setenv("QORTIME_SUBMIT_TOKEN", "admin-token")
+    e = Env(tmp_path)
+    files = dict(e.fx["files"])
+    lines = files["countersigned.jsonl"].decode().splitlines()
+    first = json.loads(lines[0])
+    first["referee_sig"] = "ab" * 64
+    lines[0] = json.dumps(first)
+    files["countersigned.jsonl"] = ("\n".join(lines) + "\n").encode()
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        for name, data in files.items():
+            z.writestr(name, data)
+    res = TestClient(create_app(e.ref)).post(
+        "/v1/submissions", content=buf.getvalue(), headers={"Authorization": "Bearer admin-token"})
+    assert res.status_code == 422, res.text
+    detail = res.json()["detail"]
+    assert detail["state"] == "rejected"
+    assert "receipt checkpoint 0 differs from countersigned.jsonl" in detail["errors"]
+    assert "upload_token" not in detail
+
+
 def test_precheck_rejects_broken_bundle(tmp_path):
     e = Env(tmp_path)
     files = dict(e.fx["files"])

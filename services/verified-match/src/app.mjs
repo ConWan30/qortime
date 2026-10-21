@@ -1,10 +1,12 @@
 import { createServer } from "node:http";
 import {
+  WEBHOOK_TOLERANCE_SECONDS,
   buildCheckoutParams,
   decideFulfillment,
+  decideRefund,
   isCheckoutUrl,
   keyClass,
-  lineItemsIncludePrice,
+  lineItemsMatchCatalog,
   siteOrigin,
 } from "./fulfill.mjs";
 import { isValidReceiptId, isValidReceiptSha256 } from "./receipt-id.mjs";
@@ -43,12 +45,36 @@ function readBody(req, limit) {
   });
 }
 
-function clientIp(req) {
-  const forwarded = req.headers["x-forwarded-for"];
-  if (typeof forwarded === "string" && forwarded.length > 0) {
-    return forwarded.split(",")[0].trim();
-  }
-  return req.socket?.remoteAddress || "unknown";
+function isTrustedProxyPeer(ip) {
+  if (typeof ip !== "string" || ip.length === 0) return false;
+  const s = ip.replace(/^::ffff:/i, "");
+  if (s === "127.0.0.1" || s === "::1") return true;
+  if (s.startsWith("10.") || s.startsWith("192.168.") || s.startsWith("169.254.")) return true;
+  const rfc1918 = /^172\.(\d+)\./.exec(s);
+  if (rfc1918 && Number(rfc1918[1]) >= 16 && Number(rfc1918[1]) <= 31) return true;
+  const cgnat = /^100\.(\d+)\./.exec(s);
+  if (cgnat && Number(cgnat[1]) >= 64 && Number(cgnat[1]) <= 127) return true;
+  return s.startsWith("fc") || s.startsWith("fd");
+}
+
+function lastHop(header) {
+  if (typeof header !== "string" || header.length === 0) return "";
+  const parts = header.split(",").map((part) => part.trim()).filter(Boolean);
+  return parts.length > 0 ? parts[parts.length - 1] : "";
+}
+
+/**
+ * Direct clients are limited by their socket address, so a spoofed X-Forwarded-For does nothing.
+ * Behind a private proxy (Railway), the proxy appends the real client, so the last hop is used.
+ */
+export function clientIp(req) {
+  const peer = req.socket?.remoteAddress || "";
+  if (!isTrustedProxyPeer(peer)) return peer || "unknown";
+  const forwarded = lastHop(req.headers["x-forwarded-for"]);
+  if (forwarded) return forwarded;
+  const real = req.headers["x-real-ip"];
+  if (typeof real === "string" && real.trim()) return real.trim();
+  return peer || "unknown";
 }
 
 function rateLimiter() {
@@ -112,9 +138,12 @@ function resolvedKeyClass(ctx) {
 }
 
 async function priceMatches(stripe, session, priceId) {
-  const listed = await stripe.checkout.sessions.listLineItems(session.id, { limit: 20 });
+  const listed = await stripe.checkout.sessions.listLineItems(session.id, {
+    limit: 20,
+    expand: ["data.price"],
+  });
   const rows = Array.isArray(listed?.data) ? listed.data : [];
-  return lineItemsIncludePrice(rows, priceId);
+  return lineItemsMatchCatalog(rows, priceId);
 }
 
 export async function handle(req, res, ctx) {
@@ -244,10 +273,6 @@ export async function handle(req, res, ctx) {
       json(res, 503, { error: "Webhook is not configured yet." }, cors);
       return;
     }
-    if (resolvedKeyClass(ctx) === "live") {
-      json(res, 200, { received: true, action: "ignore", reason: "live_key" }, cors);
-      return;
-    }
     const signature = req.headers["stripe-signature"];
     let raw;
     try {
@@ -259,13 +284,56 @@ export async function handle(req, res, ctx) {
     }
     let event;
     try {
-      event = ctx.stripe.webhooks.constructEvent(raw, signature, env.STRIPE_WEBHOOK_SECRET);
+      event = ctx.stripe.webhooks.constructEvent(
+        raw,
+        signature,
+        env.STRIPE_WEBHOOK_SECRET,
+        WEBHOOK_TOLERANCE_SECONDS,
+      );
     } catch (err) {
       console.error("webhook signature rejected", safeError(err));
       json(res, 400, { error: "Invalid webhook signature" }, cors);
       return;
     }
-    const session = event.data?.object ?? {};
+    if (resolvedKeyClass(ctx) === "live") {
+      json(res, 200, { received: true, action: "ignore", reason: "live_key" }, cors);
+      return;
+    }
+    const object = event.data?.object ?? {};
+    if (event.type === "charge.refunded") {
+      const refundDecision = decideRefund(event, object);
+      if (refundDecision.action !== "revoke") {
+        json(res, 200, { received: true, action: refundDecision.action, reason: refundDecision.reason || null }, cors);
+        return;
+      }
+      const paymentIntentId = typeof object.payment_intent === "string"
+        ? object.payment_intent
+        : object.payment_intent?.id || null;
+      let receiptId = isValidReceiptId(object.metadata?.receipt_id) ? object.metadata.receipt_id : null;
+      if (!receiptId && paymentIntentId && ctx.stripe.paymentIntents?.retrieve) {
+        try {
+          const pi = await ctx.stripe.paymentIntents.retrieve(paymentIntentId);
+          if (isValidReceiptId(pi?.metadata?.receipt_id)) receiptId = pi.metadata.receipt_id;
+        } catch (err) {
+          console.error("refund lookup failed", safeError(err));
+          json(res, 500, { error: "Could not confirm the refund." }, cors);
+          return;
+        }
+      }
+      if (!receiptId || !paymentIntentId) {
+        json(res, 200, { received: true, action: "ignore", reason: "receipt_id" }, cors);
+        return;
+      }
+      await ctx.store.save({
+        op: "revoke",
+        receipt_id: receiptId,
+        payment_intent: paymentIntentId,
+        recorded_at: new Date(ctx.now ? ctx.now() : Date.now()).toISOString(),
+      });
+      json(res, 200, { received: true, action: "revoke", reason: "refunded" }, cors);
+      return;
+    }
+    const session = object;
     const priceId = configuredPrice(env);
     let priceOk = false;
     const needsPrice =
@@ -283,17 +351,21 @@ export async function handle(req, res, ctx) {
     const decision = decideFulfillment(event, session, { priceOk });
     if (decision.action === "record") {
       const sha = typeof session?.metadata?.receipt_sha256 === "string" ? session.metadata.receipt_sha256.toLowerCase() : null;
+      const paymentIntent = typeof session.payment_intent === "string"
+        ? session.payment_intent
+        : session.payment_intent?.id || null;
       await ctx.store.save({
         receipt_id: decision.receiptId,
         paid: true,
         mode: "test",
         livemode: false,
         tier: "verified-match",
-        payment_status: session.payment_status || "paid",
+        payment_status: "paid",
         price_id: priceId,
         session_id: session.id,
+        payment_intent: paymentIntent,
         recorded_at: new Date(ctx.now ? ctx.now() : Date.now()).toISOString(),
-        receipt_sha256: isValidReceiptSha256(sha) ? sha : null,
+        receipt_sha256: sha,
       });
     } else if (decision.action === "fail") {
       await ctx.store.save({

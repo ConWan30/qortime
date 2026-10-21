@@ -224,8 +224,14 @@ def test_published_original_receipts_keep_their_real_verdicts():
     earlier = (root / "site/matches/021003/receipt-pre-psn-20261018.json").read_bytes()
     assert hashlib.sha256(current).hexdigest().startswith("182d3a02")
     assert hashlib.sha256(earlier).hexdigest().startswith("2ea2645d")
-    attested = verify_receipt(json.loads(current))
+    attested_body = json.loads(current)
+    attested = verify_receipt(attested_body)
     assert attested["status"] == "SELF_ATTESTED" and attested["errors"] == []
+    # Offline re-sign after the side correction. The official referee 422s because these
+    # checkpoint signatures are not the live countersigned.jsonl. That rejection is correct.
+    assert attested_body["referee"]["key_kind"] == "local-self-attested-offline"
+    assert any("side corrected after recording" in n for n in attested_body["result"]["notes"])
+    assert attested["status"] != "VERIFIED"
     page2 = (root / "site/matches/021003/index.html").read_text()
     assert "HTTP 422" in page2 and "receipt-pre-psn-20261018.json" in page2
     assert "not submitted" not in page2.lower()
