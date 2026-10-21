@@ -141,11 +141,13 @@ export function decideFulfillment(event, session, { priceOk }) {
 export function decideRefund(event, charge) {
   if (event?.type !== "charge.refunded") return { action: "ignore", reason: "event" };
   if (charge?.livemode === true || event.livemode === true) return { action: "ignore", reason: "livemode" };
-  const amount = charge?.amount;
-  const refunded = charge?.amount_refunded;
-  const full = charge?.refunded === true
-    || (typeof amount === "number" && amount > 0 && typeof refunded === "number" && refunded >= amount);
-  if (!full) return { action: "ignore", reason: "partial_refund" };
+  const amountRefunded = charge?.amount_refunded;
+  const provenZero = charge?.refunded === false
+    && typeof amountRefunded === "number"
+    && Number.isFinite(amountRefunded)
+    && amountRefunded === 0;
+  // Partial, full, or a charge.refunded whose amount we cannot read. Fail closed.
+  if (provenZero) return { action: "ignore", reason: "no_refund" };
   return { action: "revoke", reason: "refunded" };
 }
 

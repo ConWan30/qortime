@@ -2,7 +2,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 /**
- * Paid sticks until a full refund of that same PaymentIntent.
+ * Paid sticks until any refund of that same PaymentIntent.
  * A replay of a refunded PaymentIntent cannot grant again.
  * A different PaymentIntent can pay after a refund.
  * Failed writes never clear a paid or refunded row.

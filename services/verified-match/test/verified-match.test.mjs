@@ -149,7 +149,9 @@ test("fulfillment records a paid test session only when the price matches", () =
   assert.equal(lineItemsMatchCatalog([{ quantity: 1, price: PRICE }], PRICE), false);
 
   assert.equal(decideRefund({ type: "charge.refunded", livemode: false }, { livemode: false, refunded: true, amount: 999, amount_refunded: 999 }).action, "revoke");
-  assert.equal(decideRefund({ type: "charge.refunded", livemode: false }, { livemode: false, refunded: false, amount: 999, amount_refunded: 100 }).reason, "partial_refund");
+  assert.equal(decideRefund({ type: "charge.refunded", livemode: false }, { livemode: false, refunded: false, amount: 999, amount_refunded: 100 }).action, "revoke");
+  assert.equal(decideRefund({ type: "charge.refunded", livemode: false }, { livemode: false, refunded: false, amount: 999, amount_refunded: 0 }).reason, "no_refund");
+  assert.equal(decideRefund({ type: "charge.refunded", livemode: false }, { livemode: false }).action, "revoke");
   assert.equal(decideRefund({ type: "charge.refunded", livemode: true }, { livemode: true, refunded: true }).reason, "livemode");
 });
 
@@ -479,13 +481,21 @@ test("a refund clears that payment and a replay cannot grant it again", async ()
       body: JSON.stringify(body),
     });
     assert.equal((await (await post(paidEvent)).json()).action, "record");
+    const zero = await post({
+      type: "charge.refunded",
+      livemode: false,
+      data: { object: { id: "ch_test", livemode: false, refunded: false, amount: 999, amount_refunded: 0, payment_intent: "pi_test_paid" } },
+    });
+    assert.equal((await zero.json()).reason, "no_refund");
+    assert.equal((await (await fetch(`${base}/v1/receipts/match_42`)).json()).paid, true);
+
     const partial = await post({
       type: "charge.refunded",
       livemode: false,
       data: { object: { id: "ch_test", livemode: false, refunded: false, amount: 999, amount_refunded: 100, payment_intent: "pi_test_paid" } },
     });
-    assert.equal((await partial.json()).reason, "partial_refund");
-    assert.equal((await (await fetch(`${base}/v1/receipts/match_42`)).json()).paid, true);
+    assert.equal((await partial.json()).action, "revoke");
+    assert.equal((await (await fetch(`${base}/v1/receipts/match_42`)).json()).paid, false);
 
     const refunded = await post({
       type: "charge.refunded",
