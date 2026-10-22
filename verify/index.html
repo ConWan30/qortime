@@ -28,6 +28,14 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .addon.corroborated{border-color:rgba(46,242,255,.55);color:#d7fbff}
 .addon.disagreed{border-color:#f85149;color:#ffb4b0}
 .addon.single_sided{color:#b9c1d6}
+#device{margin-top:.85rem;padding:.75rem .95rem;border-radius:12px;border:1px solid #30363d;background:#0d1117}
+#device strong{letter-spacing:.08em}
+#device .why{display:block;margin-top:.35rem;color:#8b949e}
+#device ul{margin:.4rem 0 0;padding-left:1.1rem}
+#device.invalid{border-color:#f85149;color:#ffb4b0}
+#device.tpm_attested{border-color:rgba(46,242,255,.55);color:#d7fbff}
+#device.tpm_claimed{border-color:#d29922;color:#e6c07b}
+#device.software{color:#b9c1d6}
 .tier{display:inline-block;margin-left:1rem;font-size:1rem;padding:.2rem .6rem;border:1px solid #30363d;border-radius:99px}
 pre{background:#161b22;padding:.75rem;border-radius:6px;white-space:pre-wrap}small{color:#8b949e}
 .vm{margin:1.25rem 0;padding:1.1rem 1.15rem;border-radius:18px;border:1px solid rgba(228,197,109,.4);background:radial-gradient(420px 180px at 100% 0%,rgba(46,242,255,.14),transparent 60%),linear-gradient(165deg,#0c1c33,#071018)}
@@ -72,6 +80,7 @@ pre{background:#161b22;padding:.75rem;border-radius:6px;white-space:pre-wrap}sma
 <button id="go">Verify</button>
 <div id="badge"></div>
 <div id="corroboration" class="addon" hidden></div>
+<div id="device" hidden></div>
 <pre id="out" hidden></pre>
 <script type="module">
 import { verifyReceipt } from "./verify.js";
@@ -172,7 +181,7 @@ $("sample").onclick = async () => {
     $("vm-err").textContent = err instanceof Error ? err.message : "Demo receipt failed to load";
   }
 };
-$("json").addEventListener("input", () => { sigStatus = null; $("corroboration").hidden = true; watchReceipt(); });
+$("json").addEventListener("input", () => { sigStatus = null; $("corroboration").hidden = true; $("device").hidden = true; watchReceipt(); });
 
 function sameOriginReceipt(raw) {
   if (!raw) return null;
@@ -282,13 +291,45 @@ function paintCorroboration(v) {
   }
 }
 
+function paintDevice(v) {
+  const el = $("device");
+  const d = v && v.device_key;
+  el.replaceChildren();
+  if (!d) { el.hidden = true; el.className = ""; return; }
+  el.hidden = false;
+  el.className = d.status;
+  const labels = {
+    tpm_attested: "DEVICE KEY · TPM ATTESTED",
+    tpm_claimed: "DEVICE KEY · TPM CLAIMED",
+    software: "DEVICE KEY · SOFTWARE",
+    invalid: "DEVICE KEY · INVALID",
+  };
+  const title = document.createElement("strong");
+  title.textContent = labels[d.status] || d.status;
+  el.append(title);
+  const why = document.createElement("span");
+  why.className = "why";
+  why.textContent = d.detail || "";
+  el.append(why);
+  if (d.flags && d.flags.length) {
+    const ul = document.createElement("ul");
+    for (const flag of d.flags) {
+      const li = document.createElement("li");
+      li.textContent = flag;
+      ul.append(li);
+    }
+    el.append(ul);
+  }
+}
+
 $("go").onclick = async () => {
-  let r; try { r = JSON.parse($("json").value); } catch { $("badge").className = "FAIL"; $("badge").textContent = "FAIL: not JSON"; $("corroboration").hidden = true; return; }
+  let r; try { r = JSON.parse($("json").value); } catch { $("badge").className = "FAIL"; $("badge").textContent = "FAIL: not JSON"; $("corroboration").hidden = true; $("device").hidden = true; return; }
   const v = await verifyReceipt(r, $("pub").value.trim() || null);
   sigStatus = v.status;
   $("badge").className = v.status;
   $("badge").innerHTML = `${v.status}<span class="tier">${v.trust_tier ?? "no tier"} · referee ${v.referee_trust ?? "?"}${v.referee_id ? " ("+v.referee_id+")" : ""}</span>`;
   paintCorroboration(v);
+  paintDevice(v);
   const res = r.result || {};
   $("out").hidden = false;
   const basis = v.verification_basis === "official-post-hoc-review"

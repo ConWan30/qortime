@@ -42,6 +42,7 @@ from qor_receipt.review.corroboration import (
     read_pairing_file,
     side_from_bundle,
 )
+from qor_receipt.review.device_attest import DEVICE_ATTEST_SCHEMA, device_key_for_bundle
 from qor_receipt.review.policy import (
     ANCHOR_TYPE,
     CHALLENGE_TOKEN_TYPE,
@@ -140,7 +141,8 @@ class Referee:
                 "scorebug_profiles": M.sidecar_profiles(self.sidecar_dir) if self.core_factory is not None else [],
                 "policy": {"random_segments": self.random_segments, "tail_ms": self.tail_ms, "modes": [SPOT, FULL],
                            "pairing_type": PAIRING_TYPE,
-                           "corroboration_tolerance_ms": SCORE_EVENT_TOLERANCE_MS},
+                           "corroboration_tolerance_ms": SCORE_EVENT_TOLERANCE_MS,
+                           "device_attest": DEVICE_ATTEST_SCHEMA},
                 "delegation": self.delegation,
                 "log": ({"size": len(self.log.entries), "head": self.log.head} if self.log is not None else None)}
 
@@ -445,6 +447,10 @@ class Referee:
                                f"spot-check of {len(sub.received)}/{len(b.segments)} segments (init, recorded tail, "
                                f"challenge windows, {k} random segments drawn after commit)")),
                   "not_proven": NOT_PROVEN}
+        device_key = device_key_for_bundle(b)
+        if device_key is not None:
+            # Informational. Not a check, so it cannot pass or fail the review.
+            review["device_key"] = device_key
         sub.review = review
         sub.corroboration = corroboration
         if any(c["state"] == FAIL_CHECK for c in checks.values()):
