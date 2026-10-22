@@ -109,15 +109,18 @@ segments_verified, segments_total, not_proven}`; the browser verifier prints the
 
 ## Two-sided corroboration (additive)
 
-When both players record with QorCap, each submission can carry a `pairing.json` token from `POST /v1/pairings`.
-The referee links the two submissions only when that token verifies under the referee key. The pairing id and
-nonce are whatever the referee signed. A client-chosen id is not a link.
+`POST /v1/pairings` ignores the body and returns a referee-signed `qortime-pairing/v1` token.
+`pairing_id` and `nonce` are 32 hex characters chosen here. Each player stores that exact JSON as
+`pairing.json`. A client-chosen id is not a link. This request and token shape are stable.
 
-The cross-check reads each player-signed score timeline and writes `review.corroboration`
-(`corroborated`, `disagreed`, or `single_sided`). It is not one of `review.checks`. A disagreement is shown
-on the verify page and does not flip VERIFIED to FAIL. A pair that agrees does not flip FAIL to VERIFIED.
-One submission, or a forged pairing token, stays `single_sided` and is still judged by the single-sided rules
-above. Detail: [CORROBORATION.md](CORROBORATION.md).
+The cross-check reads each signed score timeline. `signals.score_timeline` inside `receipt.json`
+wins when it is present. Otherwise optional `score_timeline.json` is used after its chain and
+signature verify. The result is `review.corroboration` (`corroborated`, `disagreed`, or
+`single_sided`), including `finals.home` and `finals.away` when those scores were read. It is not
+one of `review.checks`. A disagreement is shown and does not flip VERIFIED to FAIL. A pair that
+agrees does not flip FAIL to VERIFIED. One submission, a missing timeline, or a forged pairing
+token stays on the single-sided rules (`single_sided`, or `disagreed` / `unsigned_score_timeline`
+when both players submitted and the timeline does not check out). Detail: [CORROBORATION.md](CORROBORATION.md).
 
 ## Device key (informational)
 

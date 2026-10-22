@@ -25,11 +25,60 @@ token signed by another key is `pairing_unverified`: the submission stays `singl
 (`home` or `away`) comes from the bundle, not from the token. Two submissions that claim the same role
 are `role_conflict` and `disagreed`.
 
+## Pairing contract (stable)
+
+QorCap calls this. Do not change the token shape or the endpoint.
+
+`POST /v1/pairings` takes no meaningful body. A client-supplied id or nonce is ignored. The response
+is a referee signature over RFC 8785 JCS of every field except `sig`:
+
+```json
+{"type": "qortime-pairing/v1", "pairing_id": "<32 hex>", "nonce": "<32 hex>", "issued_ms": 0, "key_id": "<16 hex>", "sig": "<128 hex>"}
+```
+
+`pairing_id` and `nonce` are 32 lowercase hex characters from the referee. Each player stores that
+JSON object, unchanged, as `pairing.json` in the bundle. The referee links the two submissions only
+when that signature verifies under the referee key. The role comes from the bundle, not the token.
+
 ## Signed score timeline
 
-The timeline that is cross-checked is `signals.score_timeline.events` inside the player-signed
-`receipt.json`. Each event is `{t_ms, home, away, quarter}`. The player signature is the commitment.
-Events that fail that signature are not a timeline (`unsigned_score_timeline`).
+When `receipt.json` contains `signals.score_timeline.events`, that player-signed field is the
+timeline. The root of `receipt.v0.json` has `additionalProperties: false` and does not list
+`score_timeline`, so the events are not a root field. QorCap PR #59 does not write them into
+`receipt.json`. `signals` does not set `additionalProperties: false`, so a receipt that does
+include the field is still schema-legal, and that field wins over the sidecar.
+
+When the field is absent, the referee reads optional `score_timeline.json`
+(`qorcap-score-timeline/v0`), the sidecar from QorCap PR #59. Each event is
+`{t_ms, home, away, quarter}`.
+
+The signed bytes are RFC 8785 JCS of:
+
+```json
+{"type": "qorcap-score-timeline/v0", "signals": {"score_timeline": {"events": []}}, "chain": [], "chain_head": "<64 hex>", "checkpoint_head": "<64 hex>"}
+```
+
+The `signature` object is not part of those bytes. Each chain link is
+`sha256(JCS({t_ms, home, away, quarter, prev}))`. The first `prev` is 64 `0` characters.
+`chain_head` is the last link. `checkpoint_head` is `receipt.checkpoints[<role>][-1].hash`.
+
+Two signatures over those bytes are accepted:
+
+1. Ed25519. `signature.pub` and `signature.sig` are hex. `pub` is the receipt player public key.
+   This is what QorCap `write_score_timeline(bundle, device, rec)` writes: `device` is the key
+   that also signs the receipt. It is not the optional TPM key.
+2. The public key in `device_attest.v0.json`, when that file is in the bundle and its own
+   signature over the same checkpoint head verifies (`software` or `tpm_claimed`).
+   `signature.pub` is `public_key_spki_b64` or the hex of that SPKI DER. `signature.sig` is hex
+   or standard base64. ECDSA P-256 is DER over SHA-256. RSA-2048 is RSASSA-PKCS1-v1_5 over
+   SHA-256, the same bytes `src/device_attest.rs` verifies. PSS is not accepted. A key pasted
+   into the sidecar without a valid device signature does not count. The status of that key is
+   still at most `tpm_claimed`.
+
+A missing file, a bad chain, a checkpoint head that is not the receipt head, or a signature that
+does not verify is not a timeline. Both players present and no timeline is `disagreed` with
+`unsigned_score_timeline`. One player is still `single_sided`. The sidecar never changes
+`VERIFIED` or `FAIL`.
 
 If `timeline.jsonl` is also in the bundle, its score reads (observation spans ignored) must collapse to
 the same state changes at the same timestamps. A mismatch is `timeline_file_mismatch`. The file does not

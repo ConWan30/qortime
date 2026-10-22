@@ -35,6 +35,9 @@ def test_python_constants_match_compat():
     assert list(B.REQUIRED_FILES) == COMPAT["bundle_files"]["required"]
     assert {R.VERIFIED, R.PARTIAL, R.SELF_ATTESTED, R.FAIL} == set(COMPAT["verdicts"])
     assert P.REVIEW_TYPE == COMPAT["review_type"] and P.CHALLENGE_TOKEN_TYPE == COMPAT["challenge_token_type"]
+    assert P.PAIRING_TYPE == COMPAT["pairing"]["type"]
+    assert "score_timeline.json" in COMPAT["bundle_files"]["meta"]
+    assert COMPAT["score_timeline"]["schema"] == "qorcap-score-timeline/v0"
 
 
 def test_receipt_schema_enums_match_compat():
@@ -43,6 +46,10 @@ def test_receipt_schema_enums_match_compat():
     assert set(res["method"]["enum"]) == set(COMPAT["result_methods"])
     assert set(res["final_basis"]["enum"]) == set(COMPAT["final_basis"])
     assert s["properties"]["schema"]["const"] in COMPAT["receipt_schemas"]
+    assert s["additionalProperties"] is False
+    assert "score_timeline" not in s["properties"]
+    signals = s["properties"]["signals"]["properties"]
+    assert "score_timeline" not in signals
 
 
 def test_js_constants_match_compat():

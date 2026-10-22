@@ -45,8 +45,11 @@ field. Present and unreadable means `invalid`.
 `windows-tpm`, `platform-crypto`, and `ncrypt` are TPM claims. Anything else with a valid
 signature is `invalid` (`key_provider_unknown`).
 
-`algorithm`: `ed25519`, or `ecdsa-p256-sha256` (aliases `ecdsa-p256` and `p256`). The SPKI
-key type must match the algorithm.
+`algorithm`: `ed25519`, `ecdsa-p256-sha256` (aliases `ecdsa-p256`, `p256`, and QorCap's
+`ECDSA_P256`), or `rsa-2048` (aliases `RSA_2048` and `rsa2048`). The SPKI key type must match.
+RSA-2048 is RSASSA-PKCS1-v1_5 over SHA-256, a 256-byte signature, which is what
+QorCap `src/device_attest.rs` produces. PSS is not accepted. A valid RSA signature on a TPM
+provider is `tpm_claimed`. It is not `tpm_attested`.
 
 `non_exportable` is a JSON boolean. Missing is not treated as true.
 

@@ -7,7 +7,7 @@ import hashlib
 import json
 
 from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric import ec, padding, rsa
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
@@ -93,6 +93,29 @@ def test_tpm_claimed_when_signature_valid_and_attestation_absent():
     assert out["status"] == "tpm_claimed"
     assert out["non_exportable"] is True
     assert out["affects_verdict"] is False
+
+
+def test_rsa_2048_tpm_key_is_claimed_not_attested():
+    """QorCap signs RSA-2048 with RSASSA-PKCS1-v1_5 SHA-256. That stays tpm_claimed."""
+    priv = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    message = device_signed_bytes(HEAD)
+    body = {
+        "schema": DEVICE_ATTEST_SCHEMA,
+        "key_provider": "platform-crypto",
+        "algorithm": "RSA_2048",
+        "public_key_spki_b64": _b64(_spki(priv)),
+        "non_exportable": True,
+        "signature_b64": _b64(priv.sign(message, padding.PKCS1v15(), hashes.SHA256())),
+    }
+    out = assess_device_attest(json.dumps(body).encode(), chain_head_hex=HEAD)
+    assert out["status"] == "tpm_claimed", out
+    assert out["status"] != "tpm_attested"
+    assert out["algorithm"] == "rsa-2048"
+    assert "unverified" in out["detail"].lower()
+    body["signature_b64"] = _b64(b"\x00" * 256)
+    bad = assess_device_attest(json.dumps(body).encode(), chain_head_hex=HEAD)
+    assert bad["status"] == "invalid"
+    assert "device_signature_invalid" in bad["flags"]
 
 
 def test_software_keypair_self_made_blob_never_exceeds_tpm_claimed():

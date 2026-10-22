@@ -7,9 +7,12 @@ result. The status is ``corroborated``, ``disagreed``, or ``single_sided``.
 The pairing id and nonce are taken only from a referee-signed
 ``qortime-pairing/v1`` token. A client-supplied id is not a link.
 
-Score timelines are the events inside the player-signed receipt at
-``signals.score_timeline.events``. Each event is
-``{t_ms, home, away, quarter}``. Consecutive identical (home, away, quarter)
+Score timelines are ``signals.score_timeline.events`` inside the player-signed
+receipt when that field is present. Each event is
+``{t_ms, home, away, quarter}``. When the receipt has no such field, the
+optional ``score_timeline.json`` sidecar is the timeline, after its hash chain
+and signature check out (see ``qor_receipt.review.score_timeline``). A missing
+or bad sidecar is not a timeline. Consecutive identical (home, away, quarter)
 states are one change. Those changes must occur in the same order on both
 sides, and each pair of timestamps must differ by at most
 ``SCORE_EVENT_TOLERANCE_MS`` (5_000, the same window as
@@ -30,6 +33,7 @@ from qor_receipt.final_detect import timelines_agree
 from qor_receipt.jcs import canonicalize
 from qor_receipt.keys import kid, verify
 from qor_receipt.review.policy import FAIL_CHECK, PAIRING_TYPE, PARTIAL_CHECK
+from qor_receipt.review.score_timeline import events_from_sidecar
 
 CORROBORATION_SCHEMA = "qortime-corroboration/v0"
 CORROBORATED, DISAGREED, SINGLE_SIDED = "corroborated", "disagreed", "single_sided"
@@ -96,6 +100,9 @@ def corroboration_view(review: dict[str, Any] | None) -> dict[str, Any] | None:
                 cleaned[role] = {"own_checks": side["own_checks"][:32]}
         if cleaned:
             out["sides"] = cleaned
+    finals = _view_finals(raw.get("finals"))
+    if finals:
+        out["finals"] = finals
     return out
 
 
@@ -144,7 +151,22 @@ def read_pairing_file(files: dict[str, bytes]) -> dict[str, Any] | None:
     return value
 
 
-def side_from_receipt(receipt: dict[str, Any], *, own_checks: str, timeline_file: bytes | None = None) -> dict[str, Any] | None:
+def _view_finals(raw: Any) -> dict[str, list[int]]:
+    """Home and away final scores for display. Drop a pair that is not two non-negative ints."""
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, list[int]] = {}
+    for role in ("home", "away"):
+        pair = raw.get(role)
+        if (isinstance(pair, (list, tuple)) and len(pair) == 2
+                and all(_nonneg_int(n) for n in pair)):
+            out[role] = [int(pair[0]), int(pair[1])]
+    return out
+
+
+def side_from_receipt(receipt: dict[str, Any], *, own_checks: str, timeline_file: bytes | None = None,
+                      score_timeline_file: bytes | None = None,
+                      device_attest_file: bytes | None = None) -> dict[str, Any] | None:
     """A signed score timeline, or None when the player signature does not cover the receipt."""
     if not isinstance(receipt, dict) or not _player_signed(receipt):
         return None
@@ -153,7 +175,11 @@ def side_from_receipt(receipt: dict[str, Any], *, own_checks: str, timeline_file
     role = player.get("role")
     if role not in ("home", "away"):
         return None
-    events = _signed_events(receipt)
+    present, events = _receipt_timeline(receipt)
+    if not present:
+        events = events_from_sidecar(
+            score_timeline_file, player_pub=str(player.get("pubkey") or ""),
+            checkpoint_head=_checkpoint_head(receipt, role), device_attest=device_attest_file)
     if events is None:
         return None
     final = _final(receipt)
@@ -180,7 +206,9 @@ def side_from_bundle(bundle: Any, own_checks: str) -> dict[str, Any] | None:
     if not isinstance(receipt, dict):
         return None
     files = getattr(bundle, "files", {}) or {}
-    return side_from_receipt(receipt, own_checks=own_checks, timeline_file=files.get("timeline.jsonl"))
+    return side_from_receipt(receipt, own_checks=own_checks, timeline_file=files.get("timeline.jsonl"),
+                             score_timeline_file=files.get("score_timeline.json"),
+                             device_attest_file=files.get("device_attest.v0.json"))
 
 
 def build_corroboration(home: dict[str, Any] | None, away: dict[str, Any] | None, *,
@@ -298,13 +326,14 @@ def _player_signed(receipt: dict[str, Any]) -> bool:
     return verify(pub, sig, body)
 
 
-def _signed_events(receipt: dict[str, Any]) -> list[dict[str, Any]] | None:
+def _receipt_timeline(receipt: dict[str, Any]) -> tuple[bool, list[dict[str, Any]] | None]:
+    """(field present, events). Absent means the sidecar may supply the timeline."""
     signals = receipt.get("signals")
     if not isinstance(signals, dict) or "score_timeline" not in signals:
-        return None
+        return False, None
     block = signals.get("score_timeline")
     raw = block.get("events") if isinstance(block, dict) else block
-    return _event_list(raw)
+    return True, _event_list(raw)
 
 
 def _event_list(raw: Any) -> list[dict[str, Any]] | None:

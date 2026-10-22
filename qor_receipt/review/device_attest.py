@@ -18,7 +18,7 @@ from typing import Any
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric import ec, padding, rsa
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.hazmat.primitives.serialization import load_der_public_key
 
@@ -27,7 +27,7 @@ TPM_CLAIMED, SOFTWARE, INVALID = "tpm_claimed", "software", "invalid"
 STATUSES = frozenset({TPM_CLAIMED, SOFTWARE, INVALID})
 TPM_PROVIDERS = frozenset({"tpm", "windows-tpm", "platform-crypto", "ncrypt"})
 SOFTWARE_PROVIDERS = frozenset({"software", "software-file"})
-ALGORITHMS = frozenset({"ed25519", "ecdsa-p256-sha256"})
+ALGORITHMS = frozenset({"ed25519", "ecdsa-p256-sha256", "rsa-2048"})
 _MAX_FILE = 65_536
 _MAX_STR = 12_000
 _MAX_SPKI = 1_024
@@ -65,6 +65,27 @@ def chain_head_from_receipt(receipt: Any, role: str) -> str:
     if isinstance(head, str) and len(head) == 64 and all(c in "0123456789abcdef" for c in head.lower()):
         return head.lower()
     return ""
+
+
+def device_attest_verifies(raw: bytes | None, message: bytes, signature: bytes) -> bool:
+    """True when ``signature`` over ``message`` checks under the sidecar's public key.
+
+    Used by the score-timeline sidecar. A failure here is not a device_key status.
+    Never raises. Does not emit ``tpm_attested``.
+    """
+    if not isinstance(raw, (bytes, bytearray)) or not signature or len(raw) > _MAX_FILE:
+        return False
+    try:
+        doc = json.loads(bytes(raw).decode("utf-8"))
+    except (UnicodeError, ValueError):
+        return False
+    if not isinstance(doc, dict):
+        return False
+    algorithm = _algorithm(doc.get("algorithm"))
+    spki = _b64(doc.get("public_key_spki_b64"), _MAX_SPKI)
+    if algorithm is None or spki is None:
+        return False
+    return _signature_ok(algorithm, spki, signature, message)
 
 
 def device_key_for_bundle(bundle: Any) -> dict[str, Any] | None:
@@ -176,6 +197,12 @@ def _signature_ok(algorithm: str, spki: bytes, sig: bytes, message: bytes) -> bo
                 return False
             pub.verify(sig, message, ec.ECDSA(hashes.SHA256()))
             return True
+        if algorithm == "rsa-2048":
+            # QorCap src/device_attest.rs: RSASSA-PKCS1-v1_5 with SHA-256, 256-byte signature.
+            if not isinstance(pub, rsa.RSAPublicKey) or pub.key_size != 2048:
+                return False
+            pub.verify(sig, message, padding.PKCS1v15(), hashes.SHA256())
+            return True
     except InvalidSignature:
         return False
     except Exception:
@@ -193,7 +220,13 @@ def _algorithm(value: Any) -> str | None:
     if not isinstance(value, str):
         return None
     norm = value.strip().lower().replace("_", "-")
-    aliases = {"ecdsa-p256": "ecdsa-p256-sha256", "p256": "ecdsa-p256-sha256", "ed25519": "ed25519"}
+    aliases = {
+        "ecdsa-p256": "ecdsa-p256-sha256",
+        "p256": "ecdsa-p256-sha256",
+        "ed25519": "ed25519",
+        "rsa-2048": "rsa-2048",
+        "rsa2048": "rsa-2048",
+    }
     norm = aliases.get(norm, norm)
     return norm if norm in ALGORITHMS else None
 
