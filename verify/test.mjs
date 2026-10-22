@@ -1,6 +1,7 @@
 // node verify/test.mjs : JCS parity + JS verifier against the Python-produced vectors.
 import { readFileSync } from "node:fs";
 import { canonicalize, sha256Hex, verifyReceipt, challengeEvidenceErrors, challengeConsistencyPartials, inputProofAdvisory, checkDelegation,
+         corroborationView,
          revocationsProblem, receiptBodyHash, verifyInclusion, verifyLogEntries, verifyLogHead, loadAllowlist } from "./verify.js";
 import { REFEREE_REVOCATIONS } from "./referee_revocations.inc.js";
 const v = JSON.parse(readFileSync(new URL("../tests/vectors/jcs_vector.json", import.meta.url)));
@@ -100,5 +101,16 @@ const le = structuredClone(dv.log_entries); le[0].body_sha256 = "f".repeat(64);
 ok((await verifyInclusion(bh, le, dv.log_head)).length > 0, "rewritten log entry => inclusion fails");
 // legacy root-signed review receipt (no delegation) still VERIFIED with the shipped revocation list loaded
 ok((await verifyReceipt(rv.receipt, rv.referee_pub, { allowlist: rv.allowlist })).status === "VERIFIED", "legacy direct-signed review receipt still VERIFIED");
+const forged = structuredClone(d.receipt);
+forged.result.home_score = 99;
+forged.review = { corroboration: { status: "corroborated", reasons: [], affects_verdict: true } };
+const forgedV = await verifyReceipt(forged, d.referee_pub);
+ok(forgedV.status === "FAIL" && !forgedV.corroboration, "forged corroboration on a bad signature does not display or upgrade");
+const view = corroborationView({ corroboration: { status: "disagreed", reasons: ["final_score_mismatch"], affects_verdict: true, tolerance_ms: 5000 } });
+ok(view && view.status === "disagreed" && view.affects_verdict === false && view.reasons[0] === "final_score_mismatch",
+   "corroboration view keeps the disagreement and forces affects_verdict false");
+ok(corroborationView({ corroboration: { status: "upgraded" } }) === null, "unknown corroboration status is dropped");
+const untouched = await verifyReceipt(rv.receipt, rv.referee_pub, { allowlist: rv.allowlist });
+ok(untouched.status === "VERIFIED" && !untouched.corroboration, "a review receipt with no corroboration block stays VERIFIED");
 process.exit(fails ? 1 : 0);
 

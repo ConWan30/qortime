@@ -17,7 +17,7 @@ GENESIS = "0" * 64
 META_FILES = ("bundle.json", "manifest.jsonl", "checkpoints.jsonl", "countersigned.jsonl", "inputs.jsonl",
               "haptics.jsonl", "input_proof.json", "receipt.json", "receipt.draft.json", "timeline.jsonl",
               "challenges.jsonl", "official_challenges.jsonl", "anchors.jsonl", "referee.pub",
-              "challenge_gates.jsonl", "challenge_results.jsonl")
+              "challenge_gates.jsonl", "challenge_results.jsonl", "pairing.json")
 REQUIRED_FILES = ("bundle.json", "manifest.jsonl", "checkpoints.jsonl", "receipt.json")
 
 

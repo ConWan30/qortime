@@ -287,6 +287,37 @@ export async function officialChallengeOk(c, allowlist = TRUSTED_REFEREES, deleg
   return false;
 }
 
+const CORROBORATION_STATUSES = new Set(["corroborated", "disagreed", "single_sided"]);
+
+/** Display copy of review.corroboration. Not an input to VERIFIED / PARTIAL / FAIL. */
+export function corroborationView(review) {
+  if (!review || typeof review !== "object") return null;
+  const raw = review.corroboration;
+  if (!raw || typeof raw !== "object") return null;
+  if (!CORROBORATION_STATUSES.has(raw.status)) return null;
+  const reasons = Array.isArray(raw.reasons) ? raw.reasons.filter((x) => typeof x === "string").slice(0, 24) : [];
+  const out = {
+    schema: "qortime-corroboration/v0",
+    status: raw.status,
+    reasons,
+    tolerance_ms: Number.isInteger(raw.tolerance_ms) ? raw.tolerance_ms : 5000,
+    affects_verdict: false,
+  };
+  if (typeof raw.detail === "string" && raw.detail) out.detail = raw.detail.slice(0, 500);
+  if (typeof raw.pairing_id === "string" && raw.pairing_id) out.pairing_id = raw.pairing_id.slice(0, 64);
+  if (raw.sides && typeof raw.sides === "object") {
+    const sides = {};
+    for (const role of ["home", "away"]) {
+      const side = raw.sides[role];
+      if (side && typeof side === "object" && typeof side.own_checks === "string") {
+        sides[role] = { own_checks: side.own_checks.slice(0, 32) };
+      }
+    }
+    if (Object.keys(sides).length) out.sides = sides;
+  }
+  return out;
+}
+
 export function reviewProblems(r, ref) {
   const rv = r.review;
   if (!rv || typeof rv !== "object" || rv.type !== REVIEW_TYPE) return { cap: null, errors: ["review_missing_or_wrong_type"], partial: [] };
@@ -348,6 +379,7 @@ export async function verifyReceipt(r, refereePub = null, opts = {}) {
   const errors = [], partial = [];
   let tier = null;
   let trustedRef = false;
+  let refereeSigOk = false;
   const inputAdvisory = inputProofAdvisory(r && r.signals);
   let refereeEntry = null;
   try {
@@ -358,6 +390,7 @@ export async function verifyReceipt(r, refereePub = null, opts = {}) {
     else if (refereePub.toLowerCase() !== ref.pubkey.toLowerCase()) errors.push("referee_key_mismatch");
     const rs = sigs.referee;
     if (!rs || rs.key_id !== (await kid(ref.pubkey)) || !(await edVerify(ref.pubkey, rs.sig, msg))) errors.push("bad_referee_signature");
+    else refereeSigOk = true;
 
     refereeEntry = lookupReferee(ref.pubkey, allowlist);
     if (refereeEntry && refereeEntry.status === "active") trustedRef = true;
@@ -482,6 +515,11 @@ export async function verifyReceipt(r, refereePub = null, opts = {}) {
     out.verification_basis = "official-post-hoc-review";
     out.review = { scope: r.review.scope, video_method: vb.method ?? null, segments_verified: vb.segments_verified ?? null,
                    segments_total: vb.segments_total ?? null, not_proven: r.review.not_proven };
+  }
+  // Additive. Disagreed / single-sided never edits status, errors, or partial.
+  if (refereeSigOk) {
+    const corr = corroborationView(r.review);
+    if (corr) out.corroboration = corr;
   }
   return out;
 }

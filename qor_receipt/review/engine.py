@@ -34,12 +34,21 @@ from qor_receipt.keys import KeyProvider, kid, verify
 from qor_receipt.review import bundle as B
 from qor_receipt.review import media as M
 from qor_receipt.review.clock import capture_clock, fragment_pts0_ms, frame_mono_ms
+from qor_receipt.review.corroboration import (
+    SCORE_EVENT_TOLERANCE_MS,
+    accept_pairing_token,
+    build_corroboration,
+    own_checks_label,
+    read_pairing_file,
+    side_from_bundle,
+)
 from qor_receipt.review.policy import (
     ANCHOR_TYPE,
     CHALLENGE_TOKEN_TYPE,
     FAIL_CHECK,
     MAX_SEGMENT_BYTES,
     NOT_PROVEN,
+    PAIRING_TYPE,
     PARTIAL_CHECK,
     PASS,
     RANDOM_SEGMENTS,
@@ -87,14 +96,19 @@ class Submission:
     review: dict[str, Any] | None = None
     receipt: dict[str, Any] | None = None
     verify: dict[str, Any] | None = None
+    corroboration: dict[str, Any] | None = None
+    pairing_id: str | None = None
 
     def public(self) -> dict[str, Any]:
         missing = [s for s in self.required if s not in self.received]
-        return {"id": self.id, "state": self.state, "mode": self.mode, "errors": self.errors, "commit": self.commit,
-                "segments_total": len(self.bundle.segments), "required": self.required, "missing": missing[:50],
-                "missing_count": len(missing), "received": len(self.received), "bad_segments": self.bad,
-                "bytes_required": sum(int(self.bundle.segments[s]["bytes"]) for s in self.required),
-                "review": self.review, "verify": self.verify}
+        out = {"id": self.id, "state": self.state, "mode": self.mode, "errors": self.errors, "commit": self.commit,
+               "segments_total": len(self.bundle.segments), "required": self.required, "missing": missing[:50],
+               "missing_count": len(missing), "received": len(self.received), "bad_segments": self.bad,
+               "bytes_required": sum(int(self.bundle.segments[s]["bytes"]) for s in self.required),
+               "review": self.review, "verify": self.verify}
+        if self.corroboration:
+            out["corroboration"] = self.corroboration
+        return out
 
 
 class Referee:
@@ -115,6 +129,8 @@ class Referee:
         self.tail_ms = tail_ms
         self.referee_id = referee_id
         self.subs: dict[str, Submission] = {}
+        # pairing_id -> {nonce, roles: {home|away: submission id}, conflicts: [str]}
+        self.pairs: dict[str, dict[str, Any]] = {}
 
     # ------------------------------------------------------------ info / live tokens
     def info(self) -> dict[str, Any]:
@@ -122,7 +138,9 @@ class Referee:
                 "review_type": REVIEW_TYPE, "final_reader": self.core_factory is not None,
                 "ffmpeg": M.ffmpeg_bin() is not None,
                 "scorebug_profiles": M.sidecar_profiles(self.sidecar_dir) if self.core_factory is not None else [],
-                "policy": {"random_segments": self.random_segments, "tail_ms": self.tail_ms, "modes": [SPOT, FULL]},
+                "policy": {"random_segments": self.random_segments, "tail_ms": self.tail_ms, "modes": [SPOT, FULL],
+                           "pairing_type": PAIRING_TYPE,
+                           "corroboration_tolerance_ms": SCORE_EVENT_TOLERANCE_MS},
                 "delegation": self.delegation,
                 "log": ({"size": len(self.log.entries), "head": self.log.head} if self.log is not None else None)}
 
@@ -140,6 +158,81 @@ class Referee:
         return self._sign_token({"type": CHALLENGE_TOKEN_TYPE, "nonce": n, "pattern": pattern_for(n), "phase": phase,
                                  "role": role, "match_id": str(match_id)[:128], "issued_ms": t,
                                  "deadline_ms": t + DEFAULT_DEADLINE_MS, "anchor": _clean_anchor(anchor)})
+
+    def issue_pairing(self) -> dict[str, Any]:
+        """A shared match-pairing token. The id and nonce are chosen here and signed.
+
+        Callers cannot supply them. Both players put this exact token in ``pairing.json``.
+        """
+        return self._sign_token({"type": PAIRING_TYPE, "pairing_id": secrets.token_hex(16),
+                                 "nonce": secrets.token_hex(16), "issued_ms": self.now()})
+
+    def _corroboration(self, sub: Submission, checks: dict[str, Any]) -> dict[str, Any]:
+        """Link this submission by a referee-signed pairing token and cross-check the partner, if any.
+
+        A missing or forged token stays ``single_sided``. It is not a review check, so it cannot
+        change pass / partial / fail.
+        """
+        raw = read_pairing_file(sub.bundle.files)
+        if raw is None:
+            return build_corroboration(None, None, home_present=False, away_present=False)
+        accepted = None if raw.get("_malformed") else accept_pairing_token(raw, self.key.pubkey_hex)
+        if accepted is None:
+            return build_corroboration(None, None, home_present=False, away_present=False,
+                                       extra_reasons=["pairing_unverified"])
+        pid, nonce = accepted["pairing_id"], accepted["nonce"]
+        slot = self.pairs.setdefault(pid, {"nonce": nonce, "roles": {}, "conflicts": []})
+        extra: list[str] = []
+        if slot["nonce"] != nonce:
+            extra.append("pairing_nonce_mismatch")
+            return build_corroboration(None, None, home_present=False, away_present=False,
+                                       extra_reasons=extra, pairing_id=pid)
+        role = sub.bundle.role if sub.bundle.role in ("home", "away") else ""
+        prev = slot["roles"].get(role)
+        if role and prev and prev != sub.id:
+            msg = f"{role}:{prev}:{sub.id}"
+            if msg not in slot["conflicts"]:
+                slot["conflicts"].append(msg)
+            extra.append("role_conflict")
+        elif role:
+            slot["roles"][role] = sub.id
+        sub.pairing_id = pid
+        if slot["conflicts"]:
+            extra.append("role_conflict")
+        home_id, away_id = slot["roles"].get("home"), slot["roles"].get("away")
+        home_sub = self.subs.get(home_id) if home_id else None
+        away_sub = self.subs.get(away_id) if away_id else None
+
+        def label(other: Submission | None) -> str:
+            if other is None:
+                return "absent"
+            if other is sub:
+                return own_checks_label(checks)
+            return own_checks_label((other.review or {}).get("checks"))
+
+        home = side_from_bundle(home_sub.bundle, label(home_sub)) if home_sub is not None else None
+        away = side_from_bundle(away_sub.bundle, label(away_sub)) if away_sub is not None else None
+        return build_corroboration(home, away, home_present=home_sub is not None, away_present=away_sub is not None,
+                                   extra_reasons=extra, pairing_id=pid)
+
+    def _publish_pair(self, sub: Submission, view: dict[str, Any]) -> None:
+        """Copy the live corroboration onto the partner. Re-sign only while they still owe a player signature."""
+        pid = view.get("pairing_id")
+        slot = self.pairs.get(pid) if isinstance(pid, str) else None
+        if not slot:
+            return
+        for sid in (slot.get("roles") or {}).values():
+            other = self.subs.get(sid)
+            if other is None or other is sub:
+                continue
+            other.corroboration = view
+            if isinstance(other.review, dict):
+                other.review["corroboration"] = view
+            if other.state == "awaiting_player_signature" and isinstance(other.receipt, dict):
+                review = other.receipt.get("review")
+                if isinstance(review, dict):
+                    review["corroboration"] = view
+                    other.receipt = R.sign_referee(other.receipt, self.key)
 
     def issue_anchor(self, match_id: str, anchor: dict) -> dict[str, Any]:
         a = _clean_anchor(anchor)
@@ -338,13 +431,14 @@ class Referee:
                                                     "note": "hashes/chains/counts recomputed; QorCap's human-likeness and "
                                                             "alignment model is not re-run (advisory only)"}}
         anchors = self._anchors(sub)
+        corroboration = self._corroboration(sub, checks)
         review = {"type": REVIEW_TYPE, "reviewed_ms": self.now(), "submission": sub.id, "commit": sub.commit,
                   "capture_referee": {k2: (b.receipt.get("referee") or {}).get(k2) for k2 in ("pubkey", "key_id", "key_kind")},
                   "bundle": {"schema": b.meta.get("schema"), "qorcap_version": b.meta.get("qorcap_version"),
                              "chain_head": b.chain_head, "checkpoint_head": b.checkpoints[-1]["hash"],
                              "inputs_chain_head": b.input_head, "segments": len(b.segments), "bytes": total_bytes,
                              "local_receipt_sha256": sha256_hex({k2: v for k2, v in b.receipt.items() if k2 != "signatures"})},
-                  "checks": checks, "anchors": anchors,
+                  "checks": checks, "anchors": anchors, "corroboration": corroboration,
                   "final_reread": _final_summary(final),
                   "scope": ("post-hoc review of an uploaded QorCap bundle by the QorTime official referee: "
                             + ("every video byte hashed against the committed manifest" if sub.mode == FULL else
@@ -352,13 +446,16 @@ class Referee:
                                f"challenge windows, {k} random segments drawn after commit)")),
                   "not_proven": NOT_PROVEN}
         sub.review = review
+        sub.corroboration = corroboration
         if any(c["state"] == FAIL_CHECK for c in checks.values()):
             sub.state = "refused"
+            self._publish_pair(sub, corroboration)
             return sub.public()
         if self.delegation and not (int(self.delegation.get("not_before_ms", 0)) <= self.now()
                                     <= int(self.delegation.get("not_after_ms", 0))):
             sub.review["post_sign_errors"] = ["service delegation certificate is not valid now (rotate the key)"]
             sub.state = "refused"
+            self._publish_pair(sub, corroboration)
             return sub.public()
         rec = self._build(sub, final, ch_out, mp, mdetail, review)
         v = R.verify_receipt(rec, referee_pub=self.key.pubkey_hex)
@@ -366,6 +463,7 @@ class Referee:
         if blocking:
             sub.review["post_sign_errors"] = blocking
             sub.state = "refused"
+            self._publish_pair(sub, corroboration)
             return sub.public()
         if self.log is not None:
             from qor_receipt.translog import body_sha256
@@ -374,6 +472,7 @@ class Referee:
             sub.log_entry = le  # not part of the signed receipt; returned to the client
         sub.receipt = rec
         sub.state = "awaiting_player_signature"
+        self._publish_pair(sub, corroboration)
         out = sub.public()
         out["receipt"] = rec
         out["signing_bytes_sha256"] = hashlib.sha256(R.signing_bytes(rec)).hexdigest()

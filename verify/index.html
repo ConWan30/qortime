@@ -21,6 +21,13 @@ textarea,input{width:100%;box-sizing:border-box;background:#161b22;color:#e6edf3
 textarea{height:260px}button{margin-top:.75rem;padding:.6rem 1.2rem;font-weight:600;border-radius:6px;border:0;cursor:pointer}
 button:disabled{opacity:.45;cursor:not-allowed}
 #badge{font-size:2rem;font-weight:800;margin-top:1rem}.VERIFIED{color:#3fb950}.PARTIAL{color:#d29922}.FAIL{color:#f85149}
+.addon{margin-top:.85rem;padding:.75rem .95rem;border-radius:12px;border:1px solid #30363d;background:#0d1117}
+.addon strong{letter-spacing:.08em}
+.addon .why{display:block;margin-top:.35rem;color:#8b949e}
+.addon ul{margin:.4rem 0 0;padding-left:1.1rem}
+.addon.corroborated{border-color:rgba(46,242,255,.55);color:#d7fbff}
+.addon.disagreed{border-color:#f85149;color:#ffb4b0}
+.addon.single_sided{color:#b9c1d6}
 .tier{display:inline-block;margin-left:1rem;font-size:1rem;padding:.2rem .6rem;border:1px solid #30363d;border-radius:99px}
 pre{background:#161b22;padding:.75rem;border-radius:6px;white-space:pre-wrap}small{color:#8b949e}
 .vm{margin:1.25rem 0;padding:1.1rem 1.15rem;border-radius:18px;border:1px solid rgba(228,197,109,.4);background:radial-gradient(420px 180px at 100% 0%,rgba(46,242,255,.14),transparent 60%),linear-gradient(165deg,#0c1c33,#071018)}
@@ -63,7 +70,9 @@ pre{background:#161b22;padding:.75rem;border-radius:6px;white-space:pre-wrap}sma
 <label>Pinned referee public key (hex). Leave blank and the result is at most PARTIAL.</label>
 <input id="pub" placeholder="64 hex chars">
 <button id="go">Verify</button>
-<div id="badge"></div><pre id="out" hidden></pre>
+<div id="badge"></div>
+<div id="corroboration" class="addon" hidden></div>
+<pre id="out" hidden></pre>
 <script type="module">
 import { verifyReceipt } from "./verify.js";
 import { apiBase, badgeMatchesReceipt, isValidReceiptId, receiptIdFrom } from "./verified-match.js";
@@ -163,7 +172,7 @@ $("sample").onclick = async () => {
     $("vm-err").textContent = err instanceof Error ? err.message : "Demo receipt failed to load";
   }
 };
-$("json").addEventListener("input", () => { sigStatus = null; watchReceipt(); });
+$("json").addEventListener("input", () => { sigStatus = null; $("corroboration").hidden = true; watchReceipt(); });
 
 function sameOriginReceipt(raw) {
   if (!raw) return null;
@@ -225,12 +234,61 @@ if (q.get("checkout") === "success" && isValidReceiptId(returned)) {
   }, 2000);
 }
 
+function paintCorroboration(v) {
+  const el = $("corroboration");
+  const c = v && v.corroboration;
+  el.replaceChildren();
+  if (!c) { el.hidden = true; el.className = "addon"; return; }
+  el.hidden = false;
+  el.className = "addon " + c.status;
+  const title = document.createElement("strong");
+  const labels = { corroborated: "CORROBORATED", disagreed: "DISAGREED", single_sided: "SINGLE-SIDED" };
+  title.textContent = labels[c.status] || c.status;
+  el.append(title);
+  const why = document.createElement("span");
+  why.className = "why";
+  if (c.status === "disagreed") {
+    why.textContent = "The two recordings do not agree. This is visible on purpose. It does not change the verdict above.";
+  } else if (c.status === "corroborated") {
+    why.textContent = "Both recordings agree on the final score and on score changes within the stated tolerance, and their challenge responses are independent. This does not change the verdict above.";
+  } else {
+    why.textContent = "Only one recording is linked. A single-sided receipt is still judged by the existing rules. This does not change the verdict above.";
+  }
+  el.append(why);
+  if (c.reasons && c.reasons.length) {
+    const ul = document.createElement("ul");
+    for (const reason of c.reasons) {
+      const li = document.createElement("li");
+      li.textContent = reason;
+      ul.append(li);
+    }
+    el.append(ul);
+  }
+  if (Number.isInteger(c.tolerance_ms)) {
+    const tol = document.createElement("span");
+    tol.className = "why";
+    tol.textContent = `Score-change tolerance: ${c.tolerance_ms} ms. No clock offset is removed.`;
+    el.append(tol);
+  }
+  const sides = c.sides || {};
+  for (const role of ["home", "away"]) {
+    const own = sides[role] && sides[role].own_checks;
+    if (own && own !== "pass") {
+      const note = document.createElement("span");
+      note.className = "why";
+      note.textContent = `${role} own checks: ${own}. Corroboration does not repair a receipt that fails on its own.`;
+      el.append(note);
+    }
+  }
+}
+
 $("go").onclick = async () => {
-  let r; try { r = JSON.parse($("json").value); } catch { $("badge").className = "FAIL"; $("badge").textContent = "FAIL: not JSON"; return; }
+  let r; try { r = JSON.parse($("json").value); } catch { $("badge").className = "FAIL"; $("badge").textContent = "FAIL: not JSON"; $("corroboration").hidden = true; return; }
   const v = await verifyReceipt(r, $("pub").value.trim() || null);
   sigStatus = v.status;
   $("badge").className = v.status;
   $("badge").innerHTML = `${v.status}<span class="tier">${v.trust_tier ?? "no tier"} · referee ${v.referee_trust ?? "?"}${v.referee_id ? " ("+v.referee_id+")" : ""}</span>`;
+  paintCorroboration(v);
   const res = r.result || {};
   $("out").hidden = false;
   const basis = v.verification_basis === "official-post-hoc-review"
