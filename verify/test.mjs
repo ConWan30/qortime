@@ -123,6 +123,12 @@ ok(deviceView && deviceView.status === "invalid" && deviceView.affects_verdict =
    && deviceView.flags[0] === "device_signature_invalid",
    "invalid device key stays flagged and cannot affect the verdict");
 ok(deviceKeyView({ device_key: { status: "trusted" } }) === null, "unknown device_key status is dropped");
+ok(deviceKeyView({ device_key: { status: "tpm_attested", affects_verdict: true, detail: "Attested by TPM" } }) === null,
+   "tpm_attested is not a displayable status");
+const claimedView = deviceKeyView({ device_key: { status: "tpm_claimed", affects_verdict: true, detail: "attacker text" } });
+ok(claimedView && claimedView.status === "tpm_claimed" && claimedView.affects_verdict === false
+   && /unverified/i.test(claimedView.detail),
+   "tpm_claimed says the TPM claim is unverified and cannot affect the verdict");
 ok((await verifyReceipt(rv.receipt, rv.referee_pub, { allowlist: rv.allowlist })).status === "VERIFIED"
    && !(await verifyReceipt(rv.receipt, rv.referee_pub, { allowlist: rv.allowlist })).device_key,
    "a review receipt with no device sidecar stays VERIFIED");

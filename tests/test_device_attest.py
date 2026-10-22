@@ -15,9 +15,9 @@ from qor_receipt import receipt as R
 from qor_receipt.demo import run_match
 from qor_receipt.review.device_attest import (
     DEVICE_ATTEST_SCHEMA,
-    TPM_ATTEST_SCHEMA,
+    STATUSES,
     assess_device_attest,
-    attestation_signed_bytes,
+    device_key_view,
     device_signed_bytes,
 )
 from qor_receipt.review.policy import REVIEW_TYPE
@@ -53,13 +53,23 @@ def _doc(priv, algorithm, provider, *, non_exportable, message, attestation=None
     return body
 
 
-def _attest(device_spki: bytes, device_alg: str, ak, ak_alg: str):
-    statement = attestation_signed_bytes(spki_sha256=hashlib.sha256(device_spki).hexdigest(), algorithm=device_alg)
+def _self_made_blob(device_priv, device_alg: str, ak, ak_alg: str) -> dict:
+    """A software attestation key signing a statement about the device key. Not an EK chain."""
+    device_spki = _spki(device_priv)
+    statement = (
+        "qorcap-tpm-key-attest/v0\n"
+        f"spki_sha256={hashlib.sha256(device_spki).hexdigest()}\n"
+        "non_exportable=true\n"
+        f"algorithm={device_alg}\n"
+        "key_provider=tpm\n"
+    ).encode("ascii")
     return {
-        "schema": TPM_ATTEST_SCHEMA,
+        "schema": "qorcap-tpm-key-attest/v0",
         "ak_algorithm": ak_alg,
         "ak_public_key_spki_b64": _b64(_spki(ak)),
         "signature_b64": _b64(_sign(ak, statement, ak_alg)),
+        "ek_cert_chain": ["-----BEGIN CERTIFICATE-----\nMIIB-not-a-real-ek\n-----END CERTIFICATE-----"],
+        "manufacturer_root": "not-a-pinned-root",
     }
 
 
@@ -85,46 +95,46 @@ def test_tpm_claimed_when_signature_valid_and_attestation_absent():
     assert out["affects_verdict"] is False
 
 
-def test_tpm_attested_when_attestation_signature_verifies():
-    device = ec.generate_private_key(ec.SECP256R1())
-    ak = Ed25519PrivateKey.generate()
-    doc = _doc(device, "ecdsa-p256-sha256", "platform-crypto", non_exportable=True,
-               message=device_signed_bytes(HEAD),
-               attestation=_attest(_spki(device), "ecdsa-p256-sha256", ak, "ed25519"))
-    out = assess_device_attest(json.dumps(doc).encode(), chain_head_hex=HEAD)
-    assert out["status"] == "tpm_attested", out
-    assert out["flags"] == []
-
-
-def test_bad_attestation_stays_claimed():
-    device = ec.generate_private_key(ec.SECP256R1())
-    ak = Ed25519PrivateKey.generate()
-    blob = _attest(_spki(device), "ecdsa-p256-sha256", ak, "ed25519")
-    blob["signature_b64"] = _b64(b"\x00" * 64)
-    doc = _doc(device, "ecdsa-p256-sha256", "tpm", non_exportable=True, message=device_signed_bytes(HEAD),
-               attestation=blob)
-    out = assess_device_attest(json.dumps(doc).encode(), chain_head_hex=HEAD)
-    assert out["status"] == "tpm_claimed"
-    assert "attestation_signature_invalid" in out["flags"]
-
-
-def test_self_signed_attestation_is_not_tpm_attested():
+def test_software_keypair_self_made_blob_never_exceeds_tpm_claimed():
+    """A software device key plus a software attestation key must not reach tpm_attested."""
+    assert "tpm_attested" not in STATUSES
+    cases = (
+        (Ed25519PrivateKey.generate(), "ed25519", Ed25519PrivateKey.generate(), "ed25519", "tpm"),
+        (ec.generate_private_key(ec.SECP256R1()), "ecdsa-p256-sha256", Ed25519PrivateKey.generate(), "ed25519", "platform-crypto"),
+        (ec.generate_private_key(ec.SECP256R1()), "ecdsa-p256-sha256", ec.generate_private_key(ec.SECP256R1()), "ecdsa-p256-sha256", "windows-tpm"),
+        (Ed25519PrivateKey.generate(), "ed25519", Ed25519PrivateKey.generate(), "ed25519", "ncrypt"),
+    )
+    for device, device_alg, ak, ak_alg, provider in cases:
+        blob = _self_made_blob(device, device_alg, ak, ak_alg)
+        doc = _doc(device, device_alg, provider, non_exportable=True, message=device_signed_bytes(HEAD),
+                   attestation=blob)
+        out = assess_device_attest(json.dumps(doc).encode(), chain_head_hex=HEAD)
+        assert out["status"] == "tpm_claimed", (provider, out)
+        assert out["status"] != "tpm_attested"
+        assert "unverified" in out["detail"].lower()
+        assert out["affects_verdict"] is False
+    # The same device key signing its own blob is still only a claim.
     device = Ed25519PrivateKey.generate()
     doc = _doc(device, "ed25519", "tpm", non_exportable=True, message=device_signed_bytes(HEAD),
-               attestation=_attest(_spki(device), "ed25519", device, "ed25519"))
+               attestation=_self_made_blob(device, "ed25519", device, "ed25519"))
     out = assess_device_attest(json.dumps(doc).encode(), chain_head_hex=HEAD)
     assert out["status"] == "tpm_claimed"
-    assert "attestation_key_is_device_key" in out["flags"]
-
-
-def test_exportable_tpm_key_is_not_attested():
+    # A broken blob does not upgrade, and it does not turn a valid device signature into invalid.
     device = ec.generate_private_key(ec.SECP256R1())
-    ak = Ed25519PrivateKey.generate()
-    doc = _doc(device, "ecdsa-p256-sha256", "tpm", non_exportable=False, message=device_signed_bytes(HEAD),
-               attestation=_attest(_spki(device), "ecdsa-p256-sha256", ak, "ed25519"))
+    doc = _doc(device, "ecdsa-p256-sha256", "tpm", non_exportable=True, message=device_signed_bytes(HEAD),
+               attestation={"schema": "qorcap-tpm-key-attest/v0", "signature_b64": _b64(b"\x00" * 64)})
+    out = assess_device_attest(json.dumps(doc).encode(), chain_head_hex=HEAD)
+    assert out["status"] == "tpm_claimed"
+    assert device_key_view({"device_key": {"status": "tpm_attested", "affects_verdict": True}}) is None
+
+
+def test_exportable_tpm_key_stays_claimed():
+    device = ec.generate_private_key(ec.SECP256R1())
+    doc = _doc(device, "ecdsa-p256-sha256", "tpm", non_exportable=False, message=device_signed_bytes(HEAD))
     out = assess_device_attest(json.dumps(doc).encode(), chain_head_hex=HEAD)
     assert out["status"] == "tpm_claimed"
     assert "exportable_key" in out["flags"]
+    assert "unverified" in out["detail"].lower()
 
 
 def test_bad_signature_is_invalid_and_flagged():
@@ -173,21 +183,28 @@ def test_device_key_does_not_change_verdict(ref):
     assert invalid["device_key"]["affects_verdict"] is False
     assert invalid["device_key"]["flags"] == ["device_signature_invalid"]
 
-    attested = with_device("tpm_attested", [])
-    assert attested["status"] == before["status"]
-    assert attested["errors"] == before["errors"]
-    assert attested["device_key"]["status"] == "tpm_attested"
+    hidden_word = with_device("tpm_attested", [])
+    assert hidden_word["status"] == before["status"]
+    assert hidden_word["errors"] == before["errors"]
+    assert "device_key" not in hidden_word
+
+    claimed = with_device("tpm_claimed", [])
+    assert claimed["status"] == before["status"]
+    assert claimed["errors"] == before["errors"]
+    assert claimed["device_key"]["status"] == "tpm_claimed"
+    assert claimed["device_key"]["affects_verdict"] is False
+    assert "unverified" in claimed["device_key"]["detail"].lower()
 
     failing = copy.deepcopy(rec)
     failing["result"]["winner"] = "away" if rec["result"]["winner"] != "away" else "home"
-    failing["review"] = {"device_key": {"status": "tpm_attested", "flags": [], "affects_verdict": True}}
+    failing["review"] = {"device_key": {"status": "tpm_claimed", "flags": [], "affects_verdict": True}}
     failing = R.sign_referee(failing, key)
     for role, player in pkeys.items():
         failing = R.sign_player(failing, role, player)
     verdict = R.verify_receipt(failing, referee_pub=key.pubkey_hex)
     assert verdict["status"] == "FAIL"
     assert "winner_inconsistent" in verdict["errors"]
-    assert verdict["device_key"]["status"] == "tpm_attested"
+    assert verdict["device_key"]["status"] == "tpm_claimed"
 
     forged = copy.deepcopy(rec)
     forged["review"] = {"device_key": {"status": "tpm_attested", "flags": []}}

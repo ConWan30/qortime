@@ -33,7 +33,6 @@ button:disabled{opacity:.45;cursor:not-allowed}
 #device .why{display:block;margin-top:.35rem;color:#8b949e}
 #device ul{margin:.4rem 0 0;padding-left:1.1rem}
 #device.invalid{border-color:#f85149;color:#ffb4b0}
-#device.tpm_attested{border-color:rgba(46,242,255,.55);color:#d7fbff}
 #device.tpm_claimed{border-color:#d29922;color:#e6c07b}
 #device.software{color:#b9c1d6}
 .tier{display:inline-block;margin-left:1rem;font-size:1rem;padding:.2rem .6rem;border:1px solid #30363d;border-radius:99px}
@@ -299,8 +298,7 @@ function paintDevice(v) {
   el.hidden = false;
   el.className = d.status;
   const labels = {
-    tpm_attested: "DEVICE KEY · TPM ATTESTED",
-    tpm_claimed: "DEVICE KEY · TPM CLAIMED",
+    tpm_claimed: "DEVICE KEY · TPM CLAIMED (UNVERIFIED)",
     software: "DEVICE KEY · SOFTWARE",
     invalid: "DEVICE KEY · INVALID",
   };

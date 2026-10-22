@@ -318,10 +318,9 @@ export function corroborationView(review) {
   return out;
 }
 
-const DEVICE_KEY_STATUSES = new Set(["tpm_attested", "tpm_claimed", "software", "invalid"]);
+const DEVICE_KEY_STATUSES = new Set(["tpm_claimed", "software", "invalid"]);
 const DEVICE_KEY_DETAIL = {
-  tpm_attested: "Attestation signature checked under docs/DEVICE_ATTEST.md. This is not a TPM manufacturer EK chain and does not change the receipt verdict.",
-  tpm_claimed: "Device signature valid. The bundle claims a TPM key. Attestation material was absent or did not verify. Does not change the receipt verdict.",
+  tpm_claimed: "Device signature valid. The bundle claims a TPM key. That TPM claim is unverified. Does not change the receipt verdict.",
   software: "Device signature valid for a software key. Does not change the receipt verdict.",
   invalid: "Device attestation did not verify. Flagged. Does not change the receipt verdict.",
 };

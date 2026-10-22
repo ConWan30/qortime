@@ -1,16 +1,18 @@
 """Optional QorCap sidecar ``device_attest.v0.json``.
 
-Informational only. The status is ``tpm_attested``, ``tpm_claimed``, ``software``,
-or ``invalid``. It is not a review check and it does not change VERIFIED / FAIL.
+Informational only. The status is ``tpm_claimed``, ``software``, or ``invalid``.
+It is not a review check and it does not change VERIFIED / FAIL.
 
-Signed-bytes assumptions are in docs/DEVICE_ATTEST.md. They are written so the
-QorCap PR that adds this sidecar can match them exactly. This module does not
-verify a TPM manufacturer EK certificate chain.
+``tpm_attested`` is not emitted. A software keypair can sign a sidecar blob, and
+that is not a TPM manufacturer EK chain or a Microsoft AIK certificate. The
+strongest TPM status is ``tpm_claimed``, and the page says the claim is unverified.
+
+The device-key signed bytes are in docs/DEVICE_ATTEST.md. They are an assumption
+so the QorCap PR that adds this sidecar can match them exactly.
 """
 from __future__ import annotations
 
 import base64
-import hashlib
 import json
 from typing import Any
 
@@ -21,9 +23,8 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.hazmat.primitives.serialization import load_der_public_key
 
 DEVICE_ATTEST_SCHEMA = "qorcap-device-attest/v0"
-TPM_ATTEST_SCHEMA = "qorcap-tpm-key-attest/v0"
-TPM_ATTESTED, TPM_CLAIMED, SOFTWARE, INVALID = "tpm_attested", "tpm_claimed", "software", "invalid"
-STATUSES = frozenset({TPM_ATTESTED, TPM_CLAIMED, SOFTWARE, INVALID})
+TPM_CLAIMED, SOFTWARE, INVALID = "tpm_claimed", "software", "invalid"
+STATUSES = frozenset({TPM_CLAIMED, SOFTWARE, INVALID})
 TPM_PROVIDERS = frozenset({"tpm", "windows-tpm", "platform-crypto", "ncrypt"})
 SOFTWARE_PROVIDERS = frozenset({"software", "software-file"})
 ALGORITHMS = frozenset({"ed25519", "ecdsa-p256-sha256"})
@@ -33,13 +34,9 @@ _MAX_SPKI = 1_024
 _MAX_SIG = 256
 
 _DETAILS = {
-    TPM_ATTESTED: (
-        "Attestation signature checked under docs/DEVICE_ATTEST.md. This is not a TPM "
-        "manufacturer EK chain and does not change the receipt verdict."
-    ),
     TPM_CLAIMED: (
-        "Device signature valid. The bundle claims a TPM key. Attestation material was "
-        "absent or did not verify. Does not change the receipt verdict."
+        "Device signature valid. The bundle claims a TPM key. That TPM claim is unverified. "
+        "Does not change the receipt verdict."
     ),
     SOFTWARE: "Device signature valid for a software key. Does not change the receipt verdict.",
     INVALID: "Device attestation did not verify. Flagged. Does not change the receipt verdict.",
@@ -53,17 +50,6 @@ def device_signed_bytes(chain_head_hex: str) -> bytes:
     (``receipt.checkpoints[role][-1].hash``), not the raw digest and not the video chain head.
     """
     return f"qorcap-device-attest/v0\n{chain_head_hex.lower()}\n".encode("ascii")
-
-
-def attestation_signed_bytes(*, spki_sha256: str, algorithm: str) -> bytes:
-    """Bytes the attestation key signs. Assumption: see docs/DEVICE_ATTEST.md."""
-    return (
-        "qorcap-tpm-key-attest/v0\n"
-        f"spki_sha256={spki_sha256}\n"
-        "non_exportable=true\n"
-        f"algorithm={algorithm}\n"
-        "key_provider=tpm\n"
-    ).encode("ascii")
 
 
 def chain_head_from_receipt(receipt: Any, role: str) -> str:
@@ -165,34 +151,13 @@ def _assess(raw: bytes, chain_head_hex: str) -> dict[str, Any]:
         flags.append("key_provider_unknown")
         return _result(INVALID, flags, schema=schema, provider=provider, algorithm=algorithm,
                        non_exportable=non_exportable)
-    attested, attest_flags = _attestation_ok(doc.get("tpm_attestation"), spki, algorithm)
-    flags.extend(attest_flags)
+    # tpm_attestation is ignored. A software key can mint that blob. tpm_attested
+    # is reserved for a future check against a pinned TPM EK root or Microsoft AIK
+    # certificate, and this referee does not perform that check.
     if non_exportable is not True:
         flags.append("exportable_key")
-        attested = False
-    status = TPM_ATTESTED if attested else TPM_CLAIMED
-    return _result(status, flags, schema=schema, provider=provider, algorithm=algorithm,
+    return _result(TPM_CLAIMED, flags, schema=schema, provider=provider, algorithm=algorithm,
                    non_exportable=non_exportable)
-
-
-def _attestation_ok(raw: Any, device_spki: bytes, algorithm: str) -> tuple[bool, list[str]]:
-    if raw is None:
-        return False, []
-    if not isinstance(raw, dict):
-        return False, ["attestation_malformed"]
-    if raw.get("schema") != TPM_ATTEST_SCHEMA:
-        return False, ["attestation_schema_unexpected"]
-    ak_alg = _algorithm(raw.get("ak_algorithm"))
-    ak_spki = _b64(raw.get("ak_public_key_spki_b64"), _MAX_SPKI)
-    ak_sig = _b64(raw.get("signature_b64"), _MAX_SIG)
-    if ak_alg is None or ak_spki is None or ak_sig is None:
-        return False, ["attestation_malformed"]
-    if ak_spki == device_spki:
-        return False, ["attestation_key_is_device_key"]
-    statement = attestation_signed_bytes(spki_sha256=hashlib.sha256(device_spki).hexdigest(), algorithm=algorithm)
-    if not _signature_ok(ak_alg, ak_spki, ak_sig, statement):
-        return False, ["attestation_signature_invalid"]
-    return True, []
 
 
 def _signature_ok(algorithm: str, spki: bytes, sig: bytes, message: bytes) -> bool:

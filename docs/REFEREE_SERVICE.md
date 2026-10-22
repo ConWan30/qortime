@@ -122,10 +122,11 @@ above. Detail: [CORROBORATION.md](CORROBORATION.md).
 ## Device key (informational)
 
 An optional `device_attest.v0.json` sidecar can ride in the bundle. When it is present, the review
-records `review.device_key` as `tpm_attested`, `tpm_claimed`, `software`, or `invalid`. It is not a
-review check. An invalid signature is flagged on the verify page and does not change the verdict.
-The signed-bytes definition is an assumption documented for the matching QorCap change:
-[DEVICE_ATTEST.md](DEVICE_ATTEST.md).
+records `review.device_key` as `tpm_claimed`, `software`, or `invalid`. It is not a review check.
+`tpm_claimed` means the device signature checked and the bundle claims a TPM key. That claim is
+unverified. `tpm_attested` is not emitted. An invalid signature is flagged on the verify page and
+does not change the verdict. The device-key signed bytes are an assumption documented for the
+matching QorCap change: [DEVICE_ATTEST.md](DEVICE_ATTEST.md).
 
 ## What VERIFIED means here (honest trust level)
 
