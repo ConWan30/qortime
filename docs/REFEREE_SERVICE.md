@@ -119,6 +119,15 @@ on the verify page and does not flip VERIFIED to FAIL. A pair that agrees does n
 One submission, or a forged pairing token, stays `single_sided` and is still judged by the single-sided rules
 above. Detail: [CORROBORATION.md](CORROBORATION.md).
 
+## Device key (informational)
+
+An optional `device_attest.v0.json` sidecar can ride in the bundle. When it is present, the review
+records `review.device_key` as `tpm_claimed`, `software`, or `invalid`. It is not a review check.
+`tpm_claimed` means the device signature checked and the bundle claims a TPM key. That claim is
+unverified. `tpm_attested` is not emitted. An invalid signature is flagged on the verify page and
+does not change the verdict. The device-key signed bytes are an assumption documented for the
+matching QorCap change: [DEVICE_ATTEST.md](DEVICE_ATTEST.md).
+
 ## What VERIFIED means here (honest trust level)
 
 Proven by the referee itself:

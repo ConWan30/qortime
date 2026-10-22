@@ -318,6 +318,27 @@ export function corroborationView(review) {
   return out;
 }
 
+const DEVICE_KEY_STATUSES = new Set(["tpm_claimed", "software", "invalid"]);
+const DEVICE_KEY_DETAIL = {
+  tpm_claimed: "Device signature valid. The bundle claims a TPM key. That TPM claim is unverified. Does not change the receipt verdict.",
+  software: "Device signature valid for a software key. Does not change the receipt verdict.",
+  invalid: "Device attestation did not verify. Flagged. Does not change the receipt verdict.",
+};
+
+/** Display copy of review.device_key. Not an input to VERIFIED / PARTIAL / FAIL. */
+export function deviceKeyView(review) {
+  if (!review || typeof review !== "object") return null;
+  const raw = review.device_key;
+  if (!raw || typeof raw !== "object" || !DEVICE_KEY_STATUSES.has(raw.status)) return null;
+  const flags = Array.isArray(raw.flags) ? raw.flags.filter((x) => typeof x === "string").slice(0, 16) : [];
+  const out = { status: raw.status, flags, affects_verdict: false, detail: DEVICE_KEY_DETAIL[raw.status] };
+  for (const key of ["schema", "key_provider", "algorithm"]) {
+    if (typeof raw[key] === "string" && raw[key]) out[key] = raw[key].slice(0, 80);
+  }
+  if (typeof raw.non_exportable === "boolean") out.non_exportable = raw.non_exportable;
+  return out;
+}
+
 export function reviewProblems(r, ref) {
   const rv = r.review;
   if (!rv || typeof rv !== "object" || rv.type !== REVIEW_TYPE) return { cap: null, errors: ["review_missing_or_wrong_type"], partial: [] };
@@ -517,9 +538,12 @@ export async function verifyReceipt(r, refereePub = null, opts = {}) {
                    segments_total: vb.segments_total ?? null, not_proven: r.review.not_proven };
   }
   // Additive. Disagreed / single-sided never edits status, errors, or partial.
+  // device_key is informational and does not edit them either.
   if (refereeSigOk) {
     const corr = corroborationView(r.review);
     if (corr) out.corroboration = corr;
+    const deviceKey = deviceKeyView(r.review);
+    if (deviceKey) out.device_key = deviceKey;
   }
   return out;
 }

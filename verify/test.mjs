@@ -2,6 +2,7 @@
 import { readFileSync } from "node:fs";
 import { canonicalize, sha256Hex, verifyReceipt, challengeEvidenceErrors, challengeConsistencyPartials, inputProofAdvisory, checkDelegation,
          corroborationView,
+         deviceKeyView,
          revocationsProblem, receiptBodyHash, verifyInclusion, verifyLogEntries, verifyLogHead, loadAllowlist } from "./verify.js";
 import { REFEREE_REVOCATIONS } from "./referee_revocations.inc.js";
 const v = JSON.parse(readFileSync(new URL("../tests/vectors/jcs_vector.json", import.meta.url)));
@@ -112,5 +113,24 @@ ok(view && view.status === "disagreed" && view.affects_verdict === false && view
 ok(corroborationView({ corroboration: { status: "upgraded" } }) === null, "unknown corroboration status is dropped");
 const untouched = await verifyReceipt(rv.receipt, rv.referee_pub, { allowlist: rv.allowlist });
 ok(untouched.status === "VERIFIED" && !untouched.corroboration, "a review receipt with no corroboration block stays VERIFIED");
+const forgedDevice = structuredClone(d.receipt);
+forgedDevice.result.home_score = 99;
+forgedDevice.review = { device_key: { status: "tpm_attested", flags: [], affects_verdict: true } };
+const forgedDeviceV = await verifyReceipt(forgedDevice, d.referee_pub);
+ok(forgedDeviceV.status === "FAIL" && !forgedDeviceV.device_key, "forged device_key on a bad signature does not display or upgrade");
+const deviceView = deviceKeyView({ device_key: { status: "invalid", flags: ["device_signature_invalid"], affects_verdict: true } });
+ok(deviceView && deviceView.status === "invalid" && deviceView.affects_verdict === false
+   && deviceView.flags[0] === "device_signature_invalid",
+   "invalid device key stays flagged and cannot affect the verdict");
+ok(deviceKeyView({ device_key: { status: "trusted" } }) === null, "unknown device_key status is dropped");
+ok(deviceKeyView({ device_key: { status: "tpm_attested", affects_verdict: true, detail: "Attested by TPM" } }) === null,
+   "tpm_attested is not a displayable status");
+const claimedView = deviceKeyView({ device_key: { status: "tpm_claimed", affects_verdict: true, detail: "attacker text" } });
+ok(claimedView && claimedView.status === "tpm_claimed" && claimedView.affects_verdict === false
+   && /unverified/i.test(claimedView.detail),
+   "tpm_claimed says the TPM claim is unverified and cannot affect the verdict");
+ok((await verifyReceipt(rv.receipt, rv.referee_pub, { allowlist: rv.allowlist })).status === "VERIFIED"
+   && !(await verifyReceipt(rv.receipt, rv.referee_pub, { allowlist: rv.allowlist })).device_key,
+   "a review receipt with no device sidecar stays VERIFIED");
 process.exit(fails ? 1 : 0);
 

@@ -14,7 +14,7 @@
     "meta": ["bundle.json", "manifest.jsonl", "checkpoints.jsonl", "countersigned.jsonl", "inputs.jsonl",
              "haptics.jsonl", "input_proof.json", "receipt.json", "receipt.draft.json", "timeline.jsonl",
              "challenges.jsonl", "official_challenges.jsonl", "anchors.jsonl", "referee.pub",
-             "challenge_gates.jsonl", "challenge_results.jsonl", "pairing.json"]
+             "challenge_gates.jsonl", "challenge_results.jsonl", "pairing.json", "device_attest.v0.json"]
   },
   "hash_chain": {
     "canonical_json": "RFC 8785 JCS, integers only (|n| <= 2^53-1), no floats",

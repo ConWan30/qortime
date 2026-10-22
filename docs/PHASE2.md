@@ -1,6 +1,7 @@
 # Phase 2 roadmap
 
 ## TPM key attestation
+* The informational `device_key` status in [DEVICE_ATTEST.md](DEVICE_ATTEST.md) is not this work. A valid sidecar signature plus a TPM provider name is `tpm_claimed` only. `tpm_attested` is withheld until the enrollment check below validates an EK chain, or a Microsoft AIK certificate, against a pinned root set. It does not set `key_kind` or change VERIFIED / FAIL.
 * Make `keys.TpmKey` real: an Ed25519 key isn't available in most TPM 2.0 parts, so either (a) use ECDSA P-256 in the TPM via
   Windows Platform Crypto Provider (NCrypt) and add `alg` to signatures (`ed25519` or `p256`), or (b) keep Ed25519 but
   seal the seed to the TPM (weaker: the seed is in memory while signing).
