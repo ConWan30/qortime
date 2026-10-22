@@ -14,7 +14,8 @@
     "meta": ["bundle.json", "manifest.jsonl", "checkpoints.jsonl", "countersigned.jsonl", "inputs.jsonl",
              "haptics.jsonl", "input_proof.json", "receipt.json", "receipt.draft.json", "timeline.jsonl",
              "challenges.jsonl", "official_challenges.jsonl", "anchors.jsonl", "referee.pub",
-             "challenge_gates.jsonl", "challenge_results.jsonl", "pairing.json", "device_attest.v0.json"]
+             "challenge_gates.jsonl", "challenge_results.jsonl", "pairing.json", "device_attest.v0.json",
+             "score_timeline.json"]
   },
   "hash_chain": {
     "canonical_json": "RFC 8785 JCS, integers only (|n| <= 2^53-1), no floats",
@@ -95,6 +96,25 @@
                          "scope": "official-review", "max_lifetime_days": 120, "receipt_field": "referee.delegation"},
   "transparency_log": {"entry_type": "qortime-log-entry/v1", "head_type": "qortime-log-head/v1",
                        "logged_value": "sha256(JCS(receipt minus signatures))"},
+  "pairing": {
+    "type": "qortime-pairing/v1",
+    "endpoint": "POST /v1/pairings",
+    "file": "pairing.json",
+    "body": "ignored; the client does not choose pairing_id or nonce",
+    "token_fields": ["type", "pairing_id", "nonce", "issued_ms", "key_id", "sig"],
+    "signed_bytes": "RFC 8785 JCS of the token minus sig",
+    "id_nonce": "32 lowercase hex characters each, chosen by the referee"
+  },
+  "score_timeline": {
+    "schema": "qorcap-score-timeline/v0",
+    "file": "score_timeline.json",
+    "signed_bytes": "RFC 8785 JCS of {type, signals, chain, chain_head, checkpoint_head}; signature is not included",
+    "chain_link": "sha256(JCS({t_ms, home, away, quarter, prev}))",
+    "genesis": "0000000000000000000000000000000000000000000000000000000000000000",
+    "checkpoint_head": "receipt.checkpoints[role][-1].hash",
+    "signature_receipt_key": "Ed25519 hex pub and sig; pub is the receipt player pubkey (QorCap finalize device key)",
+    "signature_device_attest_key": "same bytes signed by device_attest.v0.json (ECDSA_P256 or RSA_2048 PKCS#1 v1.5 SHA-256); pub is that SPKI base64 or the hex of the SPKI DER"
+  },
   "submit_auth": {"scheme": "install-key-v1", "header": "X-Qor-Submit", "challenge": "/v1/submit/challenge",
                   "request_type": "qortime-submit/v1", "pow_prefix": "qortime-pow/v1|", "min_client": "0.3.10",
                   "legacy_status": 426, "install_key": "the bundle's device (recorder) key"},

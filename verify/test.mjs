@@ -110,6 +110,11 @@ ok(forgedV.status === "FAIL" && !forgedV.corroboration, "forged corroboration on
 const view = corroborationView({ corroboration: { status: "disagreed", reasons: ["final_score_mismatch"], affects_verdict: true, tolerance_ms: 5000 } });
 ok(view && view.status === "disagreed" && view.affects_verdict === false && view.reasons[0] === "final_score_mismatch",
    "corroboration view keeps the disagreement and forces affects_verdict false");
+const withFinals = corroborationView({ corroboration: { status: "disagreed", reasons: ["final_score_mismatch"],
+  finals: { home: [14, 7], away: [14, 3], bad: [1] } } });
+ok(withFinals && withFinals.finals.home[0] === 14 && withFinals.finals.home[1] === 7
+   && withFinals.finals.away[1] === 3 && !withFinals.finals.bad && withFinals.affects_verdict === false,
+   "corroboration view keeps both finals and drops a bad pair");
 ok(corroborationView({ corroboration: { status: "upgraded" } }) === null, "unknown corroboration status is dropped");
 const untouched = await verifyReceipt(rv.receipt, rv.referee_pub, { allowlist: rv.allowlist });
 ok(untouched.status === "VERIFIED" && !untouched.corroboration, "a review receipt with no corroboration block stays VERIFIED");

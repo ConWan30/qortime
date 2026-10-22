@@ -315,6 +315,16 @@ export function corroborationView(review) {
     }
     if (Object.keys(sides).length) out.sides = sides;
   }
+  if (raw.finals && typeof raw.finals === "object") {
+    const finals = {};
+    for (const role of ["home", "away"]) {
+      const pair = raw.finals[role];
+      if (Array.isArray(pair) && pair.length === 2 && pair.every((n) => Number.isSafeInteger(n) && n >= 0)) {
+        finals[role] = [pair[0], pair[1]];
+      }
+    }
+    if (Object.keys(finals).length) out.finals = finals;
+  }
   return out;
 }
 
