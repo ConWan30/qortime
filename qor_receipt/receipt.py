@@ -28,6 +28,7 @@ from qor_receipt.challenge import (
 from qor_receipt.checkpoints import verify_chain
 from qor_receipt.jcs import canonicalize
 from qor_receipt.keys import KeyProvider, kid, verify  # noqa: F401
+from qor_receipt.review.corroboration import corroboration_view
 from qor_receipt.review.policy import CHALLENGE_TOKEN_TYPE, CHECK_STATES, FAIL_CHECK, PARTIAL_CHECK, REVIEW_KEY_KIND, REVIEW_TYPE
 from qor_receipt.trusted_referees import is_trusted_active, load_allowlist, lookup
 
@@ -317,6 +318,7 @@ def verify_receipt(r: dict[str, Any], *, referee_pub: str | None = None,
     errors: list[str] = []
     partial: list[str] = []
     trusted_ref = False
+    referee_sig_ok = False
     input_advisory = _input_proof_advisory(r.get("signals") if isinstance(r, dict) else None)
     referee_entry: dict[str, Any] | None = None
     review_mode = False
@@ -335,6 +337,8 @@ def verify_receipt(r: dict[str, Any], *, referee_pub: str | None = None,
         rs = sigs.get("referee")
         if not rs or rs.get("key_id") != kid(ref["pubkey"]) or not verify(ref["pubkey"], rs["sig"], msg):
             errors.append("bad_referee_signature")
+        else:
+            referee_sig_ok = True
 
         referee_entry = lookup(ref["pubkey"], path=allowlist_path)
         if referee_entry and referee_entry.get("status") == "active":
@@ -495,4 +499,9 @@ def verify_receipt(r: dict[str, Any], *, referee_pub: str | None = None,
                          "segments_verified": vb.get("segments_verified") if isinstance(vb, dict) else None,
                          "segments_total": vb.get("segments_total") if isinstance(vb, dict) else None,
                          "not_proven": rv.get("not_proven")}
+    # Additive. A disagreed or single-sided pair never edits status, errors, or partial.
+    if referee_sig_ok and isinstance(r, dict):
+        corr = corroboration_view(r.get("review") if isinstance(r.get("review"), dict) else None)
+        if corr:
+            out["corroboration"] = corr
     return out

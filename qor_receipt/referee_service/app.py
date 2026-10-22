@@ -24,6 +24,7 @@ Flow (spot-check):
   POST /v1/submissions/{id}/player-signature       -> device key signs the same bytes; receipt complete
 Live helpers (optional, during Start Match):
   POST /v1/challenges   signed nonce (+ optional chain-head anchor)     POST /v1/anchors   signed chain-head timestamp
+  POST /v1/pairings     referee-signed pairing id + nonce (clients do not choose either)
 Head-to-head challenge links (free, not for betting; qor_receipt/h2h.py; state in $QORTIME_STATE_DIR/h2h):
   POST /v1/h2h  GET /v1/h2h/{id}  POST /v1/h2h/{id}/accept  POST /v1/h2h/{id}/receipts (Bearer player token)
   GET /v1/h2h/{id}/receipts/{sha16}
@@ -239,6 +240,12 @@ def create_app(referee: Referee | None = None, guard: SubmitGuard | None = None,
             return ref.issue_challenge(req.phase, req.role, req.match_id, req.anchor)
         except ValueError as e:
             raise HTTPException(400, str(e)) from None
+
+    @app.post("/v1/pairings")
+    def pairing():
+        """Issue a match-pairing token. The body is ignored: the id and nonce are not taken from the client."""
+        live_ok()
+        return ref.issue_pairing()
 
     @app.post("/v1/anchors")
     def anchor(req: AnchorReq):

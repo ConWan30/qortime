@@ -5,6 +5,9 @@ REVIEW_TYPE = "qortime-bundle-review/v1"
 REVIEW_KEY_KIND = "qortime-official-review"
 CHALLENGE_TOKEN_TYPE = "qortime-challenge/v1"
 ANCHOR_TYPE = "qortime-anchor/v1"
+# Referee-issued link for two single-console submissions of the same match.
+# The pairing id and nonce are signed here. Clients do not choose them.
+PAIRING_TYPE = "qortime-pairing/v1"
 
 # Check states inside review.checks: pass | partial | fail. A "fail" is never signed by the service; the verifier
 # also turns it into FAIL if it ever appears. "partial" keeps the receipt at PARTIAL.

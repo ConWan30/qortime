@@ -107,6 +107,18 @@ copy, not a recording made earlier.
 Verifier output adds `verification_basis: "official-post-hoc-review"` and `review.{scope, video_method,
 segments_verified, segments_total, not_proven}`; the browser verifier prints the basis line.
 
+## Two-sided corroboration (additive)
+
+When both players record with QorCap, each submission can carry a `pairing.json` token from `POST /v1/pairings`.
+The referee links the two submissions only when that token verifies under the referee key. The pairing id and
+nonce are whatever the referee signed. A client-chosen id is not a link.
+
+The cross-check reads each player-signed score timeline and writes `review.corroboration`
+(`corroborated`, `disagreed`, or `single_sided`). It is not one of `review.checks`. A disagreement is shown
+on the verify page and does not flip VERIFIED to FAIL. A pair that agrees does not flip FAIL to VERIFIED.
+One submission, or a forged pairing token, stays `single_sided` and is still judged by the single-sided rules
+above. Detail: [CORROBORATION.md](CORROBORATION.md).
+
 ## What VERIFIED means here (honest trust level)
 
 Proven by the referee itself:
@@ -135,6 +147,7 @@ GET  /health                 {"ok":true,"allowlisted":true,"delegation":{valid,s
 GET  /v1/submit/challenge?pub=<hex>   nonce + pow_bits for a signed submission (docs/REFEREE_KEYS.md §3)
 GET  /v1/log/head | /v1/log?start= | /v1/log/inclusion/{body_sha256}   transparency log
 GET  /v1/referee             pubkey, key_id, policy, final_reader/ffmpeg availability
+POST /v1/pairings            no client id; returns a signed qortime-pairing/v1 token
 POST /v1/challenges          {"phase":"kickoff|halftime|end","role":"home","match_id":"…","anchor":{"chain_head":"…"}}
 POST /v1/anchors             {"match_id":"…","anchor":{"chain_head":"…","segment_seq":N,"checkpoint_head":"…"}}
 POST /v1/submissions?mode=spot-check|full     body: application/zip, header X-Qor-Submit (QorCap >= 0.3.10)
