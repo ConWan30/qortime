@@ -11,7 +11,7 @@
 QorCap, on the player's Windows PC, records an HDMI capture card, reads the scorebug locally, and signs a match receipt (ed25519). QorTime verifies that receipt and serves the public match pages. The package name is still `qor_receipt`. Both `qortime` and `qor-receipt` work. MIT licensed.
 
 [![MIT license](https://img.shields.io/badge/license-MIT-2ef2ff?labelColor=04050a)](LICENSE)
-[![QorCap release](https://img.shields.io/github/v/release/ConWan30/qorcap?label=QorCap&color=2ef2ff&labelColor=04050a)](https://github.com/ConWan30/qorcap/releases/tag/v0.3.28)
+[![QorCap release](https://img.shields.io/github/v/release/ConWan30/qorcap?label=QorCap&color=2ef2ff&labelColor=04050a)](https://github.com/ConWan30/qorcap/releases/tag/v0.3.30)
 [![site live](https://img.shields.io/website?url=https%3A%2F%2Fconwan30.github.io%2Fqortime%2F&label=site&up_message=live&down_message=down&up_color=2ef2ff&down_color=ff4d5e&labelColor=04050a)](https://conwan30.github.io/qortime/)
 [![X @QorTimeHQ](https://img.shields.io/badge/X-@QorTimeHQ-111111?logo=x&logoColor=white)](https://x.com/QorTimeHQ)
 
@@ -89,7 +89,7 @@ The local demo referee is in-memory and is not the official key:
 QOR_REFEREE_SEED=<64 hex> uvicorn qor_receipt.referee.app:app
 ```
 
-QorCap, the Windows capture app, is a separate repo. Latest release checked for this README: [v0.3.28](https://github.com/ConWan30/qorcap/releases/tag/v0.3.28).
+QorCap, the Windows capture app, is a separate repo. Latest release checked for this README: [v0.3.30](https://github.com/ConWan30/qorcap/releases/tag/v0.3.30). Installers: [releases/latest](https://github.com/ConWan30/qorcap/releases/latest).
 
 ## Repo layout
 
@@ -126,7 +126,7 @@ docs/PHASE2.md               not built yet
 - **One countersigned match.** The official referee has not produced a published `VERIFIED` receipt. 021003 came back HTTP 422. 125430 fails the checkpoint gap and clock-skew checks above.
 - **Challenge timing that fits a real pause.** Rule v1 asks the pause menu to land within 600 ms. On captured Madden footage the drawn menu is later than that, so an honest press cannot pass v1. Rule v2 is opt-in. Detail: [docs/REFEREE_SERVICE.md](docs/REFEREE_SERVICE.md).
 - **Verified Match leaves test mode only after KYC.** Not before.
-- **Phase 2, not started.** TPM attestation, receipt inclusion proofs, a sealed capture device, C2PA on clips. [docs/PHASE2.md](docs/PHASE2.md).
+- **Device key, claimed only.** QorCap v0.3.29 and later can add an opt-in TPM device key. The referee shows that as TPM CLAIMED (unverified). That is not attestation and it is not hardware-verified. Real TPM attestation is still roadmap, along with receipt inclusion proofs, a sealed capture device, and C2PA on clips. [docs/PHASE2.md](docs/PHASE2.md).
 
 ## License and credits
 
@@ -171,6 +171,6 @@ The Jev final-screen detector (`qor_receipt/agent/final_screen_jev.py`) is shado
 
 ### Where the design can still break
 
-Replay and pre-recorded video are the problem the nonce challenges exist to catch. They are not finished business on a real full match: halftime challenge timing is not confirmed end to end, and rule v1 does not fit measured pause-menu latency. Two players can still collude. Account sharing is not solved. The full list is [docs/RISKS.md](docs/RISKS.md).
+Replay and pre-recorded video are the problem the nonce challenges exist to catch. They are not finished business on a real full match: halftime challenge timing is not confirmed end to end, and rule v1 does not fit measured pause-menu latency. A relay under about 2.5–3 seconds is a weak catch, and so is a splice that is rehashed and resigned. A virtual capture device was missed. Two players can still collude. Account sharing is not solved. The referee does not check which controller was held. The full list is [docs/RISKS.md](docs/RISKS.md), and the QorCap runs are in [docs/REDTEAM.md](https://github.com/ConWan30/qorcap/blob/main/docs/REDTEAM.md).
 
 </details>

@@ -44,6 +44,11 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;-webki
 .sub{color:var(--dim);font-size:12px}
 .tag{display:inline-flex;align-items:center;gap:5px;font-size:10px;letter-spacing:.12em;text-transform:uppercase;padding:2px 8px;border-radius:99px;border:1px solid var(--line2);color:var(--mute);white-space:nowrap}
 .tag.a{color:var(--aqua);border-color:rgba(63,224,208,.45)}.tag.g{color:var(--gold);border-color:rgba(240,201,92,.55)}.tag.w{color:var(--warn);border-color:rgba(240,160,106,.5)}.tag.x{color:var(--bad);border-color:rgba(255,109,109,.55)}
+.ind{margin-top:10px;padding:8px 10px;border-radius:10px;border:1px solid var(--line2);color:var(--mute);font-size:12px;line-height:1.45}
+.ind .tag{margin-right:6px}
+.ind.cy{border-color:rgba(63,224,208,.45)}
+.ind.bad{border-color:rgba(255,109,109,.55);color:#ffb4b0}
+.ind.warn{border-color:rgba(210,153,34,.7);color:#e6c07b}
 .miss{color:var(--warn);font-style:italic}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 14px;min-width:0}
 .h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
@@ -297,7 +302,7 @@ h1.finalsum.gold{color:var(--gold)}
   </div>
   <div class="clipstat" id="clipStat"></div>
   <div class="pad" id="pad">
-   <div class="h"><span class="lbl">Controller</span><span class="sub">advisory evidence, not proof · playhead on this moment</span></div>
+   <div class="h"><span class="lbl">Controller</span><span class="sub">advisory evidence, not proof · the referee does not check who held the controller</span></div>
    <div class="padstage"><canvas id="padcv" aria-label="Controller presses and haptics aligned to the playhead"></canvas><div class="padph" id="padPh" hidden><i></i></div></div>
    <div class="sub" id="padSub"></div>
   </div>
@@ -608,6 +613,27 @@ function cpLine(x,label){if(!x)return chk(null,label+" checkpoint",MISS);
  const ok=x.frames_hash_matches_evidence;return chk(ok===true?true:ok===false?false:null,`${label} checkpoint #${esc(x.seq)} · frames_hash ${ok?"matches evidence":ok===false?"does not match":"unchecked"}`,`hash ${short(x.hash)}`)}
 function verifyHref(){const rel=/\/site\/matches\//.test(location.pathname)?"../../../verify/":(RCPT.verify_url||"../../verify/");
  const u=new URL(rel,location.href);if(RCPT.url)u.searchParams.set("receipt",new URL(RCPT.url,location.href).href);return u.href}
+function indicatorBlock(){const c=RCPT.corroboration,d=RCPT.device_key,bits=[];
+ if(c&&typeof c==="object"&&typeof c.status==="string"){
+  const labels={corroborated:"CORROBORATED",disagreed:"DISAGREED",single_sided:"SINGLE-SIDED"};
+  const klass=c.status==="disagreed"?"bad":c.status==="corroborated"?"cy":"";
+  const tag=c.status==="disagreed"?"x":c.status==="corroborated"?"a":"";
+  const reasons=(Array.isArray(c.reasons)?c.reasons:[]).filter(x=>typeof x==="string");
+  const pair=p=>Array.isArray(p)&&p.length===2&&p.every(n=>Number.isSafeInteger(n)&&n>=0)?`home ${p[0]}, away ${p[1]}`:"";
+  const finals=[];
+  if(c.finals&&typeof c.finals==="object"){if(pair(c.finals.home))finals.push("home recording "+pair(c.finals.home));if(pair(c.finals.away))finals.push("away recording "+pair(c.finals.away))}
+  bits.push(`<div class="ind ${klass}"><span class="tag ${tag}">${esc(labels[c.status]||c.status)}</span> Separate indicator. Does not change the receipt status.${c.pairing_id?` Pairing ${esc(c.pairing_id)}.` :""}${finals.length?` Finals: ${esc(finals.join("; "))}.`:""}${reasons.length?` ${esc(reasons.join(", "))}.`:""}</div>`)}
+ if(d&&typeof d==="object"&&["tpm_claimed","software","invalid"].includes(d.status)){
+  const labels={tpm_claimed:"TPM CLAIMED (UNVERIFIED)",software:"SOFTWARE",invalid:"INVALID"};
+  const klass=d.status==="invalid"?"bad":d.status==="tpm_claimed"?"warn":"";
+  const tag=d.status==="invalid"?"x":d.status==="tpm_claimed"?"w":"";
+  const meta=[];
+  if(typeof d.key_provider==="string"&&d.key_provider)meta.push("provider "+d.key_provider);
+  if(typeof d.algorithm==="string"&&d.algorithm)meta.push("algorithm "+d.algorithm);
+  if(typeof d.non_exportable==="boolean")meta.push(d.non_exportable?"non-exportable":"exportable");
+  const flags=(Array.isArray(d.flags)?d.flags:[]).filter(x=>typeof x==="string").map(f=>f==="exportable_key"?"the bundle says this key can be exported":f==="key_provider_unknown"?"the key provider is not recognized":f);
+  bits.push(`<div class="ind ${klass}"><span class="tag ${tag}">DEVICE KEY · ${esc(labels[d.status]||d.status)}</span> Does not change the receipt status.${meta.length?` ${esc(meta.join(" · "))}.`:""}${flags.length?` ${esc(flags.join("; "))}.`:""}</div>`)}
+ return bits.join("")}
 function rcCard(e){const ck=e.checkpoints||{},c=!nil(e.highlight)?CL[e.highlight]:null;
  const partial=RCPT.partial||[];const refNote=partial.find(x=>/referee/i.test(x))||(VERIFIED?"":"not signed by the QorTime referee");
  const how=`<details class="howto"><summary class="lbl">How to check</summary><ol>
@@ -619,6 +645,7 @@ function rcCard(e){const ck=e.checkpoints||{},c=!nil(e.highlight)?CL[e.highlight
  ${RCPT.url?"":`<p class="sub">No receipt.json was published with this page, so the verifier opens without one preloaded.</p>`}</details>`;
  $("#rcCard").innerHTML=`<div class="h"><span class="lbl">Receipt &amp; verification</span><span class="tag ${STATUS==="FAIL"?"x":VERIFIED?"g":"w"}">${esc(STATUS||"missing")}</span></div>
  ${chk(VERIFIED?true:STATUS==="FAIL"?false:null,`Receipt: ${esc(RCPT.label||STATUS||"missing")}`,"")}
+ ${indicatorBlock()}
  ${(RCPT.errors||[]).length?`<ul class="errs">${RCPT.errors.map(x=>`<li>${esc(x)}</li>`).join("")}</ul>`:""}
  ${chk(VERIFIED?true:false,"Referee countersignature",esc(refNote))}
  ${cpLine(ck.before,"Before")}${cpLine(ck.after,"After")}

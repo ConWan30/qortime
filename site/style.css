@@ -120,8 +120,8 @@ h1 .accent .ch{background:inherit;-webkit-background-clip:text;background-clip:t
 .face small{color:var(--mute);font-size:11px}
 .spin{width:64px;height:64px;border-radius:50%;border:3px solid rgba(255,255,255,.1);border-top-color:var(--cy);animation:sp 1s linear infinite}@keyframes sp{to{transform:rotate(1turn)}}
 .tiers{display:grid;gap:10px;margin-top:26px}
-.tier{display:grid;grid-template-columns:110px 1fr;gap:14px;align-items:center;font-size:14px;color:#aab2c8;padding:10px 0;border-top:1px solid var(--line)}
-.v{font:900 20px var(--disp);letter-spacing:.08em}.v.ok{color:var(--ok)}.v.pa{color:var(--pa)}.v.fa{color:var(--fa)}
+.tier{display:grid;grid-template-columns:minmax(108px,9.6rem) minmax(0,1fr);gap:14px;align-items:center;font-size:14px;color:#aab2c8;padding:10px 0;border-top:1px solid var(--line)}
+.v{font:900 20px var(--disp);letter-spacing:.08em}.v.ok{color:var(--ok)}.v.pa{color:var(--pa)}.v.sa{color:#ffb000;font-size:16px;letter-spacing:.04em}.v.fa{color:var(--fa)}
 .badges{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:26px}
 .badge{font:600 12px var(--mono);padding:6px 12px;border-radius:999px;border:1px solid}.badge.dual{color:var(--cy);border-color:rgba(46,242,255,.5);background:rgba(46,242,255,.08)}.badge.single{color:var(--mute);border-color:var(--line)}
 /* rest */

@@ -42,7 +42,7 @@
    <div>
     <h2>Capture, with QorCap</h2>
     <p>Run QorCap on the Windows PC with your capture card. It records the match and fingerprints the video as it is written. Each segment is SHA-256 hashed into a chain, and timestamped checkpoints commit to the score state, so cutting or editing the file afterwards shows up. It is built to stay light during play.</p>
-    <p class="fine">Controller button presses are logged from the same session (shipped in QorCap v0.3.0): each button press is hashed into the same checkpoints as the video.</p>
+    <p class="fine">Controller button presses are logged from the same session (shipped in QorCap v0.3.0): each button press is hashed into the same checkpoints as the video. The current build is <a href="https://github.com/ConWan30/qorcap/releases/latest">QorCap on GitHub releases</a>.</p>
    </div>
   </li>
   <li class="step glass" id="prove">
@@ -58,7 +58,7 @@
    <span class="n">03</span>
    <div>
     <h2>Share, and let anyone verify</h2>
-    <p>Hand the receipt to your opponent, a tournament, or a platform. The free verifier checks signatures and the checkpoint chain locally in the browser. The verdict is VERIFIED, PARTIAL, or FAIL, and the file is not uploaded. Referee verdicts verify with <code>qortime referee-ai-verify</code>.</p>
+    <p>Hand the receipt to your opponent, a tournament, or a platform. The free verifier checks signatures and the checkpoint chain locally in the browser. The receipt verdict is VERIFIED, PARTIAL, SELF_ATTESTED, or FAIL, and the file is not uploaded. SELF_ATTESTED means the cryptography holds, but the referee key is not on QorTime’s built-in trusted list (local Start Match key, home-made key, or revoked). It is never shown as VERIFIED. PARTIAL means a trusted referee signed it and something is still missing. An untrusted key is not PARTIAL. Two-sided corroboration is a separate indicator. It never changes that verdict, and end to end it is coming until both QorCap clients send a pairing token and a signed score timeline. Referee AI verdicts (accept, dispute, abstain) are a different check and verify with <code>qortime referee-ai-verify</code>.</p>
     <p class="fine"><a href="../verify/">Open the verifier</a> · <a href="../verify/sample-receipt.json">demo receipt JSON</a></p>
    </div>
   </li>
@@ -75,9 +75,10 @@
   <h2>The honest limit</h2>
   <p>QorTime proves the footage's integrity and timing, and the controller inputs from the same session (QorCap v0.3.0 and later). It does <b>not</b> prove who held the controller.</p>
   <ul>
-   <li><b>Account sharing.</b> Who is physically holding the controller.</li>
+   <li><b>Account sharing.</b> Who is physically holding the controller. The referee does not check pad identity. A second-pad note in QorCap stays in the local input proof file.</li>
    <li><b>Collusion.</b> Both players agreeing to throw or fake a match.</li>
    <li>Anything outside the capture card’s field of view.</li>
+   <li><b>Red team.</b> A virtual capture device was missed. Relays under about 2.5–3 seconds, and a splice that is rehashed and resigned, came out weak. <a href="https://github.com/ConWan30/qorcap/blob/main/docs/REDTEAM.md">QorCap red-team notes</a>.</li>
   </ul>
   <a class="btn ghost mag" href="https://github.com/ConWan30/qortime/blob/main/docs/RISKS.md"><span>Read RISKS.md</span></a>
  </div>

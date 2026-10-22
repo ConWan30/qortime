@@ -168,6 +168,10 @@ def test_viewer_sticky_ticker_and_manual_hash_check():
     # receipt status and the gold seal path are unchanged
     assert 'STATUS==="VERIFIED"' in TEMPLATE
     assert "Receipt FAIL · not a verified result" in TEMPLATE
+    assert "Separate indicator. Does not change the receipt status." in TEMPLATE
+    assert "TPM CLAIMED (UNVERIFIED)" in TEMPLATE
+    assert "hardware-verified" not in TEMPLATE and "tpm_attested" not in TEMPLATE
+    assert "the referee does not check who held the controller" in TEMPLATE
     root = Path(__file__).resolve().parents[1]
     for rel in ("site/matches/125430/index.html", "site/matches/021003/index.html"):
         page = (root / rel).read_text()

@@ -25,6 +25,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .addon strong{letter-spacing:.08em}
 .addon .why{display:block;margin-top:.35rem;color:#8b949e}
 .addon ul{margin:.4rem 0 0;padding-left:1.1rem}
+.addon .meta{display:block;margin-top:.35rem;color:#8b949e}
 .addon.corroborated{border-color:rgba(46,242,255,.55);color:#d7fbff}
 .addon.disagreed{border-color:#f85149;color:#ffb4b0}
 .addon.single_sided{color:#b9c1d6}
@@ -32,6 +33,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 #device strong{letter-spacing:.08em}
 #device .why{display:block;margin-top:.35rem;color:#8b949e}
 #device ul{margin:.4rem 0 0;padding-left:1.1rem}
+#device .meta{display:block;margin-top:.35rem;color:#8b949e}
 #device.invalid{border-color:#f85149;color:#ffb4b0}
 #device.tpm_claimed{border-color:#d29922;color:#e6c07b}
 #device.software{color:#b9c1d6}
@@ -74,7 +76,7 @@ pre{background:#161b22;padding:.75rem;border-radius:6px;white-space:pre-wrap}sma
 <p class="row"><button type="button" id="sample">Paste the demo receipt</button><a href="sample-receipt.json">sample-receipt.json</a></p>
 <input type="file" id="file" accept=".json,application/json">
 <textarea id="json" placeholder='{"schema":"qor-receipt/v0", ...}'></textarea>
-<label>Pinned referee public key (hex). Leave blank and the result is at most PARTIAL.</label>
+<label>Pinned referee public key (hex). Leave blank and the result is at most SELF_ATTESTED.</label>
 <input id="pub" placeholder="64 hex chars">
 <button id="go">Verify</button>
 <div id="badge"></div>
@@ -242,6 +244,39 @@ if (q.get("checkout") === "success" && isValidReceiptId(returned)) {
   }, 2000);
 }
 
+function reasonText(code) {
+  const labels = {
+    final_score_mismatch: "The two final scores differ.",
+    final_score_missing: "A final score is missing.",
+    score_timeline_missing: "A signed score timeline is missing.",
+    unsigned_score_timeline: "The score timeline is missing, or its signature did not check.",
+    timeline_result_mismatch: "The last score event does not match that recording’s final score.",
+    timeline_file_mismatch: "timeline.jsonl does not match the signed score events.",
+    pairing_unverified: "The pairing token was not signed by this referee.",
+    role_conflict: "Both submissions claimed the same role.",
+    same_player_key: "Both recordings were signed by the same player key.",
+    same_checkpoint_head: "Both recordings share a checkpoint head.",
+    shared_challenge_nonce: "The recordings share a challenge nonce.",
+    copied_challenge_response: "A challenge response was copied from the other recording.",
+  };
+  if (labels[code]) return `${labels[code]} (${code})`;
+  if (typeof code === "string" && code.includes("time_differs")) {
+    return `A score change is further apart than the tolerance. (${code})`;
+  }
+  return code;
+}
+
+function finalsText(finals) {
+  if (!finals || typeof finals !== "object") return "";
+  const one = (pair) => (Array.isArray(pair) && pair.length === 2) ? `home ${pair[0]}, away ${pair[1]}` : null;
+  const bits = [];
+  const home = one(finals.home);
+  const away = one(finals.away);
+  if (home) bits.push(`home recording ${home}`);
+  if (away) bits.push(`away recording ${away}`);
+  return bits.length ? `Finals read: ${bits.join("; ")}.` : "";
+}
+
 function paintCorroboration(v) {
   const el = $("corroboration");
   const c = v && v.corroboration;
@@ -256,18 +291,37 @@ function paintCorroboration(v) {
   const why = document.createElement("span");
   why.className = "why";
   if (c.status === "disagreed") {
-    why.textContent = "The two recordings do not agree. This is visible on purpose. It does not change the verdict above.";
+    why.textContent = "The two recordings do not agree. This is a separate indicator. It does not change the verdict above.";
   } else if (c.status === "corroborated") {
-    why.textContent = "Both recordings agree on the final score and on score changes within the stated tolerance, and their challenge responses are independent. This does not change the verdict above.";
+    why.textContent = "Both recordings agree on the final score and on score changes within the stated tolerance, and their challenge responses are independent. This is a separate indicator. It does not change the verdict above.";
   } else {
-    why.textContent = "Only one recording is linked. A single-sided receipt is still judged by the existing rules. This does not change the verdict above.";
+    why.textContent = "Only one recording is linked. A single-sided receipt is still judged by the existing rules. This is a separate indicator. It does not change the verdict above.";
   }
   el.append(why);
+  if (typeof c.pairing_id === "string" && c.pairing_id) {
+    const id = document.createElement("span");
+    id.className = "meta";
+    id.textContent = `Pairing ${c.pairing_id}`;
+    el.append(id);
+  }
+  const finals = finalsText(c.finals);
+  if (finals) {
+    const line = document.createElement("span");
+    line.className = "meta";
+    line.textContent = finals;
+    el.append(line);
+  }
+  if (typeof c.detail === "string" && c.detail) {
+    const detail = document.createElement("span");
+    detail.className = "meta";
+    detail.textContent = c.detail;
+    el.append(detail);
+  }
   if (c.reasons && c.reasons.length) {
     const ul = document.createElement("ul");
     for (const reason of c.reasons) {
       const li = document.createElement("li");
-      li.textContent = reason;
+      li.textContent = reasonText(reason);
       ul.append(li);
     }
     el.append(ul);
@@ -290,6 +344,11 @@ function paintCorroboration(v) {
   }
 }
 
+const DEVICE_FLAGS = {
+  exportable_key: "The bundle says this key can be exported.",
+  key_provider_unknown: "The key provider is not one this referee recognizes.",
+};
+
 function paintDevice(v) {
   const el = $("device");
   const d = v && v.device_key;
@@ -309,11 +368,21 @@ function paintDevice(v) {
   why.className = "why";
   why.textContent = d.detail || "";
   el.append(why);
+  const meta = [];
+  if (typeof d.key_provider === "string" && d.key_provider) meta.push(`key provider ${d.key_provider}`);
+  if (typeof d.algorithm === "string" && d.algorithm) meta.push(`algorithm ${d.algorithm}`);
+  if (typeof d.non_exportable === "boolean") meta.push(d.non_exportable ? "non-exportable: yes" : "non-exportable: no");
+  if (meta.length) {
+    const line = document.createElement("span");
+    line.className = "meta";
+    line.textContent = meta.join(" · ");
+    el.append(line);
+  }
   if (d.flags && d.flags.length) {
     const ul = document.createElement("ul");
     for (const flag of d.flags) {
       const li = document.createElement("li");
-      li.textContent = flag;
+      li.textContent = DEVICE_FLAGS[flag] ? `${DEVICE_FLAGS[flag]} (${flag})` : flag;
       ul.append(li);
     }
     el.append(ul);
