@@ -20,7 +20,43 @@ from qor_receipt.review.corroboration import (
 )
 from qor_receipt.review.device_attest import DEVICE_ATTEST_SCHEMA, device_signed_bytes
 from qor_receipt.review.score_timeline import SCHEMA, chain_events, events_from_sidecar, signing_message
-from tests.test_corroboration import _challenge, _events, _signed_receipt
+
+
+def _events(shift=0, away=7):
+    return [
+        {"t_ms": 1_000 + shift, "home": 0, "away": 0, "quarter": 1},
+        {"t_ms": 50_000 + shift, "home": 7, "away": 0, "quarter": 1},
+        {"t_ms": 120_000 + shift, "home": 14, "away": away, "quarter": 4},
+    ]
+
+
+def _challenge(role, nonce, hid):
+    return {"id": nonce[:8], "role": role, "phase": "kickoff", "nonce": nonce,
+            "pattern": ["OPTIONS", "CROSS", "CIRCLE", "SQUARE", "TRIANGLE"],
+            "issued_ms": 1_000, "deadline_ms": 20_000,
+            "result": {"ok": True, "reason": "ok", "hid_sha256": hid, "pause_press_ms": 1_500, "done_ms": 2_000}}
+
+
+def _signed_receipt(role, device, capture, *, final=(14, 7), events=None, challenges=None, head="ab" * 32):
+    """Player-signed receipt that carries signals.score_timeline. Used to prove that field wins."""
+    home, away = final
+    events = _events() if events is None else events
+    challenges = challenges if challenges is not None else [_challenge(role, "11" * 16, "aa" * 32)]
+    rec = R.build(
+        match={"match_id": "pair-test", "game": "madden27", "platform": "ps5",
+               "scorebug_profile": "madden27_standard", "mode": "single", "started_ms": 1_000, "ended_ms": 130_000},
+        result={"home_score": home, "away_score": away, "quarter": 4, "final_t_ms": 130_000,
+                "winner": R.winner_for(home, away), "method": "end_menu_read", "final_basis": "end_menu",
+                "final_confirmed": True},
+        players=[{"role": role, "player_id": f"local:{role}", "pubkey": device.pubkey_hex, "key_kind": "software"}],
+        referee={"pubkey": capture.pubkey_hex, "key_id": capture.key_id, "key_kind": "local-self-attested"},
+        challenges=challenges,
+        checkpoints={role: [{"seq": 0, "t_ms": 1_000, "frames_hash": "cd" * 32, "input_hash": "ef" * 32,
+                             "prev": "0" * 64, "hash": head, "referee_ts_ms": 1_030, "referee_sig": "0" * 128}]},
+        agreement={"timelines_agree": None, "mismatches": []},
+        signals={"motion_permille": {role: None}, "score_timeline": {"events": events}},
+    )
+    return R.sign_player(R.sign_referee(rec, capture), role, device)
 
 
 def _plain_receipt(role, device, capture, *, final=(14, 7), challenges=None, head="ab" * 32):
