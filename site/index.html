@@ -32,7 +32,7 @@
   <p class="kicker reveal-up"><span class="dot"></span> capture · prove · share · Madden NFL 27 first</p>
   <h1 class="kinetic"><span class="line">One app.</span><span class="line">One recording.</span><span class="line accent">One receipt.</span></h1>
   <p class="lede reveal-up">Play your match with <b>QorCap</b>, one lightweight Windows app that records the capture card and fingerprints every second of video. When the match is over, QorTime does the heavy lifting on the finished recording: a signed receipt, an AI referee verdict, and a public verify link. Nothing heavy runs while you play.</p>
-  <div class="ctas reveal-up"><a class="btn mag" href="verify/"><span>Verify a receipt</span></a><a class="btn ghost mag" href="early-access/"><span>Verified Match — early access</span></a></div>
+  <div class="ctas reveal-up"><a class="btn mag" href="verify/"><span>Verify a receipt</span></a><a class="btn ghost mag" href="https://github.com/ConWan30/qorcap/releases/latest"><span>Download QorCap</span></a><a class="btn ghost mag" href="early-access/"><span>Verified Match — early access</span></a></div>
   <div class="ctas reveal-up vm-hero"><a class="btn vm mag" href="https://buy.stripe.com/test_3cI4gy7he9Uuarqczl00000" target="_blank" rel="noopener noreferrer"><span>Buy Verified Match (test)</span></a></div>
   <p class="vm-hero-note reveal-up">Stripe test mode · $9.99 USD · not a live charge · early access until KYC</p>
  </div>
@@ -92,14 +92,14 @@
   <div class="scene-copy">
    <p class="num">02 / challenge</p>
    <h2 class="split">Prove a human is on the sticks.</h2>
-   <p>At random moments the referee sends a nonce. The player pauses and enters the pattern, which must show up in the controller input log <em>and</em> on video within 600&nbsp;ms. Bots and replays don't get a second try.</p><p class="note">QorCap logs the controller since v0.3.0. Since v0.3.11 a challenge only opens when Madden lets you pause: after the kickoff and a play call, never during a kickoff.</p>
+   <p>Three referee challenges per match: game start, the second half, and the fourth quarter. The player pauses and enters the pattern. On QorCap rule v2 that pause has to show up within 2.5&nbsp;seconds. A relay under 2.5&nbsp;seconds is not reliably caught.</p><p class="note">QorCap logs the controller since v0.3.0. Since v0.3.11 a challenge only opens when Madden lets you pause: after the kickoff and a play call, never during a kickoff. Receipts with no rule id still use the older 600&nbsp;ms ceiling.</p>
   </div>
   <div class="scene-art">
    <div class="pad-wrap glass">
     <div class="pad-top mono"><span>referee nonce <b>7f3a·c19e</b></span><span class="paused">❚❚ PAUSED</span></div>
     <div class="glyphs" id="glyphs"><span class="g">OPT</span><span class="g">←</span><span class="g">→</span><span class="g x">✕</span><span class="g">↓</span><span class="g o">○</span></div>
     <svg class="pwave" viewBox="0 0 600 90" preserveAspectRatio="none" aria-hidden="true"><path id="pwave" d="M0 45 L600 45"/></svg>
-    <div class="window mono"><span>window</span><b><i id="winbar"></i></b><span class="ok" id="winok">matched in 412 ms ✓</span></div>
+    <div class="window mono"><span>2.5 s window</span><b><i id="winbar"></i></b><span class="ok" id="winok">pause inside 2.5 s ✓</span></div>
    </div>
   </div>
  </div>
@@ -110,20 +110,20 @@
  <div class="pin">
   <div class="scene-copy wide">
    <p class="num">03 / co-sign</p>
-   <h2 class="split">Every few seconds, the referee signs the clock.</h2>
-   <p>A rolling hash of frames and inputs goes to the referee about every 4 seconds. It timestamps and countersigns each checkpoint, chaining them. A receipt forged later can't carry signatures from the past.</p>
+   <h2 class="split">The laptop signs the chain. The referee timestamps it.</h2>
+   <p>Checkpoint countersignatures come from the laptop’s own key. The official referee does not treat those as live: the key sits on the player’s PC. What the official referee does sign is the chain head, about every 60&nbsp;seconds, plus the three challenges. A receipt forged later cannot invent those timestamps.</p>
   </div>
   <div class="chain-track" id="chaintrack">
    <svg class="chain-line" preserveAspectRatio="none" viewBox="0 0 1000 10" aria-hidden="true"><line x1="0" y1="5" x2="1000" y2="5"/></svg>
-   <div class="cp glass"><b>KICKOFF</b><span class="mono">00:00:00</span><code>h0 3c9a…11f0</code><i class="ref">REF ✓</i></div>
-   <div class="cp glass"><b>CP 1</b><span class="mono">00:00:04</span><code>h1 a81e…92b4</code><i class="ref">REF ✓</i></div>
-   <div class="cp glass"><b>CP 2</b><span class="mono">00:00:08</span><code>h2 0d47…6ac3</code><i class="ref">REF ✓</i></div>
-   <div class="cp glass ch"><b>CHALLENGE</b><span class="mono">00:07:31</span><code>nonce 7f3a…c19e</code><i class="ref">REF ✓</i></div>
-   <div class="cp glass"><b>HALFTIME</b><span class="mono">00:14:02</span><code>h210 e5b2…7d19</code><i class="ref">REF ✓</i></div>
-   <div class="cp glass"><b>CP 411</b><span class="mono">00:27:24</span><code>h411 9c0f…4e8a</code><i class="ref">REF ✓</i></div>
+   <div class="cp glass"><b>KICKOFF</b><span class="mono">00:00:00</span><code>h0 3c9a…11f0</code><i class="ref">PC ✓</i></div>
+   <div class="cp glass"><b>CP 1</b><span class="mono">00:00:04</span><code>h1 a81e…92b4</code><i class="ref">PC ✓</i></div>
+   <div class="cp glass"><b>HEAD</b><span class="mono">00:01:00</span><code>anchor · 60s</code><i class="ref">QOR ✓</i></div>
+   <div class="cp glass ch"><b>CHALLENGE</b><span class="mono">00:07:31</span><code>nonce 7f3a…c19e</code><i class="ref">QOR ✓</i></div>
+   <div class="cp glass"><b>HALFTIME</b><span class="mono">00:14:02</span><code>h210 e5b2…7d19</code><i class="ref">PC ✓</i></div>
+   <div class="cp glass"><b>CP 411</b><span class="mono">00:27:24</span><code>h411 9c0f…4e8a</code><i class="ref">PC ✓</i></div>
    <div class="cp glass fin"><b>FINAL</b><span class="mono">00:27:28</span><code>seal 21–17</code><i class="ref">SEALED</i></div>
   </div>
-  <p class="note center">Illustrative timeline values.</p>
+  <p class="note center">Illustrative values. PC is the laptop key. QOR is an official referee timestamp, not a hardware attestation.</p>
  </div>
 </section>
 
@@ -133,7 +133,7 @@
   <div class="scene-copy">
    <p class="num">04 / seal</p>
    <h2 class="split">The receipt prints. Everyone signs.</h2>
-   <p>At the final whistle each player's agent signs the result and the referee seals it. If both players run agents and their timelines agree, the receipt is <b>dual-attested</b>.</p>
+   <p>At the final whistle the player’s key signs the result. A receipt from one console is <b>single-attested</b>. Two-sided corroboration is a separate indicator. It never changes the verdict. End to end it is <b>coming</b>: both QorCap clients still have to send the referee’s pairing token and a signed score timeline.</p>
   </div>
   <div class="scene-art">
    <div class="printer"><div class="slot"></div>
@@ -142,10 +142,10 @@
      <pre class="mono">match    madden27 · ps5
 result   HOME 21 — AWAY 17 · Q4
 challenges  3 / 3 passed
-checkpoints 412 countersigned
+checkpoints 412 · laptop key
 receipt_hash</pre>
      <div class="hash mono" id="hash" data-full="sha256:9f3ac41e0b7d52e88a1f64c930de7b21a5c0f8e3d6b94a72e1c907fb">sha256:9f3ac41e0b7d52e88a1f64c930de7b21a5c0f8e3d6b94a72e1c907fb</div>
-     <ul class="sigs mono"><li><span>sig.home</span><b>ed25519:9f3a…c41e</b><em>✓</em></li><li><span>sig.away</span><b>ed25519:4b70…a8d2</b><em>✓</em></li><li><span>sig.referee</span><b>ed25519:e1c9…07fb</b><em>✓</em></li></ul>
+     <ul class="sigs mono"><li><span>sig.home</span><b>ed25519:9f3a…c41e</b><em>✓</em></li><li><span>sig.referee</span><b>ed25519:e1c9…07fb</b><em>✓</em></li></ul>
      <div class="pstamp" id="pstamp"><img src="assets/logo.svg" alt=""><span>SEALED</span></div>
      <p class="note">Illustrative values, not a real match.</p>
     </div>
@@ -162,17 +162,18 @@ receipt_hash</pre>
    <h2 class="split">One verdict. In your browser.</h2>
    <p>Paste the JSON into the verifier. It checks every signature, the checkpoint chain and the challenges locally and returns a verdict. Nothing is uploaded.</p>
    <div class="tiers">
-    <div class="tier"><b class="v ok">VERIFIED</b><span>Every signature, checkpoint and challenge checks out against the pinned referee key.</span></div>
-    <div class="tier"><b class="v pa">PARTIAL</b><span>Signatures valid, something missing: unpinned referee key, skipped challenge.</span></div>
-    <div class="tier"><b class="v fa">FAIL</b><span>A signature, the chain or a challenge doesn't hold. Don't pay out.</span></div>
+    <div class="tier"><b class="v ok">VERIFIED</b><span>Every signature, checkpoint, and challenge holds against a referee key on QorTime’s trusted list.</span></div>
+    <div class="tier"><b class="v pa">PARTIAL</b><span>Signatures check out against a trusted QorTime referee, but something is missing (a challenge, motion, …). An untrusted key is not PARTIAL.</span></div>
+    <div class="tier"><b class="v sa">SELF_ATTESTED</b><span>Cryptography holds, but the referee key is not on QorTime’s built-in trusted list (local Start Match key, home-made key, or revoked). Never shown as VERIFIED.</span></div>
+    <div class="tier"><b class="v fa">FAIL</b><span>A signature, the chain, or a challenge does not hold.</span></div>
    </div>
   </div>
   <div class="scene-art">
    <div class="flip" id="flip"><div class="flip-in">
     <div class="face front glass"><div class="spin"></div><b class="mono">checking 412 signatures…</b></div>
-    <div class="face back glass"><img src="assets/logo.svg" alt="" width="72"><b class="big">VERIFIED</b><span class="badge dual">◆◆ dual-attested</span><small class="mono">referee key pinned · chain intact · 3/3 challenges</small></div>
+    <div class="face back glass"><img src="assets/logo.svg" alt="" width="72"><b class="big">VERIFIED</b><small class="mono">trusted referee key · chain intact · 3/3 challenges</small></div>
    </div></div>
-   <div class="badges"><span class="badge dual">◆◆ dual-attested · both players signed</span><span class="badge single">◆ single-attested · one agent + referee</span></div>
+   <div class="badges"><span class="badge single">◆ single-attested · one recording</span><span class="badge dual">corroboration · separate · coming</span></div>
   </div>
  </div>
 </section>
@@ -183,14 +184,14 @@ receipt_hash</pre>
  <div class="cards">
   <div class="card glass"><h3>Verify in one call</h3><p>The reference verifier ships as a Python CLI and a small browser JS module. Run it on every result before paying out.</p><code>qortime verify r.json --referee-pub &lt;hex&gt;</code><span class="tag">hosted verify API · roadmap</span></div>
   <div class="card glass"><h3>Fewer score disputes</h3><p>A sealed receipt replaces "he lied about the score" tickets with something a machine can check. What it can't see, we list plainly below.</p></div>
-  <div class="card glass"><h3>Open format</h3><p>JSON, canonicalized (JCS), Ed25519 signatures. Spec and schema in the repo, MIT licensed.</p><span class="tag">TPM-held keys · roadmap (<a href="https://github.com/ConWan30/qortime/blob/main/docs/PHASE2.md">PHASE2</a>)</span></div>
+  <div class="card glass"><h3>Open format</h3><p>JSON, canonicalized (JCS), Ed25519 signatures. Spec and schema in the repo, MIT licensed.</p><span class="tag">TPM device key · claimed, unverified (<a href="https://github.com/ConWan30/qortime/blob/main/docs/PHASE2.md">attestation is roadmap</a>)</span></div>
  </div>
 </section>
 
 <section class="wrap" id="limits">
  <div class="glass limits"><h2>Honest limits</h2>
  <p>QorTime proves the footage's integrity and timing. Controller inputs from the same session are logged by QorCap <span class="tag">since v0.3.0</span>. It does <b>not</b> prove:</p>
- <ul><li><b>Account sharing:</b> who is physically holding the controller.</li><li><b>Collusion:</b> both players agreeing to throw or fake a match.</li><li>Anything outside what the capture card saw.</li></ul>
+ <ul><li><b>Account sharing:</b> who is physically holding the controller. The referee does not check pad identity. QorCap’s second-pad note, when it exists, stays in the local <span class="mono">input_proof.json</span>.</li><li><b>Collusion:</b> both players agreeing to throw or fake a match.</li><li>Anything outside what the capture card saw.</li><li><b>Red team:</b> a virtual capture device was missed. Relays under about 2.5–3&nbsp;seconds, and a splice that is rehashed and resigned, came out weak. <a href="https://github.com/ConWan30/qorcap/blob/main/docs/REDTEAM.md">QorCap red-team notes</a>.</li></ul>
  <a class="btn ghost mag" href="https://github.com/ConWan30/qortime/blob/main/docs/RISKS.md"><span>Read RISKS.md</span></a></div>
 </section>
 
@@ -223,7 +224,7 @@ receipt_hash</pre>
  <div class="ctas c"><a class="btn mag" href="verify/"><span>Open the verifier</span></a><a class="btn ghost mag" href="https://github.com/ConWan30/qortime"><span>Star on GitHub</span></a></div>
 </section>
 </main>
-<footer class="wrap foot"><span>QorTime · MIT · early prototype</span><span class="foot-links"><a href="verify/">Verify</a><a href="matches/">Matches</a><a href="challenge/">Challenges</a><a href="how-it-works/">How it works</a><a href="pricing/">Pricing</a><a href="early-access/">Early access</a><a href="https://github.com/ConWan30/qortime">GitHub</a><a href="https://x.com/QorTimeHQ">@QorTimeHQ</a></span><span>Not affiliated with EA, the NFL or Sony. Madden NFL is a trademark of its owner.</span></footer>
+<footer class="wrap foot"><span>QorTime · MIT · early prototype</span><span class="foot-links"><a href="verify/">Verify</a><a href="matches/">Matches</a><a href="challenge/">Challenges</a><a href="how-it-works/">How it works</a><a href="pricing/">Pricing</a><a href="early-access/">Early access</a><a href="https://github.com/ConWan30/qorcap/releases/latest">QorCap</a><a href="https://github.com/ConWan30/qortime">GitHub</a><a href="https://x.com/QorTimeHQ">@QorTimeHQ</a></span><span>Not affiliated with EA, the NFL or Sony. Madden NFL is a trademark of its owner.</span></footer>
 <script src="vendor/gsap.min.js" defer></script>
 <script src="vendor/ScrollTrigger.min.js" defer></script>
 <script src="vendor/lenis.min.js" defer></script>
