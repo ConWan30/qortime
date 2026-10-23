@@ -173,6 +173,8 @@ def test_viewer_sticky_ticker_and_manual_hash_check():
     assert "hardware-verified" not in TEMPLATE and "tpm_attested" not in TEMPLATE
     assert "the referee does not check who held the controller" in TEMPLATE
     assert 'id="sigCard"' in TEMPLATE and "not provided" in TEMPLATE
+    assert "On-device learning" in TEMPLATE and "confirmed is not a pass" in TEMPLATE
+    assert "promoted is not VERIFIED" in TEMPLATE
     assert "Self-signed · not referee-signed" in TEMPLATE and "Self-attested" not in TEMPLATE
     assert 'ok===true&&VERIFIED?"✓"' in TEMPLATE
     root = Path(__file__).resolve().parents[1]

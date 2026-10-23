@@ -328,7 +328,8 @@ export function buildPanels(receipt, v, extras = {}) {
   // official review
   if (rv) {
     const checks = isObj(rv.checks) ? Object.entries(rv.checks).map(([name, c]) => ({ name, label: checkLabel(name), known: name in KNOWN_CHECKS,
-      state: isObj(c) && ["pass", "partial", "fail"].includes(c.state) ? c.state : "fail", detail: isObj(c) ? c.detail : null })) : [];
+      state: isObj(c) && ["pass", "partial", "fail"].includes(c.state) ? c.state : "fail", detail: isObj(c) ? c.detail : null,
+      value: name === "final_reread" ? rereadValue(c) : null })) : [];
     const vb = rv.checks && isObj(rv.checks.video_bytes) && isObj(rv.checks.video_bytes.detail) ? rv.checks.video_bytes.detail : null;
     const an = isObj(rv.anchors) ? rv.anchors : null;
     panels.push({ id: "review", title: "Official review", checks,
@@ -404,6 +405,69 @@ const SIDECARS = {
   "qor-receipt": "A receipt. Paste it in the box above to verify it.",
 };
 
+// On-device learning files. v0 only. A later version is an unknown sidecar and stays on the generic panel.
+// These rows are info. confirmed is not a pass. promoted is not VERIFIED.
+const AI_V0 = {
+  "qorcap-ai-proposal/v0": "On-device proposal. Not a label and not a verdict.",
+  "qorcap-ai-outcome/v0": "Proposal joined to review checks or owner review. confirmed is not a pass and not VERIFIED.",
+  "qorcap-ai-consolidation/v0": "Offline learning batch. promoted is not VERIFIED. discarded is not a receipt failure.",
+  "qorcap-ai-stance/v0": "Model stance. The receipt verdict stays with the referee. Not a label.",
+  "qorcap-ai-label-view/v0": "Label view for the learning join. Labels come from review checks or owner review. Not a verdict.",
+};
+const AI_FAMILIES = new Set(Object.keys(AI_V0).map((id) => id.split("/")[0]));
+
+function schemaIdOf(row) {
+  if (!isObj(row)) return null;
+  return [row.schema, row.type, row.schema_id].find((x) => typeof x === "string") || null;
+}
+
+function classifySchema(id) {
+  if (typeof id !== "string" || !id) return { schema: null, family: null, version: null, known: null };
+  const slash = id.indexOf("/");
+  const family = slash < 0 ? id : id.slice(0, slash);
+  const version = slash < 0 ? null : id.slice(slash + 1);
+  if (AI_FAMILIES.has(family)) {
+    return { schema: id, family, version, known: AI_V0[id] || null };
+  }
+  return { schema: id, family, version, known: SIDECARS[family] || null };
+}
+
+/** Structured final_reread.value, or null. Display only. It does not set the check state. */
+function rereadValue(c) {
+  if (!isObj(c) || !isObj(c.value)) return null;
+  const away = c.value.away, home = c.value.home, quarter = c.value.quarter;
+  if (!Number.isInteger(away) || !Number.isInteger(home) || away < 0 || home < 0) return null;
+  return { away, home, quarter: Number.isInteger(quarter) && quarter >= 0 ? quarter : null };
+}
+
+function aiSummary(family, doc, rows) {
+  if (family === "qorcap-ai-proposal") {
+    const n = rows ? rows.length : 1;
+    const abstain = (rows || [doc]).filter((x) => isObj(x) && x.abstain === true).length;
+    return `${n} proposal${n === 1 ? "" : "s"}${abstain ? `, ${abstain} abstaining` : ""}. A proposal is not a training label.`;
+  }
+  if (family === "qorcap-ai-outcome") {
+    const list = rows || [doc];
+    const n = (name) => list.filter((x) => isObj(x) && x.outcome === name).length;
+    return `${list.length} outcomes: confirmed ${n("confirmed")}, contradicted ${n("contradicted")}, unverifiable ${n("unverifiable")}. confirmed is not a pass.`;
+  }
+  if (family === "qorcap-ai-consolidation" && isObj(doc)) {
+    const decision = doc.decision === "promoted" || doc.decision === "discarded" ? doc.decision : "not given";
+    const tail = decision === "promoted" ? "promoted is not VERIFIED." : decision === "discarded" ? "discarded is not a receipt failure." : "Shown as written.";
+    return `decision ${decision}. ${tail}`;
+  }
+  if (family === "qorcap-ai-stance" && isObj(doc)) {
+    const stance = ["accept", "dispute", "abstain"].includes(doc.stance) ? doc.stance : "not given";
+    return `stance ${stance}. The receipt verdict stays with the referee.`;
+  }
+  if (family === "qorcap-ai-label-view" && isObj(doc)) {
+    const n = isObj(doc.checks) ? Object.keys(doc.checks).length : 0;
+    const source = doc.source === "referee" || doc.source === "human_review" ? doc.source : "not given";
+    return `${n} checks from ${source}. detail prose is not a label.`;
+  }
+  return null;
+}
+
 /** Parse local evidence files (sidecars). Identification only: none of them is checked in this browser. */
 export function describeSidecar(name, text) {
   const out = { name: String(name || "file"), bytes: typeof text === "string" ? text.length : 0, state: "info" };
@@ -415,18 +479,21 @@ export function describeSidecar(name, text) {
   let doc;
   try { doc = JSON.parse(text); } catch {
     const lines = String(text || "").split(/\r?\n/).filter(Boolean);
-    try { const rows = lines.map((l) => JSON.parse(l)); out.kind = "jsonl"; out.rows = rows.length; out.schema = rows.find((x) => isObj(x) && (x.type || x.schema))?.type || null; }
+    let rows;
+    try { rows = lines.map((l) => JSON.parse(l)); }
     catch { out.state = "fail"; out.error = "Not JSON or JSON lines."; return out; }
-    out.known = out.schema ? SIDECARS[String(out.schema).split("/")[0]] || null : null;
+    out.kind = "jsonl"; out.rows = rows.length;
+    const ids = [...new Set(rows.map(schemaIdOf).filter(Boolean))];
+    const id = ids.length === 1 ? ids[0] : null;
+    Object.assign(out, classifySchema(id));
+    if (ids.length > 1) { out.schema = null; out.family = null; out.version = null; out.known = null; }
+    if (out.known) out.summary = aiSummary(out.family, null, rows);
     return out;
   }
   if (!isObj(doc)) { out.kind = Array.isArray(doc) ? "array" : typeof doc; out.known = null; return out; }
-  const id = [doc.schema, doc.type, doc.schema_id].find((x) => typeof x === "string") || null;
-  out.schema = id;
-  out.family = id ? id.split("/")[0] : null;
-  out.version = id && id.includes("/") ? id.split("/").slice(1).join("/") : null;
-  out.known = out.family ? SIDECARS[out.family] || null : null;
+  Object.assign(out, classifySchema(schemaIdOf(doc)));
   out.fields = Object.keys(doc).slice(0, 40).map((k) => ({ key: k, type: Array.isArray(doc[k]) ? `list of ${doc[k].length}` : doc[k] === null ? "null" : typeof doc[k] }));
+  if (out.known && AI_FAMILIES.has(out.family)) out.summary = aiSummary(out.family, doc, null);
   if (out.family === "qorcap-score-timeline") {
     const ev = isObj(doc.signals) && isObj(doc.signals.score_timeline) && Array.isArray(doc.signals.score_timeline.events) ? doc.signals.score_timeline.events : [];
     out.summary = `${ev.length} score events in the file${ev.length ? `, last home ${ev[ev.length - 1].home} – away ${ev[ev.length - 1].away}` : ""}.`;

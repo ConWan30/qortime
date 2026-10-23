@@ -198,5 +198,30 @@ ok(describeSidecar("bad.json", "{not json").state === "fail", "an unreadable sid
 ok(describeSidecar("device_attest.v0.json", JSON.stringify({ schema: "qorcap-device-attest/v0", key_provider: "windows-tpm" })).known !== null,
    "device key sidecar is recognized");
 ok(describeSidecar("inputs.jsonl", '{"t_ms":1}\n{"t_ms":2}\n').rows === 2, "JSON lines sidecars are counted");
+const proposal = '{"schema":"qorcap-ai-proposal/v0","proposal_id":"p1","abstain":false,"value":{"away":7,"home":14}}\n';
+const prop = describeSidecar("ai_proposals.jsonl", proposal);
+ok(prop.state === "info" && prop.known && prop.known.includes("Not a label") && prop.summary.includes("not a training label"),
+   "ai proposal sidecar is info, not a verdict");
+const outcome = describeSidecar("ai_outcomes.jsonl", '{"schema":"qorcap-ai-outcome/v0","outcome":"confirmed"}\n{"schema":"qorcap-ai-outcome/v0","outcome":"contradicted"}\n');
+ok(outcome.state === "info" && /confirmed is not a pass/.test(outcome.summary) && outcome.state !== "pass",
+   "confirmed outcome is not rendered as pass");
+const consol = describeSidecar("consolidation.json", JSON.stringify({ schema: "qorcap-ai-consolidation/v0", decision: "promoted" }));
+ok(consol.state === "info" && /promoted is not VERIFIED/.test(consol.summary) && !/gold|VERIFIED result/.test(consol.known),
+   "promoted consolidation is not VERIFIED");
+const stance = describeSidecar("ai_stance.json", JSON.stringify({ schema: "qorcap-ai-stance/v0", stance: "accept", note: "Model stance. The receipt verdict stays with the referee." }));
+ok(stance.state === "info" && stance.summary.includes("receipt verdict stays with the referee"),
+   "model stance stays separate from the receipt verdict");
+const future = describeSidecar("ai_proposals.jsonl", '{"schema":"qorcap-ai-proposal/v9","proposal_id":"p9"}\n');
+ok(future.known === null && future.family === "qorcap-ai-proposal" && future.version === "v9" && future.state === "info",
+   "an unknown learning-sidecar version falls back to the generic panel");
+const withValue = structuredClone(rv.receipt);
+withValue.review.checks.final_reread.value = { away: 7, home: 14, quarter: 4 };
+const vp = buildPanels(withValue, untouched, {});
+const fr = panelOf(vp, "review").checks.find((c) => c.name === "final_reread");
+ok(fr && fr.state === "pass" && fr.value && fr.value.away === 7 && fr.value.home === 14 && fr.value.quarter === 4,
+   "final_reread value is shown beside the existing check state");
+ok(panelOf(vp, "result").gold === true && untouched.status === "VERIFIED", "gold on this fixture still comes from VERIFIED");
+ok(panelOf(buildPanels(withValue, { ...untouched, status: "FAIL" }, {}), "result").gold === false,
+   "a structured re-read does not mint gold when the verifier said FAIL");
 process.exit(fails ? 1 : 0);
 

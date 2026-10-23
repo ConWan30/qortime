@@ -715,6 +715,16 @@ function sigCard(){const box=$("#sigCard");if(!box)return;
  rows.push(sigRow(5,D.match_id?"info":"absent","Capture",cap.platform?"shown as recorded":"partial",
   [fact("platform",cap.platform),fact("game",cap.game),fact("mode",cap.mode),fact("side",D.role),fact("qorcap",D.qorcap_version),
    fact("length",Number.isFinite(VD.recording_duration_s)?Math.round(VD.recording_duration_s)+" s":null)].join(" · ")));
+ const learn=D.learning&&typeof D.learning==="object"?D.learning:null;
+ if(learn){const bits=[];
+  if(Number.isInteger(learn.proposals))bits.push(learn.proposals+" proposals");
+  if(Number.isInteger(learn.outcomes))bits.push(learn.outcomes+" outcomes");
+  if(learn.decision==="promoted"||learn.decision==="discarded")bits.push("consolidation "+learn.decision);
+  if(learn.stance==="accept"||learn.stance==="dispute"||learn.stance==="abstain")bits.push("stance "+learn.stance);
+  rows.push(sigRow(6,"info","On-device learning","info",
+   (bits.length?esc(bits.join(" · "))+" · ":"")+"Local files. confirmed is not a pass. promoted is not VERIFIED."))}
+ else rows.push(sigRow(6,"absent","On-device learning","not provided",
+  "ai_proposals.jsonl, ai_outcomes.jsonl, consolidation.json, and ai_stance.json were not published with this page. They stay on the capture machine. confirmed is not a pass. promoted is not VERIFIED."));
  box.innerHTML=`<div class="h"><span class="lbl">Signals</span><span class="sub">published with this page · a blank row was not in the data</span></div><div class="sig">${rows.join("")}</div>`}
 function drawScope(){const e=S.ev,cv=$("#scope"),cx=cv.getContext("2d");const I=e&&e.inputs,s=I&&I.strip;
  const dpr=Math.min(2,devicePixelRatio||1),w=cv.clientWidth||320,h=120;

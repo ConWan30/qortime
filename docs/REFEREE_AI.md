@@ -49,6 +49,10 @@ Top-level fields:
 
 The verdict sits next to the bundle. It does not modify `receipt.json`, whose signatures cover its own bytes.
 
+`referee_verdict.json` is never a training label. The accept / dispute / abstain word is a model-bearing judgment. It is not one of `review.checks`. On-device learning consumes `review.checks` only: `bundle_structure`, `capture_chain`, `video_bytes`, `final_reread`, `challenges`, `motion`, and `input_integrity`, plus an owner review when the owner supplies one. The AI explains those checks. It does not decide the receipt verdict.
+
+`final_reread` keeps its `state` and prose `detail`. When the referee's reader already has integer `away` and `home`, the check may also carry an optional `value` object (`away`, `home`, and `quarter` when the reader has one). A pass with no `value` cannot confirm a score, because nothing here parses the prose. The verifier ignores `value`. Adding or omitting it does not change VERIFIED, PARTIAL, SELF_ATTESTED, or FAIL.
+
 ## Measured (2026-10-16)
 
 - 22 real Madden capture frames + 3 doctored copies, live `jev-1.14.0`:
