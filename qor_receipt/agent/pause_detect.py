@@ -14,6 +14,8 @@ Signals (all thresholds pluggable via ``PauseThresholds`` / ``--pause-config JSO
   bright panel: the whole screen goes near-black (thumb mean ~10, lower half ~3) with small white
   text (menu list, top-centre scoreboard "14 - 0 / 3rd 5:00"). Matched by absolute luma caps plus a
   bright-text fraction window, so it needs no gameplay baseline and ignores pure-black fades.
+  The default caps are 16/8. A cheap USB3.0 Video capture of the same menu measured about 16.6/6.7
+  (end menu about 21/13); rule 3 uses 26/16 and does not change this default.
 Paused = template match OR dark_menu OR (dim AND panel), held for ``confirm_frames`` consecutive frames;
 the onset time is the FIRST frame of that run, so confirmation adds no latency to pause_seen_ms.
 """
@@ -26,6 +28,15 @@ from typing import Any
 
 NEEDS_TUNING = True
 THUMB = (160, 90)
+# Default dark-menu caps. Rule 1 and rule 2 reviews use these. Do not raise them: a rule-3 review
+# opts into the capture-path caps below instead.
+DARK_MENU_MAX_LUMA = 16.0
+DARK_MENU_MAX_LOWER = 8.0
+# Cheap "USB3.0 Video" capture of Madden 27 (Oct 2026). The pause menu measured about 16.6 full /
+# 6.7 lower and the end menu about 21 / 13, so 16/8 returns pause_not_seen_on_video. Gameplay on
+# the same path measures about 60-110. Text fraction, confirm_frames, and the other signals stay.
+CALIBRATED_DARK_MENU_MAX_LUMA = 26.0
+CALIBRATED_DARK_MENU_MAX_LOWER = 16.0
 
 
 @dataclass
@@ -40,8 +51,8 @@ class PauseThresholds:
     template_path: str | None = None
     template_min: float = 0.80
     dark_menu: bool = True
-    dark_menu_max_luma: float = 16.0
-    dark_menu_max_lower: float = 8.0
+    dark_menu_max_luma: float = DARK_MENU_MAX_LUMA
+    dark_menu_max_lower: float = DARK_MENU_MAX_LOWER
     dark_menu_bright_min: float = 0.005
     dark_menu_bright_max: float = 0.05
     extra: dict[str, Any] = field(default_factory=dict)
@@ -57,6 +68,12 @@ class PauseThresholds:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+def calibrated_thresholds() -> PauseThresholds:
+    """Rule-3 dark-menu caps. Every other threshold stays on the ``PauseThresholds`` default."""
+    return PauseThresholds(dark_menu_max_luma=CALIBRATED_DARK_MENU_MAX_LUMA,
+                           dark_menu_max_lower=CALIBRATED_DARK_MENU_MAX_LOWER)
 
 
 class PauseDetector:

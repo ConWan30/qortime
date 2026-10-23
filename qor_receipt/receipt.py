@@ -20,6 +20,7 @@ from qor_receipt.challenge import (
     PHASES,
     RULE_V1,
     RULE_V2,
+    RULE_V3,
     deviations_over,
     latency_ceiling_ms,
     pattern_for,
@@ -140,8 +141,8 @@ def _challenge_evidence_errors(c: dict[str, Any], cps: list[dict[str, Any]]) -> 
             errs.append("challenge_pause_outside_window")
         if int(done) < int(pause):
             errs.append("challenge_done_before_pause")
-        # Absent rule is v1 (0..600). Rule 2 is the capture-path ceiling. Any other value is not a
-        # widening: it is flagged and judged against the v1 ceiling.
+        # Absent rule is v1 (0..600). Rules 2 and 3 share the capture-path ceiling. Any other value
+        # is not a widening: it is flagged and judged against the v1 ceiling.
         rule_id = result_rule_id(res)
         if rule_id is None:
             errs.append("challenge_rule_unknown")
@@ -160,7 +161,8 @@ def challenge_consistency_partials(challenges: list[dict[str, Any]], role: str) 
     The referee flips outliers to ``ok`` false before signing, which is a failed challenge.
     This catches a receipt that still claims them ok: the verdict stays PARTIAL. Mixed rule
     ids on one role are the same kind of partial. Rule v1 latencies are not compared here;
-    their ceiling is already 600 ms.
+    their ceiling is already 600 ms. Rule v3 uses the same ±300 ms spread as rule v2, compared
+    within its own rule id.
     """
     ok: list[dict[str, Any]] = []
     for c in challenges or []:
@@ -171,18 +173,20 @@ def challenge_consistency_partials(challenges: list[dict[str, Any]], role: str) 
             ok.append(res)
     rules = [result_rule_id(res) for res in ok]
     out: list[str] = []
-    known = [r for r in rules if r in (RULE_V1, RULE_V2)]
-    if RULE_V1 in known and RULE_V2 in known:
+    known = [r for r in rules if r in (RULE_V1, RULE_V2, RULE_V3)]
+    if len(set(known)) > 1:
         out.append(f"{role}:challenge_rule_mixed")
-    lats = []
-    for res in ok:
-        if result_rule_id(res) != RULE_V2:
-            continue
-        lat = res.get("latency_ms")
-        if isinstance(lat, int) and not isinstance(lat, bool):
-            lats.append(int(lat))
-    if deviations_over(lats):
-        out.append(f"{role}:challenge_latency_inconsistent")
+    for wide in (RULE_V2, RULE_V3):
+        lats = []
+        for res in ok:
+            if result_rule_id(res) != wide:
+                continue
+            lat = res.get("latency_ms")
+            if isinstance(lat, int) and not isinstance(lat, bool):
+                lats.append(int(lat))
+        if deviations_over(lats):
+            out.append(f"{role}:challenge_latency_inconsistent")
+            break
     return out
 
 

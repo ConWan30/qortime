@@ -383,6 +383,72 @@ def test_rule_v2_presentation_clock_ignores_a_close_stamp_lag(tmp_path):
     assert v["status"] in ("VERIFIED", "PARTIAL"), v
 
 
+def _with_rule(e: Env, rule: int, version: str) -> None:
+    meta = json.loads(e.fx["files"]["bundle.json"])
+    meta["challenge_rule"] = rule
+    meta["qorcap_version"] = version
+    e.fx["files"]["bundle.json"] = json.dumps(meta).encode()
+
+
+def test_qorcap_031_rule2_bundle_is_measured_as_rule3(tmp_path):
+    """A sealed 0.3.31 bundle can only say challenge_rule 2. The referee stamps 3 and still passes a real pause.
+
+    The synthetic menu is near-black, so it passes both cap pairs. The 16.6/6.7 frames are covered in
+    test_pause_rule3.py. This is the resubmit path: same latency ceiling, fragment clock, and ±300 ms spread.
+    """
+    e = Env(tmp_path, tail_ms=8_000, k=2)
+    _with_rule(e, 2, "0.3.31")
+    sub = e.submit()
+    e.upload_all(sub)
+    out = e.ref.review(sub)
+    assert out["state"] == "awaiting_player_signature", json.dumps(out.get("review", out), indent=1)[:2000]
+    ch = out["review"]["checks"]["challenges"]
+    assert ch["state"] == "pass" and ch["detail"]["rule"] == 3, ch
+    for c in out["receipt"]["challenges"]:
+        res = c["result"]
+        assert res["ok"] and res["rule"] == 3 and res["reason"] == "ok", res
+        assert "min_luma" not in res
+    final = e.player_sign(sub)
+    v = R.verify_receipt(final["receipt"], referee_pub=e.key.pubkey_hex, allowlist_path=e.allow)
+    assert not any("challenge" in err for err in v["errors"]), v
+    assert not any("challenge" in p for p in v["partial"]), v
+
+
+def test_pause_miss_note_on_a_missing_challenge_segment(tmp_path):
+    e = Env(tmp_path, tail_ms=8_000, k=2)
+    sub = e.submit()
+    plan = json.loads((sub.dir / "plan.json").read_text())
+    skip = next(s for s in plan["challenge"] if int(sub.bundle.segments[s].get("offset", 0)) > 0)
+    for seq in sub.required:
+        if seq != skip:
+            e.ref.put_segment(sub, seq, [e.fx["segments"][seq]])
+    out = e.ref.review(sub)
+    notes = out["review"]["checks"]["challenges"]["detail"]["notes"]
+    assert any("pause_not_seen_on_video: required segments missing" in n and str(skip) in n for n in notes), notes
+
+
+def test_pause_miss_note_names_min_luma_when_no_menu_matches(tmp_path, monkeypatch):
+    from qor_receipt.review.media import PauseScan
+
+    e = Env(tmp_path, tail_ms=8_000, k=2)
+    sub = e.submit()
+    e.upload_all(sub)
+
+    def no_menu(frames, detector=None, press_ms=None, **kw):
+        for _ in frames:
+            pass
+        return PauseScan(onsets=[], frames=36, error=None, min_full_luma=16.6, min_lower_luma=6.7, near_frames=20)
+
+    monkeypatch.setattr("qor_receipt.review.engine.M.scan_pause", no_menu)
+    out = e.ref.review(sub)
+    notes = out["review"]["checks"]["challenges"]["detail"]["notes"]
+    assert any("no menu found" in n and "min_luma_near_press=16.6" in n and "lower 6.7" in n for n in notes), notes
+    # The receipt result, when one was built, keeps the old reason and gains no field. A failed
+    # challenge is an error, so the countersign is refused; the note still lives on the review.
+    assert out["state"] == "refused"
+    assert any("pause_not_seen_on_video" in err for err in out["review"].get("post_sign_errors") or []), out["review"]
+
+
 def test_http_flow(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
 
@@ -422,5 +488,6 @@ def test_http_flow(tmp_path, monkeypatch):
     assert R.verify_receipt(done["receipt"], referee_pub=e.key.pubkey_hex, allowlist_path=e.allow)["status"] == "VERIFIED"
     ch = c.post("/v1/challenges", json={"phase": "halftime"}).json()
     assert verify_token(ch, e.key.pubkey_hex, CHALLENGE_TOKEN_TYPE)
+    assert all(b not in ("CROSS", "CIRCLE") for b in ch["pattern"][1:-1])
     bad = c.post("/v1/submissions", content=b"not a zip")
     assert bad.status_code == 426  # unsigned: rejected before the body is even parsed

@@ -10,8 +10,9 @@ const ALPHABET = ["CROSS", "CIRCLE", "SQUARE", "TRIANGLE", "UP", "DOWN", "LEFT",
 export const MAX_GAP_MS = 10000, MAX_SKEW_MS = 3000, MOTION_MIN = 300;
 const DEFAULT_LEN = 4;
 const MAX_WINDOW_MS = 120000; // v0.3.11: challenge windows are 90 s; longer is not a timed challenge
-// Challenge measurement. Absent result.rule is v1. Rule 2 is opt-in (bundle challenge_rule = 2).
-const RULE_V1 = 1, RULE_V2 = 2;
+// Challenge measurement. Absent result.rule is v1. Rule 2 is the capture-path ceiling.
+// Rule 3 uses that same ceiling and the same ±300 ms spread (calibrated dark-menu caps are a referee concern).
+const RULE_V1 = 1, RULE_V2 = 2, RULE_V3 = 3;
 export const MAX_LATENCY_MS = 600, RULE2_MAX_LATENCY_MS = 2500, RULE2_CONSISTENCY_MS = 300;
 const RESULT_METHODS = new Set(["agreed_scorebug_final", "end_menu_read", "last_scorebug_read_unconfirmed"]);
 const UNCONFIRMED = "last_scorebug_read_unconfirmed";
@@ -210,12 +211,12 @@ function isNonnegInt(v) {
 function resultRuleId(res) {
   if (!res || res.rule == null) return RULE_V1;
   const rule = res.rule;
-  if (typeof rule !== "number" || !Number.isSafeInteger(rule) || (rule !== RULE_V1 && rule !== RULE_V2)) return null;
+  if (typeof rule !== "number" || !Number.isSafeInteger(rule) || (rule !== RULE_V1 && rule !== RULE_V2 && rule !== RULE_V3)) return null;
   return rule;
 }
 
 function latencyCeiling(ruleId) {
-  return ruleId === RULE_V2 ? RULE2_MAX_LATENCY_MS : MAX_LATENCY_MS;
+  return ruleId === RULE_V2 || ruleId === RULE_V3 ? RULE2_MAX_LATENCY_MS : MAX_LATENCY_MS;
 }
 
 function medianMs(values) {
@@ -255,17 +256,24 @@ export function challengeEvidenceErrors(c, cps) {
 }
 
 // Mirrors receipt.challenge_consistency_partials. Rule v1 latencies are not compared.
+// Rule v3 uses the same ±300 ms spread as rule v2, compared inside its own rule id.
 export function challengeConsistencyPartials(challenges, role) {
   const ok = (challenges || []).filter((c) => c && c.role === role && c.result && c.result.ok).map((c) => c.result);
   const rules = ok.map(resultRuleId);
   const out = [];
-  if (rules.includes(RULE_V1) && rules.includes(RULE_V2)) out.push(`${role}:challenge_rule_mixed`);
-  const lats = [];
-  for (const res of ok) {
-    if (resultRuleId(res) !== RULE_V2) continue;
-    if (typeof res.latency_ms === "number" && Number.isSafeInteger(res.latency_ms)) lats.push(res.latency_ms);
+  const known = rules.filter((r) => r === RULE_V1 || r === RULE_V2 || r === RULE_V3);
+  if (new Set(known).size > 1) out.push(`${role}:challenge_rule_mixed`);
+  for (const wide of [RULE_V2, RULE_V3]) {
+    const lats = [];
+    for (const res of ok) {
+      if (resultRuleId(res) !== wide) continue;
+      if (typeof res.latency_ms === "number" && Number.isSafeInteger(res.latency_ms)) lats.push(res.latency_ms);
+    }
+    if (deviationsOver(lats).length) {
+      out.push(`${role}:challenge_latency_inconsistent`);
+      break;
+    }
   }
-  if (deviationsOver(lats).length) out.push(`${role}:challenge_latency_inconsistent`);
   return out;
 }
 

@@ -21,7 +21,7 @@ from qor_receipt.challenge import (
     DEFAULT_DEADLINE_MS,
     PHASES,
     motion_correlation_permille,
-    new_nonce,
+    new_challenge_nonce,
     pattern_for,
     verify_response,
 )
@@ -91,7 +91,7 @@ def create_app(key: SoftwareKey | None = None, clock: Callable[[], int] | None =
         phase, role = body.get("phase"), body.get("role")
         if phase not in PHASES or role not in m["players"]:
             raise HTTPException(400, "bad phase/role")
-        nonce, t = (nonce_fn(phase, role) if nonce_fn else new_nonce()), now()
+        nonce, t = (nonce_fn(phase, role) if nonce_fn else new_challenge_nonce()), now()
         cid = secrets.token_hex(6)
         c = {"id": cid, "role": role, "phase": phase, "nonce": nonce, "pattern": pattern_for(nonce),
              "issued_ms": t, "deadline_ms": t + DEFAULT_DEADLINE_MS, "result": None}

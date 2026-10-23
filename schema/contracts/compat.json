@@ -69,7 +69,21 @@
         "pause_latency_ms": [0, 2500],
         "consistency_ms": 300,
         "clock": "fragment_pts",
-        "opt_in": "bundle.json challenge_rule = 2; the referee stamps result.rule = 2"
+        "dark_menu_max_luma": 16,
+        "dark_menu_max_lower": 8,
+        "opt_in": "bundle.json challenge_rule = 2 and qorcap_version older than 0.3.31 (or not a major.minor.patch); the referee stamps result.rule = 2"
+      },
+      "3": {
+        "id": 3,
+        "pause_latency_ms": [0, 2500],
+        "consistency_ms": 300,
+        "clock": "fragment_pts",
+        "dark_menu_max_luma": 26,
+        "dark_menu_max_lower": 16,
+        "dark_menu_bright_frac": [0.005, 0.05],
+        "confirm_frames": 2,
+        "opt_in": "bundle.json challenge_rule = 3, or challenge_rule = 2 with qorcap_version >= 0.3.31. The referee stamps result.rule = 3. Same latency ceiling, fragment-PTS clock, and ±300 ms spread as rule 2. Only the dark-menu luma caps differ from the 16/8 defaults; the text-fraction window and confirm-frame hold do not.",
+        "why": "On the cheap USB3.0 Video path the Madden 27 pause menu measured about 16.6 full / 6.7 lower and the end menu about 21 / 13, so 16/8 false-negatives it. Gameplay on that path measures about 60-110. QorCap 0.3.31 already detected at 26/16 but can only write challenge_rule 2, so a resubmit of that bundle is measured as rule 3 and the stamp records the caps. Older rule-2 bundles stay on 16/8."
       }
     },
     "recorder_result": "QorCap >= 0.3.11 re-runs each challenge on its own bundle at finalize; an ok result is written to the receipt (reverified_by recorder), anything else stays null with the reason in challenge_results.jsonl",

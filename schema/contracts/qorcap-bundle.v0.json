@@ -11,6 +11,6 @@
     "role": {"enum": ["home", "away"]},
     "receipt_draft_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "input_proof_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-    "challenge_rule": {"description": "Official challenge measurement. Absent or 1: segment_ranges clock and pause 0..600 ms. 2: fragment PTS clock, pause 0..2500 ms, latencies within ±300 ms of their median.", "enum": [1, 2]}
+    "challenge_rule": {"description": "Official challenge measurement. Absent or 1: segment_ranges clock and pause 0..600 ms. 2: fragment PTS clock, pause 0..2500 ms, latencies within ±300 ms of their median, default 16/8 dark-menu caps. 3: same clock, ceiling, and spread as 2, with capture-path dark-menu caps 26/16. A rule-2 bundle from QorCap >= 0.3.31 is measured as 3.", "enum": [1, 2, 3]}
   }
 }

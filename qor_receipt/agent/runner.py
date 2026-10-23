@@ -435,7 +435,7 @@ def run_replay(frames_dir: str | Path, hid_log: str | Path, *, cfg: AgentConfig 
     """
     from fastapi.testclient import TestClient
 
-    from qor_receipt.challenge import new_nonce
+    from qor_receipt.challenge import new_challenge_nonce
     from qor_receipt.keys import SoftwareKey
     from qor_receipt.receipt import verify_receipt
     from qor_receipt.referee.app import create_app
@@ -448,7 +448,7 @@ def run_replay(frames_dir: str | Path, hid_log: str | Path, *, cfg: AgentConfig 
     nonces = {(c["phase"], c.get("role", cfg.role)): c["nonce"] for r in recs if (c := r.get("challenge"))}
     vclock = VirtualClock()
     ref_key = SoftwareKey()
-    app = create_app(ref_key, vclock, nonce_fn=lambda ph, ro: nonces.get((ph, ro)) or new_nonce())
+    app = create_app(ref_key, vclock, nonce_fn=lambda ph, ro: nonces.get((ph, ro)) or new_challenge_nonce())
     core = AgentCore(TestClient(app), key or SoftwareKey(), cfg, Prompt(quiet=quiet))
     dec = HidDecoder()
     hid = sorted(((r["t_ms"], i, r) for i, r in enumerate(recs) if "t_ms" in r), key=lambda x: (x[0], x[1]))

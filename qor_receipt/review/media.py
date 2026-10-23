@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
 
@@ -278,6 +279,50 @@ def end_menu_fallback(rejected: dict, tail_reads: list[dict] | None, timeline_lo
 
 
 # ---------------------------------------------------------------- pause onset (challenges) + motion
+@dataclass
+class PauseScan:
+    """What a pause pass saw. ``error`` is set when decoding or the detector raised; onsets already found are kept."""
+
+    onsets: list[int]
+    frames: int
+    error: str | None = None
+    min_full_luma: float | None = None
+    min_lower_luma: float | None = None
+    near_frames: int = 0
+
+
+def scan_pause(frames: Iterable[tuple[int, Any]], detector=None, press_ms: int | None = None, *,
+               near_before_ms: int = 300, near_after_ms: int = 5_000) -> PauseScan:
+    """Run the pause detector and remember the darkest frame near the answering press.
+
+    ``near_before_ms`` / ``near_after_ms`` match ``pause_seen_for``: the window the referee searches
+    for a menu. The minimum luma in that window is how a miss is explained. An exception is recorded
+    on the scan; it is not raised.
+    """
+    from qor_receipt.agent.pause_detect import PauseDetector
+
+    det = detector or PauseDetector()
+    n = 0
+    min_full: float | None = None
+    min_lower: float | None = None
+    near = 0
+    try:
+        for t, img in frames:
+            ts = int(t)
+            det.update(ts, img)
+            n += 1
+            if press_ms is None or press_ms - near_before_ms <= ts <= press_ms + near_after_ms:
+                near += 1
+                full, lower = det.last.get("full_luma"), det.last.get("lower_luma")
+                if isinstance(full, (int, float)) and not isinstance(full, bool):
+                    min_full = float(full) if min_full is None else min(min_full, float(full))
+                if isinstance(lower, (int, float)) and not isinstance(lower, bool):
+                    min_lower = float(lower) if min_lower is None else min(min_lower, float(lower))
+    except Exception as e:
+        return PauseScan(list(det.onsets), n, f"{type(e).__name__}: {e}", min_full, min_lower, near)
+    return PauseScan(list(det.onsets), n, None, min_full, min_lower, near)
+
+
 def pause_onsets(frames: Iterable[tuple[int, Any]], detector=None) -> list[int]:
     """Mono times where the pause menu first appears in the decoded frames."""
     from qor_receipt.agent.pause_detect import PauseDetector

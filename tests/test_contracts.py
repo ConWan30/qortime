@@ -128,6 +128,14 @@ def test_v0311_challenge_fixtures_partials():
     assert versions["1"]["pause_latency_ms"] == [0, 600] and versions["1"]["clock"] == "segment_ranges"
     assert versions["2"]["id"] == 2 and versions["2"]["pause_latency_ms"] == [0, CH.RULE2_MAX_LATENCY_MS]
     assert versions["2"]["consistency_ms"] == CH.RULE2_CONSISTENCY_MS and versions["2"]["clock"] == "fragment_pts"
+    assert versions["2"]["dark_menu_max_luma"] == 16 and versions["2"]["dark_menu_max_lower"] == 8
+    v3 = versions["3"]
+    assert v3["id"] == 3 and v3["pause_latency_ms"] == versions["2"]["pause_latency_ms"]
+    assert v3["consistency_ms"] == CH.RULE2_CONSISTENCY_MS and v3["clock"] == "fragment_pts"
+    assert v3["dark_menu_max_luma"] == 26 and v3["dark_menu_max_lower"] == 16
+    assert v3["dark_menu_bright_frac"] == [0.005, 0.05] and v3["confirm_frames"] == 2
+    assert CH.RULE3_RECORDER_FROM == (0, 3, 31)
+    assert CH.challenge_rule_of({"challenge_rule": 2, "qorcap_version": "0.3.31"}) == 3
     js = (ROOT / "verify" / "verify.js").read_text(encoding="utf-8")
     assert f"MAX_WINDOW_MS = {CH.MAX_WINDOW_MS};" in js
 

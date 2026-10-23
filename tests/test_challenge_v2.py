@@ -107,8 +107,21 @@ def test_bundle_opt_in_fails_closed():
     assert challenge_rule_of({"challenge_rule": None}) == 1
     assert challenge_rule_of({"challenge_rule": 2}) == 2
     assert challenge_rule_of({"challenge_rule": "2"}) == 1
-    assert challenge_rule_of({"challenge_rule": 3}) == 1
+    assert challenge_rule_of({"challenge_rule": 3}) == 3
+    assert challenge_rule_of({"challenge_rule": "3"}) == 1
+    assert challenge_rule_of({"challenge_rule": 4}) == 1
     assert challenge_rule_of({"challenge_rule": True}) == 1
+    # A version string alone does not widen anything. Rule 2 from before the calibrated recorder stays rule 2.
+    assert challenge_rule_of({"qorcap_version": "0.3.31"}) == 1
+    assert challenge_rule_of({"challenge_rule": 1, "qorcap_version": "0.3.31"}) == 1
+    assert challenge_rule_of({"challenge_rule": 2, "qorcap_version": "0.3.30"}) == 2
+    assert challenge_rule_of({"challenge_rule": 2, "qorcap_version": "test"}) == 2
+    assert challenge_rule_of({"challenge_rule": 2, "qorcap_version": "v0.3.31"}) == 2
+    # QorCap 0.3.31 wrote challenge_rule 2 and measured at the rule-3 caps. Stamp 3.
+    assert challenge_rule_of({"challenge_rule": 2, "qorcap_version": "0.3.31"}) == 3
+    assert challenge_rule_of({"challenge_rule": 2, "qorcap_version": "0.3.32"}) == 3
+    assert challenge_rule_of({"challenge_rule": 2, "qorcap_version": "0.4.0"}) == 3
+    assert challenge_rule_of({"challenge_rule": 3, "qorcap_version": "0.3.11"}) == 3
 
 
 def test_old_receipt_keeps_the_600_ms_meaning():
@@ -117,6 +130,10 @@ def test_old_receipt_keeps_the_600_ms_meaning():
     assert "challenge_latency_out_of_range" in old and "challenge_rule_unknown" not in old
     wide = _challenge_evidence_errors(_chal(1_700, 2), cps)
     assert wide == []
+    rule3 = _challenge_evidence_errors(_chal(1_700, 3), cps)
+    assert rule3 == []
+    past_rule3 = _challenge_evidence_errors(_chal(2_501, 3), cps)
+    assert "challenge_latency_out_of_range" in past_rule3 and "challenge_rule_unknown" not in past_rule3
     still = _challenge_evidence_errors(_chal(80), cps)
     assert still == []
     unknown = _challenge_evidence_errors(_chal(1_700, 9), cps)
@@ -132,6 +149,12 @@ def test_receipt_backstop_flags_inconsistent_and_mixed_rule_claims():
     assert challenge_consistency_partials(inconsistent, "home") == ["home:challenge_latency_inconsistent"]
     mixed = [_chal(80, 1, "kickoff"), _chal(1556, 2, "halftime")]
     assert challenge_consistency_partials(mixed, "home") == ["home:challenge_rule_mixed"]
+    mixed_23 = [_chal(1556, 2, "kickoff"), _chal(1605, 3, "halftime")]
+    assert challenge_consistency_partials(mixed_23, "home") == ["home:challenge_rule_mixed"]
+    rule3 = [_chal(lat, 3, ph) for lat, ph in zip(HONEST_110028, PHASES)]
+    assert challenge_consistency_partials(rule3, "home") == []
+    rule3_jitter = [_chal(lat, 3, ph) for lat, ph in zip((1556, 1535, 2200), PHASES)]
+    assert challenge_consistency_partials(rule3_jitter, "home") == ["home:challenge_latency_inconsistent"]
     # A failed outlier is already not ok, so the backstop does not also fire.
     failed = _chal(2200, 2, "end")
     failed["result"]["ok"] = False

@@ -16,6 +16,60 @@ def test_patterns_vary():
     assert len({tuple(pattern_for(new_nonce())) for _ in range(50)}) > 40
 
 
+# This nonce's pattern uses CROSS before the last slot. Verifiers must keep recomputing it.
+UNSAFE_NONCE = "b9343e477a1df8a8794fd4d579a421b3"
+UNSAFE_PATTERN = ["OPTIONS", "CROSS", "TRIANGLE", "CROSS", "CIRCLE"]
+
+
+def test_pattern_for_keeps_an_old_nonce_that_exits_the_menu_early():
+    from qor_receipt.challenge import pattern_menu_safe
+    assert pattern_for(UNSAFE_NONCE) == UNSAFE_PATTERN
+    assert not pattern_menu_safe(UNSAFE_PATTERN)
+    # The old pattern still answers a challenge. Issuance policy does not change verification.
+    assert verify_response(UNSAFE_PATTERN, perform(UNSAFE_PATTERN, 1_000), issued_ms=0, deadline_ms=20_000,
+                           pause_seen_ms=1_120).ok
+
+
+def test_new_challenge_nonce_keeps_circle_and_cross_for_the_last_slot():
+    from qor_receipt.challenge import MENU_EXIT_BUTTONS, new_challenge_nonce, pattern_menu_safe
+    seen = set()
+    for _ in range(40):
+        nonce = new_challenge_nonce()
+        pattern = pattern_for(nonce)
+        assert pattern_menu_safe(pattern)
+        assert pattern[0] == PAUSE
+        assert all(b not in MENU_EXIT_BUTTONS for b in pattern[1:-1])
+        seen.add(tuple(pattern))
+    assert len(seen) > 15
+
+
+def test_live_referee_issues_a_menu_safe_pattern():
+    from fastapi.testclient import TestClient
+
+    from qor_receipt.keys import SoftwareKey
+    from qor_receipt.referee.app import create_app
+
+    key = SoftwareKey()
+    client = TestClient(create_app(key, lambda: 5_000))
+    mid = client.post("/matches", json={"players": [{"role": "home", "player_id": "p", "pubkey": key.pubkey_hex}]}).json()["match_id"]
+    for _ in range(12):
+        ch = client.post(f"/matches/{mid}/challenges", json={"phase": "kickoff", "role": "home"}).json()
+        assert ch["pattern"] == pattern_for(ch["nonce"])
+        assert all(b not in ("CROSS", "CIRCLE") for b in ch["pattern"][1:-1])
+
+
+def test_referee_redraws_fresh_nonces_and_keeps_an_explicit_one(tmp_path):
+    from qor_receipt.keys import SoftwareKey
+    from qor_receipt.review.engine import Referee
+    ref = Referee(SoftwareKey(), workdir=tmp_path, now=lambda: 1_000, core_factory=None)
+    for phase in ("kickoff", "halftime", "end"):
+        tok = ref.issue_challenge(phase)
+        assert tok["pattern"] == pattern_for(tok["nonce"])
+        assert all(b not in ("CROSS", "CIRCLE") for b in tok["pattern"][1:-1])
+    pinned = ref.issue_challenge("kickoff", nonce=UNSAFE_NONCE)
+    assert pinned["nonce"] == UNSAFE_NONCE and pinned["pattern"] == UNSAFE_PATTERN
+
+
 def _v(events, seen=1_120, **kw):
     return verify_response(pattern_for(NONCE), events, issued_ms=0, deadline_ms=20_000, pause_seen_ms=seen, **kw)
 

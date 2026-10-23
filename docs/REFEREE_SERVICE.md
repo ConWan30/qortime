@@ -59,7 +59,7 @@ Same `qor-receipt/v0`, with:
 - `challenges[*].issuer` = signed `qortime-challenge/v1` token; `result` is the referee's own re-run.
 - `signals.motion_permille` is computed by the referee (`signals.motion_basis` says how).
 
-## Challenge latency (rule v1 and rule v2)
+## Challenge latency (rule v1, rule v2, and rule v3)
 
 The bound is a liveness check, not a claim about how fast Madden draws. The HID log must contain
 OPTIONS and then the nonce pattern inside the issue window, and the referee's own decode must show
@@ -74,26 +74,47 @@ that meaning. On a real Madden/PS5 capture the fully drawn menu is about 1.5–1
 (match 110028: 1556 / 1535 / 1715 ms on the presentation clock), so an honest press cannot pass v1.
 The close-stamp clock adds about another 1.6–1.9 s on top of that.
 
-Rule v2 is opt-in: `bundle.json` `challenge_rule` must be the integer 2. Anything else, including a
-missing or unknown field, stays v1. The referee then:
+Rule v2 is opt-in: `bundle.json` `challenge_rule` must be the integer 2, and the recorder version
+must be older than 0.3.31 (or not a `major.minor.patch`). Anything else, including a missing or
+unknown field, stays v1, except integer 3 and a rule-2 bundle from QorCap >= 0.3.31 (those are
+rule v3, below). The referee then:
 
 - dates frames from the fragment's first-sample PTS (`tfdt`) through the manifest frame fit;
 - accepts a menu in 0..2500 ms;
 - requires every successful latency to sit within ±300 ms of the median of those latencies
-  (a difference of exactly 300 ms still passes; one challenge has no peer and is not compared).
+  (a difference of exactly 300 ms still passes; one challenge has no peer and is not compared);
+- keeps the default dark-menu caps (full luma <= 16, lower half <= 8) plus the text-fraction window.
+
+Rule v3 is that same clock, ceiling, and ±300 ms spread. The dark-menu caps are the capture-path
+calibration: full luma <= 26, lower half <= 16. The text-fraction window (0.5%..5% of pixels at
+luma >= 170), the two-frame hold, and press ordering are unchanged. Gameplay on this path measures
+about 60–110 and still fails the cap. A bundle opts in with `challenge_rule` = 3. A rule-2 bundle
+from QorCap >= 0.3.31 is measured as rule v3: that recorder's own check already used 26/16 (the
+menu on a cheap USB3.0 Video card measured about 16.6/6.7, and the end menu about 21/13, so 16/8
+false-negatives it) and its sealed bundle cannot write 3. The referee stamps `result.rule` = 3
+either way, so the receipt records which caps were used. A version string without `challenge_rule`
+2 or 3 stays v1. Older rule-2 bundles stay on 16/8 and stamp 2.
 
 An outlier is flipped to `ok: false`, reason `latency_inconsistent`, before the phase-pass check,
 so it does not count toward VERIFIED. The challenges check stays `partial` (not a structural
 `fail`). The signed result carries `result.rule`, which is what the verifiers trust. A claimed
-success at 1700 ms with no rule is still `challenge_latency_out_of_range`. A claimed rule-2 success
-whose latencies disagree is `challenge_latency_inconsistent` (PARTIAL). Mixed rule ids on one role
-are `challenge_rule_mixed`.
+success at 1700 ms with no rule is still `challenge_latency_out_of_range`. A claimed rule-2 or
+rule-3 success whose latencies disagree is `challenge_latency_inconsistent` (PARTIAL). Mixed rule
+ids on one role are `challenge_rule_mixed`. When a pause is not seen, the challenges note says
+which cause it was (segments missing, decode failed and how many frames, or no menu and the minimum
+luma near the press). The result reason stays `pause_not_seen_on_video`.
 
-What v2 still rejects: a pause before the press, a missing pause, a replayed or early pattern, and
-a delay past 2500 ms. What a constant-delay relay under 2500 ms can still do: show the menu at the
-same offset on every challenge. That offset is inside the ceiling and inside the jitter window.
-The pattern is still unpredictable and issued at runtime, so the relay has to be a live delayed
-copy, not a recording made earlier.
+What v2 and v3 still reject: a pause before the press, a missing pause, a replayed or early
+pattern, a delay past 2500 ms, and a frame that is not a dark menu with a little bright text.
+What a constant-delay relay under 2500 ms can still do: show the menu at the same offset on every
+challenge. That offset is inside the ceiling and inside the jitter window. The pattern is still
+unpredictable and issued at runtime, so the relay has to be a live delayed copy, not a recording
+made earlier.
+
+New challenge nonces are redrawn until CIRCLE and CROSS appear only in the last pattern slot (or
+not at all). Those two buttons leave the Madden pause menu or snap a live play, so an earlier one
+makes the rest of the pattern happen in the game. `pattern_for` is unchanged. Old receipts, and
+both verifiers, still accept a nonce whose pattern uses them earlier.
 
 ## Verdict rules (Python `qor_receipt/receipt.py` = JS `verify/verify.js`)
 

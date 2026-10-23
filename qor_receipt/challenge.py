@@ -27,12 +27,22 @@ unknown before ``issued_ms``, every press must fall inside [issued_ms, deadline_
 Rule v2 (``bundle.json`` ``challenge_rule`` = 2) is the capture-path measurement. On a real Madden/PS5
 HDMI capture the pause menu is drawn about 1.5–1.75 s after OPTIONS, so this 600 ms ceiling cannot
 pass an honest press. Rule v2 dates frames from the fragment PTS, accepts 0..2500 ms, and requires
-the successful latencies to sit within ±300 ms of their median. Anything other than the integer 2
-stays on this default (rule v1). A receipt result with no ``rule`` field keeps the 600 ms meaning.
+the successful latencies to sit within ±300 ms of their median. A receipt result with no ``rule``
+field keeps the 600 ms meaning.
+
+Rule v3 keeps that clock, that ceiling, and that ±300 ms spread. The only change is the dark-menu
+luma caps: 26 full-frame and 16 lower-half, instead of the 16/8 defaults. Those defaults miss the
+menu on the cheap USB3.0 Video path (measured pause about 16.6/6.7, end menu about 21/13; gameplay
+on the same path is about 60–110). The text-fraction window, confirm-frame hold, and press ordering
+stay put. A bundle opts in with ``challenge_rule`` = 3. A rule-2 bundle from QorCap >= 0.3.31 is
+measured the same way and stamped ``result.rule`` = 3: that recorder already used 26/16 and its
+bundle schema cannot write 3. Older rule-2 bundles stay on 16/8 and stay rule 2. Anything else
+stays rule v1.
 """
 from __future__ import annotations
 
 import hashlib
+import re
 import secrets
 from dataclasses import dataclass
 from typing import Any
@@ -47,10 +57,17 @@ MAX_WINDOW_MS = 120_000          # verifiers refuse longer windows (partial: cha
 MIN_LATENCY_MS = 0
 MAX_LATENCY_MS = 600
 # Rule v2 is opt-in. These do not change verify_response's default ceiling.
+# Rule v3 uses the same ceiling and spread. It does not widen verify_response's default either.
 RULE_V1 = 1
 RULE_V2 = 2
+RULE_V3 = 3
 RULE2_MAX_LATENCY_MS = 2_500
 RULE2_CONSISTENCY_MS = 300
+# First QorCap that measured this capture path at the rule-3 caps and still wrote challenge_rule 2.
+RULE3_RECORDER_FROM = (0, 3, 31)
+# Leave the pause menu or snap a live play. Allowed only in the last pattern slot.
+MENU_EXIT_BUTTONS = ("CROSS", "CIRCLE")
+_VERSION_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)")
 
 
 def new_nonce() -> str:
@@ -58,7 +75,11 @@ def new_nonce() -> str:
 
 
 def pattern_for(nonce_hex: str, length: int = DEFAULT_LEN) -> list[str]:
-    """Deterministic: sha256(nonce) bytes mod 8. No immediate repeats (easier to perform/detect)."""
+    """Deterministic: sha256(nonce) bytes mod 8. No immediate repeats (easier to perform/detect).
+
+    Verifiers recompute this from the nonce. Do not change the alphabet or the derivation.
+    New issues that need a menu-safe pattern redraw the nonce (``new_challenge_nonce``).
+    """
     d = hashlib.sha256(bytes.fromhex(nonce_hex)).digest()
     out: list[str] = []
     i = 0
@@ -69,6 +90,38 @@ def pattern_for(nonce_hex: str, length: int = DEFAULT_LEN) -> list[str]:
             b = ALPHABET[(ALPHABET.index(b) + 1) % len(ALPHABET)]
         out.append(b)
     return [PAUSE] + out
+
+
+def pattern_menu_safe(pattern: list[str]) -> bool:
+    """CIRCLE and CROSS may sit in the last slot only.
+
+    In Madden's pause menu CIRCLE backs out and CROSS selects a menu item (and can snap the ball
+    once play is live). Either button earlier in the pattern makes the remaining presses happen
+    after that side effect. OPTIONS is the pause itself and is not one of these buttons.
+    """
+    if not pattern or pattern[0] != PAUSE or len(pattern) < 2:
+        return False
+    return all(b not in MENU_EXIT_BUTTONS for b in pattern[1:-1])
+
+
+def new_challenge_nonce(length: int = DEFAULT_LEN, *, attempts: int = 128) -> str:
+    """Draw nonces until ``pattern_for`` keeps CIRCLE and CROSS out of every slot but the last."""
+    for _ in range(attempts):
+        nonce = new_nonce()
+        if pattern_menu_safe(pattern_for(nonce, length)):
+            return nonce
+    raise RuntimeError("could not draw a menu-safe challenge nonce")
+
+
+def recorder_version(meta: dict | None) -> tuple[int, int, int] | None:
+    """Leading ``major.minor.patch`` of ``qorcap_version``, or None when it is not that shape."""
+    raw = (meta or {}).get("qorcap_version")
+    if not isinstance(raw, str):
+        return None
+    m = _VERSION_RE.match(raw.strip())
+    if not m:
+        return None
+    return int(m.group(1)), int(m.group(2)), int(m.group(3))
 
 
 @dataclass
@@ -132,25 +185,40 @@ def verify_response(pattern: list[str], hid_events: list[dict[str, Any]], *, iss
 
 
 def challenge_rule_of(meta: dict | None) -> int:
-    """Bundle opt-in. Only the integer 2 selects rule v2; anything else stays v1 (fail closed)."""
-    if (meta or {}).get("challenge_rule") == RULE_V2:
+    """Bundle opt-in. Unknown values stay v1 (fail closed).
+
+    Integer 3 is rule v3. Integer 2 is rule v2, except a QorCap >= 0.3.31 bundle: that recorder
+    asked for the capture-path measurement and its own detector already used the rule-3 caps, but
+    it can only write ``challenge_rule`` 2. The referee measures those bundles as rule v3 and
+    stamps 3. A version string alone does not opt in. Older rule-2 bundles stay rule v2.
+    """
+    raw = (meta or {}).get("challenge_rule")
+    if raw == RULE_V3:
+        return RULE_V3
+    if raw == RULE_V2:
+        ver = recorder_version(meta)
+        if ver is not None and ver >= RULE3_RECORDER_FROM:
+            return RULE_V3
         return RULE_V2
     return RULE_V1
 
 
 def result_rule_id(res: dict | None) -> int | None:
-    """Rule stamped on a signed result. Absent means v1. An unknown value is not a grant of v2."""
+    """Rule stamped on a signed result. Absent means v1. An unknown value is not a wider ceiling."""
     if not isinstance(res, dict) or "rule" not in res or res.get("rule") is None:
         return RULE_V1
     rule = res.get("rule")
-    if isinstance(rule, bool) or not isinstance(rule, int) or rule not in (RULE_V1, RULE_V2):
+    if isinstance(rule, bool) or not isinstance(rule, int) or rule not in (RULE_V1, RULE_V2, RULE_V3):
         return None
     return rule
 
 
 def latency_ceiling_ms(rule_id: int | None) -> int:
-    """Unknown rules use the v1 ceiling, so a made-up rule id cannot widen the bound."""
-    return RULE2_MAX_LATENCY_MS if rule_id == RULE_V2 else MAX_LATENCY_MS
+    """Unknown rules use the v1 ceiling, so a made-up rule id cannot widen the bound.
+
+    Rule v3 uses the rule v2 ceiling. It does not add a new timing window.
+    """
+    return RULE2_MAX_LATENCY_MS if rule_id in (RULE_V2, RULE_V3) else MAX_LATENCY_MS
 
 
 def median_ms(values: list[int]) -> float:
@@ -178,7 +246,7 @@ def apply_consistency(measured: list[dict], *, window_ms: int = RULE2_CONSISTENC
 
     ``measured`` items are challenge dicts with a ``result`` dict. Returns the indexes flipped to
     ``ok`` false, reason ``latency_inconsistent``. The latency number is kept. Callers run this
-    only for rule v2, and before the phase-pass check, so an outlier does not count as passed.
+    for rule v2 and rule v3, and before the phase-pass check, so an outlier does not count as passed.
     """
     ok_at: list[int] = []
     lats: list[int] = []

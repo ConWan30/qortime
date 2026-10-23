@@ -1,6 +1,6 @@
 // node verify/test.mjs : JCS parity + JS verifier against the Python-produced vectors.
 import { readFileSync } from "node:fs";
-import { canonicalize, sha256Hex, verifyReceipt, challengeEvidenceErrors, challengeConsistencyPartials, inputProofAdvisory, checkDelegation,
+import { canonicalize, sha256Hex, verifyReceipt, patternFor, challengeEvidenceErrors, challengeConsistencyPartials, inputProofAdvisory, checkDelegation,
          corroborationView,
          deviceKeyView,
          revocationsProblem, receiptBodyHash, verifyInclusion, verifyLogEntries, verifyLogHead, loadAllowlist } from "./verify.js";
@@ -41,6 +41,12 @@ ok(challengeEvidenceErrors(oldWide, [{ referee_ts_ms: 1600 }]).includes("challen
 const rule2 = structuredClone(good); rule2.result.latency_ms = 1700; rule2.result.rule = 2;
 ok(challengeEvidenceErrors(rule2, [{ referee_ts_ms: 1600 }]).length === 0,
    "result.rule 2 accepts 1700 ms");
+const rule3 = structuredClone(good); rule3.result.latency_ms = 1700; rule3.result.rule = 3;
+ok(challengeEvidenceErrors(rule3, [{ referee_ts_ms: 1600 }]).length === 0,
+   "result.rule 3 accepts 1700 ms on the same ceiling as rule 2");
+const rule3late = structuredClone(good); rule3late.result.latency_ms = 2501; rule3late.result.rule = 3;
+ok(challengeEvidenceErrors(rule3late, [{ referee_ts_ms: 1600 }]).includes("challenge_latency_out_of_range"),
+   "result.rule 3 still rejects a latency past 2500 ms");
 const bogus = structuredClone(good); bogus.result.latency_ms = 1700; bogus.result.rule = 9;
 const bogusErr = challengeEvidenceErrors(bogus, [{ referee_ts_ms: 1600 }]);
 ok(bogusErr.includes("challenge_rule_unknown") && bogusErr.includes("challenge_latency_out_of_range"),
@@ -54,6 +60,16 @@ ok(challengeConsistencyPartials([claim("kickoff", 1556, 2), claim("halftime", 15
    "a jittered rule-2 claim is challenge_latency_inconsistent");
 ok(challengeConsistencyPartials([claim("kickoff", 80, 1), claim("halftime", 1556, 2)], "home").includes("home:challenge_rule_mixed"),
    "mixed rule ids are challenge_rule_mixed");
+ok(challengeConsistencyPartials([claim("kickoff", 1556, 2), claim("halftime", 1605, 3)], "home").includes("home:challenge_rule_mixed"),
+   "rule 2 mixed with rule 3 is challenge_rule_mixed");
+ok(challengeConsistencyPartials([claim("kickoff", 1556, 3), claim("halftime", 1535, 3), claim("end", 2200, 3)], "home")
+   .includes("home:challenge_latency_inconsistent"),
+   "a jittered rule-3 claim is challenge_latency_inconsistent");
+ok(challengeConsistencyPartials([claim("kickoff", 1605, 3), claim("halftime", 1631, 3), claim("end", 1556, 3)], "home").length === 0,
+   "the measured Madden pause latencies are consistent under rule 3");
+const unsafePattern = await patternFor("b9343e477a1df8a8794fd4d579a421b3");
+ok(JSON.stringify(unsafePattern) === JSON.stringify(["OPTIONS", "CROSS", "TRIANGLE", "CROSS", "CIRCLE"]),
+   "patternFor is unchanged for a nonce that uses CROSS before the last slot");
 const advOk = inputProofAdvisory({ input: { human_permille: 700, match_permille: 500, chance_permille: 100,
   haptic_events: 3, haptic_high_confidence: 2, inputs_sha256: "c".repeat(64) } });
 ok(advOk && advOk.ok, "inputProofAdvisory accepts strong human/align/haptic signals");

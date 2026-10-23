@@ -38,14 +38,21 @@ Status: draft v0. Schema: [`schema/receipt.v0.json`](../schema/receipt.v0.json).
 
 `pattern_for(nonce)`: `d = SHA-256(nonce bytes)`. For i = 0..3, `b = ALPHABET[d[i] mod 8]` where
 ALPHABET = `CROSS CIRCLE SQUARE TRIANGLE UP DOWN LEFT RIGHT`. If `b` equals the previous button, use the next one in
-ALPHABET. The pattern is `["OPTIONS", b0..b3]`.
+ALPHABET. The pattern is `["OPTIONS", b0..b3]`. Verifiers recompute this and reject a pattern that does not match.
+The alphabet and the derivation do not change. A referee issuing a new nonce redraws until CIRCLE and CROSS are only
+in the last slot (or absent): in the Madden pause menu those buttons back out or select, so an earlier one lets the
+rest of the pattern into live play. A nonce that was already issued still verifies.
 
 The referee accepts the response when, in the agent's HID log (DualSense Edge over USB):
 1. an `OPTIONS` press in `[issued_ms, deadline_ms]` is followed **immediately** by the four buttons, in order
    (key-downs only, other presses not allowed in between). The answering press is the first OPTIONS press that is
    followed by the pattern (v0.3.11: an OPTIONS press during a live play does nothing in online Madden and does not
    void the challenge); and
-2. the pause menu was detected on the capture feed at `pause_seen_ms`, with 0 ≤ `pause_seen_ms − pause_press_ms` ≤ 600 ms.
+2. the pause menu was detected on the capture feed at `pause_seen_ms`, with 0 ≤ `pause_seen_ms − pause_press_ms` ≤ 600 ms
+   when `result.rule` is absent or 1. Rules 2 and 3 use the same 0..2500 ms ceiling and require the successful latencies
+   within ±300 ms of their median (see [docs/REFEREE_SERVICE.md](../docs/REFEREE_SERVICE.md)). Rule 3 is the only one
+   whose dark-menu luma caps are the capture-path pair (26/16); rules 1 and 2 keep 16/8. An unknown rule id does not
+   widen the 600 ms ceiling.
    A negative latency means the video isn't from this console or isn't live. Too large a latency suggests a relay.
 
 The deadline is issue + 90 s (v0.3.11; it was 20 s), and submissions are refused more than 5 s after the deadline.

@@ -16,15 +16,17 @@ from pathlib import Path
 from typing import Any, Callable
 
 from qor_receipt import receipt as R
+from qor_receipt.agent.pause_detect import PauseDetector, calibrated_thresholds
 from qor_receipt.challenge import (
     DEFAULT_DEADLINE_MS,
     PHASES,
     RULE_V2,
+    RULE_V3,
     apply_consistency,
     challenge_rule_of,
     latency_ceiling_ms,
     motion_correlation_permille,
-    new_nonce,
+    new_challenge_nonce,
     pattern_for,
     response_press_ms,
     verify_response,
@@ -156,7 +158,7 @@ class Referee:
         if phase not in PHASES or role not in ("home", "away"):
             raise ValueError("bad phase/role")
         t = self.now()
-        n = nonce or new_nonce()
+        n = nonce or new_challenge_nonce()
         return self._sign_token({"type": CHALLENGE_TOKEN_TYPE, "nonce": n, "pattern": pattern_for(n), "phase": phase,
                                  "role": role, "match_id": str(match_id)[:128], "issued_ms": t,
                                  "deadline_ms": t + DEFAULT_DEADLINE_MS, "anchor": _clean_anchor(anchor)})
@@ -491,7 +493,7 @@ class Referee:
         toks = {t.get("nonce"): t for t in b.jsonl("official_challenges.jsonl")}
         presses = B.press_events(b)
         rule = challenge_rule_of(b.meta)
-        clock = capture_clock(b.segments) if rule == RULE_V2 else None
+        clock = capture_clock(b.segments) if rule in (RULE_V2, RULE_V3) else None
         ceiling = latency_ceiling_ms(rule)
         hz = 30.0
         out, notes, bad = [], [], False
@@ -518,12 +520,23 @@ class Referee:
                 continue
             win = [p for p in presses if issued <= p["t_ms"] <= deadline]
             seqs = _challenge_seqs(b, c, presses, wmm)
+            pp = response_press_ms(c2["pattern"] or [], win, issued_ms=issued, deadline_ms=deadline)
+            needed = [s for s in seqs if int(b.segments[s].get("offset", 0)) > 0]
+            missing_segs = [s for s in needed if s not in sub.received]
             pause_seen = None
-            if M.ffmpeg_bin() and all(s in sub.received for s in seqs if int(b.segments[s].get("offset", 0)) > 0):
+            miss: dict[str, Any] | None = None
+            if not needed or missing_segs:
+                miss = {"segments_missing": True, "missing": missing_segs}
+            elif not M.ffmpeg_bin():
+                miss = {"decode_error": "ffmpeg not available", "frames_decoded": 0}
+            else:
+                # Rule 3 is the only review that raises the dark-menu caps. Rule 1 and rule 2 keep 16/8.
+                det = PauseDetector(calibrated_thresholds() if rule == RULE_V3 else None)
+
                 def frames(seqs=seqs):
                     for run in M.runs(seqs, b):
                         pts0 = None
-                        if rule == RULE_V2:
+                        if rule in (RULE_V2, RULE_V3):
                             init = M.init_seq_for(b, run[0])
                             if init is not None:
                                 pts0 = fragment_pts0_ms(rd(init) or b"", rd(run[0]) or b"")
@@ -531,13 +544,16 @@ class Referee:
                             # No tfdt: keep the segment_ranges time. That stamp is late, so it fails the ceiling.
                             mono = t if pts0 is None else frame_mono_ms(clock, pts0, n, hz)
                             yield mono + wmm, img
-                try:
-                    onsets = M.pause_onsets(frames())
-                except Exception as e:  # never silent
-                    onsets = []
-                    notes.append(f"{c.get('phase')}: pause detector error {type(e).__name__}")
-                pp = response_press_ms(c2["pattern"] or [], win, issued_ms=issued, deadline_ms=deadline)
-                pause_seen = pause_seen_for(pp, onsets)
+
+                scan = M.scan_pause(frames(), detector=det, press_ms=pp)
+                pause_seen = pause_seen_for(pp, scan.onsets)
+                if pause_seen is None:
+                    if scan.error or scan.frames == 0:
+                        miss = {"decode_error": scan.error or "no frames", "frames_decoded": scan.frames}
+                    else:
+                        miss = {"frames_decoded": scan.frames, "min_full_luma": scan.min_full_luma,
+                                "min_lower_luma": scan.min_lower_luma, "near_frames": scan.near_frames,
+                                "caps": (det.th.dark_menu_max_luma, det.th.dark_menu_max_lower)}
             res = verify_response(c2["pattern"] or [], [{"t_ms": p["t_ms"], "button": p["button"], "down": True} for p in win],
                                   issued_ms=issued, deadline_ms=deadline, pause_seen_ms=pause_seen,
                                   max_latency_ms=ceiling).to_dict()
@@ -546,8 +562,11 @@ class Referee:
             res["reverified_by"] = "official-referee"
             out.append(dict(c2, result=res))
             if not res["ok"]:
-                notes.append(f"{c.get('phase')}: {res['reason']}")
-        if rule == RULE_V2:
+                if res["reason"] == "pause_not_seen_on_video" and miss is not None:
+                    notes.append(pause_miss_note(c.get("phase"), **miss))
+                else:
+                    notes.append(f"{c.get('phase')}: {res['reason']}")
+        if rule in (RULE_V2, RULE_V3):
             for i in apply_consistency(out):
                 notes.append(f"{out[i].get('phase')}: latency_inconsistent")
         phases = {c.get("phase") for c in out if c.get("issuer") and (c.get("result") or {}).get("ok")}
@@ -646,6 +665,30 @@ def pause_seen_for(press_ms: int | None, onsets: list[int]) -> int | None:
     if press_ms is None:
         return None
     return next((o for o in sorted(onsets) if press_ms - 300 <= o <= press_ms + 5_000), None)
+
+
+def pause_miss_note(phase: object, *, segments_missing: bool = False, missing: list[int] | None = None,
+                    decode_error: str | None = None, frames_decoded: int = 0,
+                    min_full_luma: float | None = None, min_lower_luma: float | None = None,
+                    near_frames: int = 0, caps: tuple[float, float] | None = None) -> str:
+    """Free-form review note for ``pause_not_seen_on_video``. Not a receipt field.
+
+    The result reason stays ``pause_not_seen_on_video``. This says which of the three collapsed
+    causes it was: the challenge segments were not uploaded, decoding produced no usable frames,
+    or frames were decoded and none of them was a menu (with the darkest luma near the press).
+    """
+    label = phase if isinstance(phase, str) and phase else "?"
+    if segments_missing:
+        ids = ",".join(str(s) for s in (missing or [])) or "none"
+        return f"{label}: pause_not_seen_on_video: required segments missing ({ids})"
+    if decode_error is not None or frames_decoded <= 0:
+        err = decode_error or "no frames"
+        return f"{label}: pause_not_seen_on_video: decode failed ({err}); frames_decoded={frames_decoded}"
+    full = "none" if min_full_luma is None else f"{min_full_luma:.1f}"
+    lower = "none" if min_lower_luma is None else f"{min_lower_luma:.1f}"
+    cap = f"; dark_menu_caps={caps[0]:g}/{caps[1]:g}" if caps is not None else ""
+    return (f"{label}: pause_not_seen_on_video: no menu found; frames_decoded={frames_decoded}; "
+            f"min_luma_near_press={full} (lower {lower}, near_frames={near_frames}){cap}")
 
 
 def _challenge_seqs(b: B.Bundle, c: dict[str, Any], presses: list[dict[str, Any]], wmm: int) -> list[int]:
