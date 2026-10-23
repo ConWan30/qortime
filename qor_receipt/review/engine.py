@@ -687,6 +687,30 @@ def _final_summary(final: dict | None) -> dict[str, Any] | None:
             "end_menu_fallback": final.get("end_menu_fallback")}
 
 
+def _score_atom(n: Any) -> int | None:
+    """Non-negative integer the learning loop can compare. Booleans are not scores."""
+    if isinstance(n, int) and not isinstance(n, bool) and 0 <= n <= 2**53 - 1:
+        return n
+    return None
+
+
+def _reread_value(src: dict[str, Any] | None) -> dict[str, int] | None:
+    """Optional structured score beside final_reread. Absent when away/home are not integers.
+
+    Learning may compare this object. It is not a verdict, and a missing value does not change ``state``.
+    """
+    if not isinstance(src, dict):
+        return None
+    away, home = _score_atom(src.get("away")), _score_atom(src.get("home"))
+    if away is None or home is None:
+        return None
+    out: dict[str, int] = {"away": away, "home": home}
+    quarter = _score_atom(src.get("quarter"))
+    if quarter is not None:
+        out["quarter"] = quarter
+    return out
+
+
 def _final_check(final: dict, claimed: dict) -> dict[str, Any]:
     f = final.get("final")
     lr = final.get("last_read")
@@ -696,21 +720,27 @@ def _final_check(final: dict, claimed: dict) -> dict[str, Any]:
     mine = (src["home"], src["away"])
     theirs = (claimed.get("home_score"), claimed.get("away_score"))
     if mine != theirs:
-        return {"state": FAIL_CHECK, "detail": f"referee read HOME {mine[0]} - AWAY {mine[1]} but the laptop claimed "
-                                               f"HOME {theirs[0]} - AWAY {theirs[1]}"}
-    if f and f.get("fallback") == "end_menu_without_tail_scorebug":
+        row: dict[str, Any] = {"state": FAIL_CHECK, "detail": f"referee read HOME {mine[0]} - AWAY {mine[1]} but the laptop claimed "
+                                                              f"HOME {theirs[0]} - AWAY {theirs[1]}"}
+    elif f and f.get("fallback") == "end_menu_without_tail_scorebug":
         if f.get("final_confirmed") is True:
-            return {"state": PASS, "detail": "end-of-game menu re-read by the referee matches the claimed final (no Q4 "
-                                             "scorebug read in the tail; menu checked against the last locked read)"}
-        return {"state": PARTIAL_CHECK, "detail": "end-of-game menu read with no Q4 scorebug in the tail; not confirmed "
-                                                  "against a locked read"}
-    if f and f.get("basis") == "end_menu" and f.get("final_confirmed") is not False:
-        return {"state": PASS, "detail": "end-of-game menu re-read by the referee matches the claimed final"}
-    if f and f.get("basis") == "end_menu":
-        return {"state": PARTIAL_CHECK, "detail": "end-of-game menu read but one-legal-step delta not corroborated"}
-    if f:
-        return {"state": PARTIAL_CHECK, "detail": f"scorebug final ({f.get('basis')}) only; end-of-game menu not read"}
-    return {"state": PARTIAL_CHECK, "detail": "last scorebug read only; no final detected in the recorded tail"}
+            row = {"state": PASS, "detail": "end-of-game menu re-read by the referee matches the claimed final (no Q4 "
+                                            "scorebug read in the tail; menu checked against the last locked read)"}
+        else:
+            row = {"state": PARTIAL_CHECK, "detail": "end-of-game menu read with no Q4 scorebug in the tail; not confirmed "
+                                                     "against a locked read"}
+    elif f and f.get("basis") == "end_menu" and f.get("final_confirmed") is not False:
+        row = {"state": PASS, "detail": "end-of-game menu re-read by the referee matches the claimed final"}
+    elif f and f.get("basis") == "end_menu":
+        row = {"state": PARTIAL_CHECK, "detail": "end-of-game menu read but one-legal-step delta not corroborated"}
+    elif f:
+        row = {"state": PARTIAL_CHECK, "detail": f"scorebug final ({f.get('basis')}) only; end-of-game menu not read"}
+    else:
+        row = {"state": PARTIAL_CHECK, "detail": "last scorebug read only; no final detected in the recorded tail"}
+    value = _reread_value(src)
+    if value is not None:
+        row["value"] = value
+    return row
 
 
 def _result_from_reread(final: dict | None, claimed: dict) -> dict[str, Any]:
