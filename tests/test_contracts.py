@@ -128,6 +128,21 @@ def test_v0311_challenge_fixtures_partials():
     assert versions["1"]["pause_latency_ms"] == [0, 600] and versions["1"]["clock"] == "segment_ranges"
     assert versions["2"]["id"] == 2 and versions["2"]["pause_latency_ms"] == [0, CH.RULE2_MAX_LATENCY_MS]
     assert versions["2"]["consistency_ms"] == CH.RULE2_CONSISTENCY_MS and versions["2"]["clock"] == "fragment_pts"
+    from qor_receipt.agent.pause_detect import CAPTURE_DARK_MENU_MAX_LOWER, CAPTURE_DARK_MENU_MAX_LUMA, PauseThresholds
+    th = PauseThresholds()
+    assert versions["1"]["dark_menu_max_luma"] == th.dark_menu_max_luma
+    assert versions["1"]["dark_menu_max_lower"] == th.dark_menu_max_lower
+    assert versions["2"]["dark_menu_max_luma"] == CAPTURE_DARK_MENU_MAX_LUMA
+    assert versions["2"]["dark_menu_max_lower"] == CAPTURE_DARK_MENU_MAX_LOWER
+    assert versions["1"]["dark_menu_bright_frac"] == versions["2"]["dark_menu_bright_frac"]
+    assert versions["1"]["dark_menu_bright_frac"] == [th.dark_menu_bright_min, th.dark_menu_bright_max]
+    assert set(versions) == {"1", "2"}
+    assert rules["menu_leave_buttons"] == [b for b in CH.ALPHABET if b in CH.MENU_LEAVE]
+    receipt = json.loads((ROOT / "schema" / "receipt.v0.json").read_text(encoding="utf-8"))
+    rule_enum = receipt["properties"]["challenges"]["items"]["properties"]["result"]["oneOf"][1]["properties"]["rule"]["enum"]
+    assert rule_enum == [1, 2]
+    bundle = json.loads((CONTRACTS / "qorcap-bundle.v0.json").read_text(encoding="utf-8"))
+    assert bundle["properties"]["challenge_rule"]["enum"] == [1, 2]
     js = (ROOT / "verify" / "verify.js").read_text(encoding="utf-8")
     assert f"MAX_WINDOW_MS = {CH.MAX_WINDOW_MS};" in js
 

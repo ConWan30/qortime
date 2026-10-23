@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
 
@@ -278,6 +279,43 @@ def end_menu_fallback(rejected: dict, tail_reads: list[dict] | None, timeline_lo
 
 
 # ---------------------------------------------------------------- pause onset (challenges) + motion
+@dataclass
+class PauseScan:
+    """What the pause detector saw. Notes are built from this; it is not a receipt field."""
+
+    onsets: list[int]
+    frames_decoded: int
+    samples: list[dict[str, Any]]
+    error: str | None = None
+    max_luma: float = 16.0
+    max_lower: float = 8.0
+    bright_min: float = 0.005
+    bright_max: float = 0.05
+
+
+def scan_pause(frames: Iterable[tuple[int, Any]], detector=None) -> PauseScan:
+    """Run the detector and keep per-frame luma so a miss can say what the darkest frame was."""
+    from qor_receipt.agent.pause_detect import PauseDetector
+
+    det = detector or PauseDetector()
+    th = det.th
+    samples: list[dict[str, Any]] = []
+    error = None
+    try:
+        for t, img in frames:
+            det.update(int(t), img)
+            f = det.last
+            samples.append({"t_ms": int(t),
+                            "full_luma": round(float(f.get("full_luma", 0.0)), 2),
+                            "lower_luma": round(float(f.get("lower_luma", 0.0)), 2),
+                            "bright_frac": round(float(f.get("bright_frac", 0.0)), 4)})
+    except Exception as e:
+        error = f"{type(e).__name__}: {e}"
+    return PauseScan(onsets=[] if error else list(det.onsets), frames_decoded=len(samples), samples=samples,
+                     error=error, max_luma=float(th.dark_menu_max_luma), max_lower=float(th.dark_menu_max_lower),
+                     bright_min=float(th.dark_menu_bright_min), bright_max=float(th.dark_menu_bright_max))
+
+
 def pause_onsets(frames: Iterable[tuple[int, Any]], detector=None) -> list[int]:
     """Mono times where the pause menu first appears in the decoded frames."""
     from qor_receipt.agent.pause_detect import PauseDetector
@@ -286,6 +324,82 @@ def pause_onsets(frames: Iterable[tuple[int, Any]], detector=None) -> list[int]:
     for t, img in frames:
         det.update(t, img)
     return list(det.onsets)
+
+
+def _caps_text(scan: PauseScan | None, thresholds) -> str:
+    if scan is not None:
+        luma, lower, lo, hi = scan.max_luma, scan.max_lower, scan.bright_min, scan.bright_max
+    elif thresholds is not None:
+        luma, lower = thresholds.dark_menu_max_luma, thresholds.dark_menu_max_lower
+        lo, hi = thresholds.dark_menu_bright_min, thresholds.dark_menu_bright_max
+    else:
+        return ""
+    return f"; caps full<={luma:.0f} lower<={lower:.0f} bright={lo:.3f}..{hi:.2f}"
+
+
+def _dark_text(sample: dict | None) -> str:
+    if not sample:
+        return "none"
+    return (f"t_ms={sample['t_ms']} full_luma={sample['full_luma']:.2f} "
+            f"lower_luma={sample['lower_luma']:.2f} bright_frac={sample['bright_frac']:.4f}")
+
+
+def pause_not_seen_note(phase: str, scan: PauseScan | None, press_ms: int | None = None, *,
+                        missing: list[int] | None = None, prior: str | None = None,
+                        thresholds=None, rule: int | None = None) -> str:
+    """Free-form review note. The result reason stays ``pause_not_seen_on_video``."""
+    from qor_receipt.agent.pause_detect import ONSET_HORIZON_MS, ONSET_SLACK_MS
+
+    samples = [] if scan is None or missing else scan.samples
+    near: list[dict] = []
+    darkest = None
+    if press_ms is not None and samples:
+        near = [s for s in samples if press_ms - ONSET_SLACK_MS <= s["t_ms"] <= press_ms + ONSET_HORIZON_MS]
+        if near:
+            darkest = min(near, key=lambda s: (s["full_luma"], s["t_ms"]))
+    if missing:
+        shown = ",".join(str(s) for s in list(missing)[:12])
+        more = f" (+{len(missing) - 12} more)" if len(missing) > 12 else ""
+        cause, frames_decoded, frames_near, darkest = f"required segments missing seq={shown}{more}", 0, 0, None
+    elif scan is None:
+        cause = "ffmpeg not available" if not prior or "ffmpeg" in prior.lower() else prior
+        frames_decoded, frames_near, darkest = 0, 0, None
+    elif scan.error and not scan.frames_decoded:
+        cause, frames_decoded, frames_near, darkest = f"decode failed ({scan.error})", 0, 0, None
+    elif scan.error:
+        cause, frames_decoded, frames_near = f"decode failed ({scan.error})", scan.frames_decoded, len(near)
+    elif not scan.frames_decoded:
+        cause, frames_decoded, frames_near, darkest = "no frames decoded", 0, 0, None
+    elif press_ms is not None and not near:
+        cause = "frames decoded but none in the onset window around the press"
+        frames_decoded, frames_near, darkest = scan.frames_decoded, 0, None
+    else:
+        in_window = [o for o in scan.onsets if press_ms is not None and press_ms - ONSET_SLACK_MS <= o <= press_ms + ONSET_HORIZON_MS]
+        if scan.onsets and not in_window:
+            shown = ",".join(str(o) for o in scan.onsets[:6])
+            cause = f"frames decoded but no menu in the onset window (onsets at {shown})"
+        else:
+            cause = "frames decoded but no menu found"
+        frames_decoded, frames_near = scan.frames_decoded, len(near)
+    rule_bit = f"; rule={rule}" if rule is not None else ""
+    return (f"{phase}: pause_not_seen_on_video: {cause}{rule_bit}; frames_decoded={frames_decoded}; "
+            f"frames_near_press={frames_near}; darkest_near_press={_dark_text(darkest)}{_caps_text(scan, thresholds)}")
+
+
+def install_rule_pause(core: Any, rule: int) -> Any:
+    """Point a ReaderCore's pause detector at this challenge rule's caps.
+
+    Cores with no pause detector (the review test double) are left alone. Rule v1 keeps the
+    historical caps so a brighter static screen is not newly treated as a pause during the
+    final re-read. Rule v2 uses the measured capture-path caps. ReaderCore checks the
+    end-of-game menu before this detector.
+    """
+    if getattr(core, "pause", None) is None:
+        return core
+    from qor_receipt.agent.pause_detect import detector_for_challenge_rule
+
+    core.pause = detector_for_challenge_rule(rule)
+    return core
 
 
 def motion_series(frames: Iterable[tuple[int, Any]], bin_ms: int = 1_000) -> dict[int, int]:

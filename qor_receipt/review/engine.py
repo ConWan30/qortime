@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from qor_receipt import receipt as R
+from qor_receipt.agent.pause_detect import ONSET_HORIZON_MS, ONSET_SLACK_MS, detector_for_challenge_rule
 from qor_receipt.challenge import (
     DEFAULT_DEADLINE_MS,
     PHASES,
@@ -23,8 +24,8 @@ from qor_receipt.challenge import (
     apply_consistency,
     challenge_rule_of,
     latency_ceiling_ms,
+    menu_safe_nonce,
     motion_correlation_permille,
-    new_nonce,
     pattern_for,
     response_press_ms,
     verify_response,
@@ -156,7 +157,7 @@ class Referee:
         if phase not in PHASES or role not in ("home", "away"):
             raise ValueError("bad phase/role")
         t = self.now()
-        n = nonce or new_nonce()
+        n = nonce or menu_safe_nonce()
         return self._sign_token({"type": CHALLENGE_TOKEN_TYPE, "nonce": n, "pattern": pattern_for(n), "phase": phase,
                                  "role": role, "match_id": str(match_id)[:128], "issued_ms": t,
                                  "deadline_ms": t + DEFAULT_DEADLINE_MS, "anchor": _clean_anchor(anchor)})
@@ -407,7 +408,12 @@ class Referee:
                         yield t + wmm, img
             corr = M.sidecar_corroboration(str(sub.dir / "meta"), self.sidecar_dir)
             try:
-                final = M.reread_final(frames(), self.core_factory, corroboration=corr,
+                challenge_rule = challenge_rule_of(b.meta)
+
+                def factory(post, _base=self.core_factory, _rule=challenge_rule):
+                    return M.install_rule_pause(_base(post), _rule)
+
+                final = M.reread_final(frames(), factory, corroboration=corr,
                                        timeline_locks=M.timeline_locks_from_bytes(b.files.get("timeline.jsonl")))
                 checks["final_reread"] = _final_check(final, b.receipt.get("result") or {})
             except Exception as e:  # undecodable video is a failed check, never a crash or a silent pass
@@ -518,9 +524,20 @@ class Referee:
                 continue
             win = [p for p in presses if issued <= p["t_ms"] <= deadline]
             seqs = _challenge_seqs(b, c, presses, wmm)
-            pause_seen = None
-            if M.ffmpeg_bin() and all(s in sub.received for s in seqs if int(b.segments[s].get("offset", 0)) > 0):
-                def frames(seqs=seqs):
+            pp = response_press_ms(c2["pattern"] or [], win, issued_ms=issued, deadline_ms=deadline)
+            # Rule v2 only. Historical caps stay on rule v1. Ceiling and ±300 ms are untouched.
+            det = detector_for_challenge_rule(rule)
+            media_seqs = [s for s in seqs if int(b.segments[s].get("offset", 0)) > 0]
+            missing = [s for s in media_seqs if s not in sub.received]
+            present = [s for s in media_seqs if s not in set(missing)]
+            for run in M.runs(present, b):
+                init = M.init_seq_for(b, run[0])
+                if init is not None and init not in sub.received:
+                    missing.append(init)
+            missing = sorted(set(missing))
+            scan = None
+            if M.ffmpeg_bin() and not missing:
+                def frames(seqs=list(present)):
                     for run in M.runs(seqs, b):
                         pts0 = None
                         if rule == RULE_V2:
@@ -531,13 +548,8 @@ class Referee:
                             # No tfdt: keep the segment_ranges time. That stamp is late, so it fails the ceiling.
                             mono = t if pts0 is None else frame_mono_ms(clock, pts0, n, hz)
                             yield mono + wmm, img
-                try:
-                    onsets = M.pause_onsets(frames())
-                except Exception as e:  # never silent
-                    onsets = []
-                    notes.append(f"{c.get('phase')}: pause detector error {type(e).__name__}")
-                pp = response_press_ms(c2["pattern"] or [], win, issued_ms=issued, deadline_ms=deadline)
-                pause_seen = pause_seen_for(pp, onsets)
+                scan = M.scan_pause(frames() if present else iter(()), det)
+            pause_seen = pause_seen_for(pp, scan.onsets) if scan is not None and scan.error is None else None
             res = verify_response(c2["pattern"] or [], [{"t_ms": p["t_ms"], "button": p["button"], "down": True} for p in win],
                                   issued_ms=issued, deadline_ms=deadline, pause_seen_ms=pause_seen,
                                   max_latency_ms=ceiling).to_dict()
@@ -545,7 +557,12 @@ class Referee:
             res["hid_sha256"] = sha256_hex(win)
             res["reverified_by"] = "official-referee"
             out.append(dict(c2, result=res))
-            if not res["ok"]:
+            if not res["ok"] and res["reason"] == "pause_not_seen_on_video":
+                notes.append(M.pause_not_seen_note(str(c.get("phase")), scan, pp, missing=missing or None,
+                                                   thresholds=det.th, rule=rule))
+            elif scan is not None and scan.error:
+                notes.append(f"{c.get('phase')}: pause detector error {scan.error}")
+            if not res["ok"] and res["reason"] != "pause_not_seen_on_video":
                 notes.append(f"{c.get('phase')}: {res['reason']}")
         if rule == RULE_V2:
             for i in apply_consistency(out):
@@ -642,10 +659,13 @@ class Referee:
 
 
 def pause_seen_for(press_ms: int | None, onsets: list[int]) -> int | None:
-    """The pause-menu onset that belongs to the answering OPTIONS press (latency is judged by verify_response)."""
+    """The pause-menu onset that belongs to the answering OPTIONS press (latency is judged by verify_response).
+
+    Lookback is 300 ms and the horizon is 5 s. Those bounds are not the latency ceiling.
+    """
     if press_ms is None:
         return None
-    return next((o for o in sorted(onsets) if press_ms - 300 <= o <= press_ms + 5_000), None)
+    return next((o for o in sorted(onsets) if press_ms - ONSET_SLACK_MS <= o <= press_ms + ONSET_HORIZON_MS), None)
 
 
 def _challenge_seqs(b: B.Bundle, c: dict[str, Any], presses: list[dict[str, Any]], wmm: int) -> list[int]:

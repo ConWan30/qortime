@@ -11,6 +11,6 @@
     "role": {"enum": ["home", "away"]},
     "receipt_draft_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "input_proof_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-    "challenge_rule": {"description": "Official challenge measurement. Absent or 1: segment_ranges clock and pause 0..600 ms. 2: fragment PTS clock, pause 0..2500 ms, latencies within ±300 ms of their median.", "enum": [1, 2]}
+    "challenge_rule": {"description": "Official challenge measurement. Absent or 1: segment_ranges clock, pause 0..600 ms, dark-menu caps full<=16 and lower<=8. 2: fragment PTS clock, pause 0..2500 ms, latencies within ±300 ms of their median, dark-menu caps full<=26 and lower<=16. The bright-text fraction stays 0.5%..5% on both.", "enum": [1, 2]}
   }
 }

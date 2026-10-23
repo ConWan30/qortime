@@ -113,6 +113,33 @@ def test_altered_video_byte_is_refused(tmp_path):
     assert sub.receipt is None
 
 
+def test_missing_challenge_segment_names_the_gap(tmp_path):
+    """A pause the referee could not watch says the segments were missing, not a vague not-seen."""
+    from qor_receipt.review import bundle as B
+    from qor_receipt.review.engine import _challenge_seqs
+
+    e = Env(tmp_path, tail_ms=8_000, k=1)
+    sub = e.submit()
+    b = sub.bundle
+    wmm = e.ref._wall_minus_mono(b)
+    presses = B.press_events(b)
+    c0 = b.receipt["challenges"][0]
+    need = [s for s in _challenge_seqs(b, c0, presses, wmm) if int(b.segments[s].get("offset", 0)) > 0]
+    withhold = need[0]
+    assert withhold in sub.required
+    for s in sub.required:
+        if s == withhold:
+            continue
+        e.ref.put_segment(sub, s, [e.fx["segments"][s]])
+    out = e.ref.review(sub)
+    assert out["state"] == "refused"
+    notes = out["review"]["checks"]["challenges"]["detail"]["notes"]
+    hit = [n for n in notes if n.startswith(f"{c0['phase']}: pause_not_seen_on_video:") and "required segments missing" in n]
+    assert hit, notes
+    assert f"seq={withhold};" in hit[0] or f"seq={withhold}," in hit[0] or f",{withhold}," in hit[0] or f",{withhold};" in hit[0]
+    assert "frames_decoded=0" in hit[0] and "darkest_near_press=none" in hit[0]
+
+
 def test_missing_segments_refused(tmp_path):
     e = Env(tmp_path, tail_ms=8_000, k=4)
     sub = e.submit()

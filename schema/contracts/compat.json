@@ -55,6 +55,8 @@
     "legacy_window_ms": 20000,
     "max_window_ms": 120000,
     "pattern": "OPTIONS then 4 face/d-pad buttons from sha256(nonce)",
+    "menu_leave_buttons": ["CROSS", "CIRCLE"],
+    "menu_safe_issue": "The referee redraws a fresh nonce until CROSS and CIRCLE are only in the last slot or absent. pattern_for is unchanged, so every existing receipt still verifies.",
     "response": "first OPTIONS press inside [issued_ms, deadline_ms] followed by exactly the pattern",
     "pause_latency_ms": [0, 600],
     "rule_versions": {
@@ -62,14 +64,20 @@
         "id": 1,
         "pause_latency_ms": [0, 600],
         "clock": "segment_ranges",
-        "default_when": "bundle.json has no challenge_rule, or result.rule is absent"
+        "default_when": "bundle.json has no challenge_rule, or result.rule is absent",
+        "dark_menu_max_luma": 16,
+        "dark_menu_max_lower": 8,
+        "dark_menu_bright_frac": [0.005, 0.05]
       },
       "2": {
         "id": 2,
         "pause_latency_ms": [0, 2500],
         "consistency_ms": 300,
         "clock": "fragment_pts",
-        "opt_in": "bundle.json challenge_rule = 2; the referee stamps result.rule = 2"
+        "opt_in": "bundle.json challenge_rule = 2; the referee stamps result.rule = 2",
+        "dark_menu_max_luma": 26,
+        "dark_menu_max_lower": 16,
+        "dark_menu_bright_frac": [0.005, 0.05]
       }
     },
     "recorder_result": "QorCap >= 0.3.11 re-runs each challenge on its own bundle at finalize; an ok result is written to the receipt (reverified_by recorder), anything else stays null with the reason in challenge_results.jsonl",

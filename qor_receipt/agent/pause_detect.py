@@ -10,10 +10,13 @@ Signals (all thresholds pluggable via ``PauseThresholds`` / ``--pause-config JSO
   (x0, y0, x1, y1 as 0..1 fractions) is at least ``panel_min_frac``;
 - optional ``template``: normalized cross-correlation vs a captured pause-menu thumbnail
   >= ``template_min`` (overrides the heuristic when it fires).
-- ``dark_menu``: the real Madden 27 pause menu (tuned on a 640x360 capture, Oct 2026) is NOT a
-  bright panel: the whole screen goes near-black (thumb mean ~10, lower half ~3) with small white
-  text (menu list, top-centre scoreboard "14 - 0 / 3rd 5:00"). Matched by absolute luma caps plus a
-  bright-text fraction window, so it needs no gameplay baseline and ignores pure-black fades.
+- ``dark_menu``: the real Madden 27 pause menu is NOT a bright panel. The whole screen goes
+  near-black with a little white text, so absolute luma caps plus a bright-text fraction window
+  match it with no gameplay baseline and ignore pure-black fades. The default caps (full <= 16,
+  lower half <= 8) were tuned on a 640x360 capture (thumb mean ~10, lower half ~3). Challenge rule
+  v2 uses the measured USB/HDMI caps (full <= 26, lower half <= 16) instead. The text fraction
+  stays 0.5%..5% for both. ``receipt.v0.json`` only allows rule ids 1 and 2, so this is not a new
+  rule: the latency ceiling and the ±300 ms spread are unchanged.
 Paused = template match OR dark_menu OR (dim AND panel), held for ``confirm_frames`` consecutive frames;
 the onset time is the FIRST frame of that run, so confirmation adds no latency to pause_seen_ms.
 """
@@ -26,6 +29,19 @@ from typing import Any
 
 NEEDS_TUNING = True
 THUMB = (160, 90)
+# Same window pause_seen_for uses. Not the latency ceiling.
+ONSET_SLACK_MS = 300
+ONSET_HORIZON_MS = 5_000
+# Historical dark-menu caps, tuned on a 640x360 capture (thumb mean ~10, lower half ~3).
+# Rule v1 and any bundle that is not challenge_rule 2 keep these.
+HISTORICAL_DARK_MENU_MAX_LUMA = 16.0
+HISTORICAL_DARK_MENU_MAX_LOWER = 8.0
+# USB/HDMI capture path, measured with the recorder (QorCap sidecar qorcap_challenge.py):
+# pause menu full 16.2–16.6 / lower ~6.7, end-phase menu full ~21 / lower ~13.
+# Gameplay on that path is luma 60–110. 26/16 sits between the menu and gameplay.
+# The bright-text fraction is not widened.
+CAPTURE_DARK_MENU_MAX_LUMA = 26.0
+CAPTURE_DARK_MENU_MAX_LOWER = 16.0
 
 
 @dataclass
@@ -40,8 +56,8 @@ class PauseThresholds:
     template_path: str | None = None
     template_min: float = 0.80
     dark_menu: bool = True
-    dark_menu_max_luma: float = 16.0
-    dark_menu_max_lower: float = 8.0
+    dark_menu_max_luma: float = HISTORICAL_DARK_MENU_MAX_LUMA
+    dark_menu_max_lower: float = HISTORICAL_DARK_MENU_MAX_LOWER
     dark_menu_bright_min: float = 0.005
     dark_menu_bright_max: float = 0.05
     extra: dict[str, Any] = field(default_factory=dict)
@@ -57,6 +73,27 @@ class PauseThresholds:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+def capture_path_thresholds() -> PauseThresholds:
+    """Dark-menu caps measured on the USB/HDMI capture path. Text fraction stays the default."""
+    return PauseThresholds(
+        dark_menu_max_luma=CAPTURE_DARK_MENU_MAX_LUMA,
+        dark_menu_max_lower=CAPTURE_DARK_MENU_MAX_LOWER,
+    )
+
+
+def detector_for_challenge_rule(rule_id: int | None) -> "PauseDetector":
+    """Rule v2 uses the measured capture-path caps. Every other id keeps the historical caps.
+
+    Only the integer 2 selects the wider luma caps. The text-fraction window, confirmation count,
+    onset window, latency ceiling, and ±300 ms spread are the same detector and the same rule.
+    """
+    from qor_receipt.challenge import RULE_V2
+
+    if rule_id == RULE_V2:
+        return PauseDetector(capture_path_thresholds())
+    return PauseDetector()
 
 
 class PauseDetector:
@@ -133,7 +170,7 @@ class PauseDetector:
             self.baseline = f["luma"] if self.baseline is None else (1 - a) * self.baseline + a * f["luma"]
         return self.paused
 
-    def onset_after(self, t_ms: int, slack_ms: int = 300, horizon_ms: int = 5_000) -> int | None:
+    def onset_after(self, t_ms: int, slack_ms: int = ONSET_SLACK_MS, horizon_ms: int = ONSET_HORIZON_MS) -> int | None:
         """First pause onset in [t_ms - slack, t_ms + horizon]. Slack lets the referee SEE (and reject)
         video that paused before the press instead of the agent hiding it."""
         return next((o for o in self.onsets if t_ms - slack_ms <= o <= t_ms + horizon_ms), None)

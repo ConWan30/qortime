@@ -80,7 +80,33 @@ missing or unknown field, stays v1. The referee then:
 - dates frames from the fragment's first-sample PTS (`tfdt`) through the manifest frame fit;
 - accepts a menu in 0..2500 ms;
 - requires every successful latency to sit within ±300 ms of the median of those latencies
-  (a difference of exactly 300 ms still passes; one challenge has no peer and is not compared).
+  (a difference of exactly 300 ms still passes; one challenge has no peer and is not compared);
+- looks for the pause menu with the capture-path luma caps: full frame <= 26, lower half <= 16.
+  The bright-text fraction stays 0.5%..5%. Rule v1 keeps full <= 16 and lower half <= 8.
+
+The luma caps are not a new rule id. `receipt.v0.json` freezes `result.rule` at 1 or 2, so a third
+id cannot be stamped on a receipt. The signed meaning of rule 2 is still the fragment-PTS clock, a
+menu in 0..2500 ms, and latencies within ±300 ms of their median. The historical caps were tuned on
+a 640x360 capture whose pause thumb sits near luma 10 / 3. On the USB capture path the same menu
+measures about full 16.6 / lower 6.7, and the end-phase menu about 21 / 13, while gameplay on that
+path is about 60–110. 26/16 is the gap between those menus and gameplay, and it is what the recorder
+already uses. A pure-black frame and a gameplay frame still do not count. A rule v1 bundle is not
+re-measured with the wider caps.
+
+A bundle whose `challenge_rule` is the integer 2 is reviewed with these caps when it is submitted.
+Resubmitting that bundle runs the check again. A receipt that was already countersigned is not
+decoded again.
+
+When no pause is found, the challenges note names the case: required segments missing, ffmpeg
+unavailable, nothing decoded, frames decoded but none in the onset window, or frames decoded and no
+menu. It includes how many frames were decoded and the darkest frame near the press (full luma,
+lower luma, bright fraction). The result reason stays `pause_not_seen_on_video`.
+
+CROSS selects a pause-menu item and CIRCLE backs out to live play. A freshly issued challenge
+redraws the nonce until `pattern_for` puts those two buttons only in the last slot, or leaves them
+out. `pattern_for` is unchanged in Python and in `verify/verify.js`, so a nonce already on a
+receipt still verifies. 1632/4096 nonces already qualify. The most likely pattern moves from
+8/4096 (1/512) to 8/1632 (1/204).
 
 An outlier is flipped to `ok: false`, reason `latency_inconsistent`, before the phase-pass check,
 so it does not count toward VERIFIED. The challenges check stays `partial` (not a structural
