@@ -1,0 +1,20 @@
+{
+  "type": "qortime-referee-delegation/v1",
+  "serial": 2,
+  "root_id": "qortime-v1",
+  "root_key_id": "53eea1b5d23b1ff0",
+  "delegate_id": "qortime-online-s2",
+  "delegate_pubkey": "b283cffb9279f2f90859268c64ef21861ef7e5d9fc773bdb8061af0e80624889",
+  "delegate_key_id": "4fc237e4c6a24cf6",
+  "scope": [
+    "official-review"
+  ],
+  "allowed_statuses": [
+    "VERIFIED",
+    "PARTIAL"
+  ],
+  "not_before_ms": 1792783693417,
+  "not_after_ms": 1797967753417,
+  "issued_ms": 1792783753417,
+  "sig": "7b6a222c90a048a26d02ac71b95288cccefb1f7c23ff2da82ac91e38721cc42e94b36b23eef16c7e699e4abff5cf0371643b14ca30e93ff390b8b2a5bed00803"
+}
