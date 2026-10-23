@@ -6,14 +6,18 @@ on the laptop's bundle before the receipt is signed:
 
 * presses: rising edges in the committed ``inputs.jsonl`` (wall time = header ``wall_anchor_ms`` + mono);
 * answering press: the first OPTIONS press inside [issued_ms, deadline_ms] followed by exactly the pattern;
-* pause seen: QorTime's pause detector on the bundle's own video, decoded at 30 Hz around that press, from segment
-  bytes whose SHA-256 matches the manifest;
+* pause seen: the pause detector for the bundle's challenge rule on the bundle's own video, decoded at
+  30 Hz around that press, from segment bytes whose SHA-256 matches the manifest. Rule v2 uses the
+  measured capture-path luma caps; rule v1 keeps the historical caps. The text fraction is the same;
 * result: ``verify_response`` + ``hid_sha256`` of the window's presses + ``reverified_by: "recorder"``.
 
 Only an ``ok`` result is written into the receipt. A failed or undecidable check leaves ``result: null`` (the
 verifiers say ``challenge_unanswered``: never VERIFIED) and the reason goes to ``challenge_results.jsonl``, so a
 missed challenge never turns the score receipt into FAIL on the player's own laptop. The official referee re-runs
 everything from raw bytes either way; nothing here is trusted by it.
+
+The latency ceiling here stays 0..600 ms and the result carries no ``rule`` field. A menu at 1.6 s is still
+``video_latency_too_high`` on this path. The official referee is what stamps rule v2 and its 2500 ms ceiling.
 """
 from __future__ import annotations
 
@@ -22,7 +26,8 @@ import statistics
 from pathlib import Path
 from typing import Any
 
-from qor_receipt.challenge import response_press_ms, verify_response
+from qor_receipt.agent.pause_detect import PauseThresholds, capture_path_thresholds, detector_for_challenge_rule
+from qor_receipt.challenge import RULE_V2, challenge_rule_of, response_press_ms, verify_response
 from qor_receipt.jcs import sha256_hex
 from qor_receipt.review import bundle as B
 from qor_receipt.review import media as M
@@ -99,8 +104,12 @@ def challenge_results(d: str | Path, challenges: list[dict[str, Any]], *, decode
     wmm = wall_minus_mono(b)
     rd = segment_reader(d, b)
     rng = B.segment_ranges(b)
+    rule = challenge_rule_of(b.meta)
+    thresholds = capture_path_thresholds() if rule == RULE_V2 else PauseThresholds()
+    holder: dict[str, Any] = {}
 
     def onsets_for(lo_wall: int, hi_wall: int) -> list[int]:
+        holder.clear()
         if not decode or not M.ffmpeg_bin():
             raise RuntimeError("ffmpeg not available")
         lo, hi = lo_wall - wmm, hi_wall - wmm
@@ -110,6 +119,20 @@ def challenge_results(d: str | Path, challenges: list[dict[str, Any]], *, decode
             for run in M.runs(seqs, b):
                 for t, img in M.decode_run(b, run, rd, hz=30.0, size=(640, 360)):
                     yield t + wmm, img
-        return M.pause_onsets(frames())
+        scan = M.scan_pause(frames(), detector_for_challenge_rule(rule))
+        holder["scan"] = scan
+        if scan.error:
+            raise RuntimeError(scan.error)
+        return list(scan.onsets)
 
-    return [rerun(c, presses, onsets_for) for c in challenges]
+    out = []
+    for c in challenges:
+        holder.clear()
+        row = rerun(c, presses, onsets_for)
+        local = row["local"]
+        if local.get("reason") == "pause_not_seen_on_video":
+            local["note"] = M.pause_not_seen_note(str(local.get("phase") or "challenge"), holder.get("scan"),
+                                                  local.get("pause_press_ms"), prior=local.get("note"),
+                                                  thresholds=thresholds, rule=rule)
+        out.append(row)
+    return out

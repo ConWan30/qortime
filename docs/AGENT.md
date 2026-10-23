@@ -29,6 +29,7 @@ never reads 0:00 the agent falls back to `scorebug_gone` (strip absent ≥30 s a
 `final_screen` (hook `AgentCore.final_screen_detector`; no detector ships yet, no real final-screen frames). A Jev 1.14 shadow detector logs `jev_final_screen` records through `AgentCore.final_screen_shadow` and never sets the basis (see README).
 The FINAL log line / session-log `final` record carry `final_basis`.
 
-Known live unknowns: pause-menu thresholds/template; a real Q4 end-of-game capture (no 0:00 red frame or final
-screen exists yet; eval set: `eval/labels/`); pattern buttons are
-pressed inside the pause menu (CROSS/CIRCLE may select/resume — check what the menu does).
+Known live unknowns: pause-menu template; a real Q4 end-of-game capture (no 0:00 red frame or final
+screen exists yet; eval set: `eval/labels/`). The 640x360 caps stay full <= 16 / lower <= 8.
+Challenge rule v2 uses the measured USB/HDMI caps (full <= 26, lower <= 16). Fresh challenges are
+drawn so CROSS and CIRCLE, which select or leave the pause menu, sit only in the last slot.

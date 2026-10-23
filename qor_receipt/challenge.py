@@ -29,6 +29,13 @@ HDMI capture the pause menu is drawn about 1.5–1.75 s after OPTIONS, so this 6
 pass an honest press. Rule v2 dates frames from the fragment PTS, accepts 0..2500 ms, and requires
 the successful latencies to sit within ±300 ms of their median. Anything other than the integer 2
 stays on this default (rule v1). A receipt result with no ``rule`` field keeps the 600 ms meaning.
+The dark-menu luma caps for that rule live in ``pause_detect.detector_for_challenge_rule``; they are
+not a third rule id (``receipt.v0.json`` only allows 1 and 2) and they do not move this ceiling.
+
+CROSS selects a pause-menu item and CIRCLE backs out to live play. A freshly drawn nonce is
+rejected and redrawn until ``pattern_for`` puts those buttons only in the last slot, or leaves
+them out. ``pattern_for`` itself is unchanged, including the copy in ``verify/verify.js``, so a
+nonce already on a receipt still verifies.
 """
 from __future__ import annotations
 
@@ -39,6 +46,9 @@ from typing import Any
 
 PAUSE = "OPTIONS"
 ALPHABET = ["CROSS", "CIRCLE", "SQUARE", "TRIANGLE", "UP", "DOWN", "LEFT", "RIGHT"]
+# Observed on the Madden pause menu: CROSS activates an item, CIRCLE leaves the menu.
+# Either one before the last slot sends the remaining presses into live play.
+MENU_LEAVE = frozenset({"CROSS", "CIRCLE"})
 PHASES = ("kickoff", "halftime", "end")
 DEFAULT_LEN = 4
 DEFAULT_DEADLINE_MS = 90_000   # v0.3.11: was 20 s (passable only if the prompt landed pre-snap)
@@ -57,18 +67,45 @@ def new_nonce() -> str:
     return secrets.token_hex(16)
 
 
-def pattern_for(nonce_hex: str, length: int = DEFAULT_LEN) -> list[str]:
-    """Deterministic: sha256(nonce) bytes mod 8. No immediate repeats (easier to perform/detect)."""
-    d = hashlib.sha256(bytes.fromhex(nonce_hex)).digest()
+def pattern_from_digest(digest: bytes, length: int = DEFAULT_LEN) -> list[str]:
+    """sha256 digest bytes mod 8, no immediate repeats. ``pattern_for`` is this plus the hash."""
     out: list[str] = []
     i = 0
     while len(out) < length:
-        b = ALPHABET[d[i % len(d)] % len(ALPHABET)]
+        b = ALPHABET[digest[i % len(digest)] % len(ALPHABET)]
         i += 1
         if out and out[-1] == b:
             b = ALPHABET[(ALPHABET.index(b) + 1) % len(ALPHABET)]
         out.append(b)
     return [PAUSE] + out
+
+
+def pattern_for(nonce_hex: str, length: int = DEFAULT_LEN) -> list[str]:
+    """Deterministic: sha256(nonce) bytes mod 8. No immediate repeats (easier to perform/detect)."""
+    return pattern_from_digest(hashlib.sha256(bytes.fromhex(nonce_hex)).digest(), length)
+
+
+def pattern_menu_safe(pattern: list[str]) -> bool:
+    """CROSS and CIRCLE only in the last slot, or not at all. The derivation is not involved."""
+    if not pattern:
+        return False
+    body = pattern[1:] if pattern[0] == PAUSE else list(pattern)
+    if not body:
+        return False
+    return all(b not in MENU_LEAVE for b in body[:-1])
+
+
+def menu_safe_nonce(length: int = DEFAULT_LEN, *, draws: int = 64) -> str:
+    """Draw nonces until ``pattern_for`` is menu-safe. Never returns an unsafe pattern.
+
+    1632/4096 nonces already qualify. The most likely pattern moves from 8/4096 (1/512) to
+    8/1632 (1/204). ``pattern_for`` is not modified, so an old nonce still verifies.
+    """
+    for _ in range(draws):
+        nonce = new_nonce()
+        if pattern_menu_safe(pattern_for(nonce, length)):
+            return nonce
+    raise RuntimeError("no menu-safe challenge nonce in the draw budget")
 
 
 @dataclass
