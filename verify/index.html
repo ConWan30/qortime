@@ -13,91 +13,94 @@
 <meta name="twitter:description" content="Check a signed match receipt in the browser. Verified Match stays TEST until KYC.">
 <meta name="twitter:image" content="https://conwan30.github.io/qortime/assets/og.png">
 <meta name="twitter:site" content="@QorTimeHQ">
+<meta name="theme-color" content="#04050a">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@800;900&family=Inter+Tight:wght@500;600;700&display=swap" rel="stylesheet">
-<style>
-body{font:16px/1.5 "Inter Tight",system-ui,sans-serif;max-width:860px;margin:2rem auto;padding:0 1rem;background:#04050a;color:#e6edf3}
-textarea,input{width:100%;box-sizing:border-box;background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:.5rem;font:13px ui-monospace,monospace}
-textarea{height:260px}button{margin-top:.75rem;padding:.6rem 1.2rem;font-weight:600;border-radius:6px;border:0;cursor:pointer}
-button:disabled{opacity:.45;cursor:not-allowed}
-#badge{font-size:2rem;font-weight:800;margin-top:1rem}.VERIFIED{color:#3fb950}.PARTIAL{color:#d29922}.FAIL{color:#f85149}
-.addon{margin-top:.85rem;padding:.75rem .95rem;border-radius:12px;border:1px solid #30363d;background:#0d1117}
-.addon strong{letter-spacing:.08em}
-.addon .why{display:block;margin-top:.35rem;color:#8b949e}
-.addon ul{margin:.4rem 0 0;padding-left:1.1rem}
-.addon .meta{display:block;margin-top:.35rem;color:#8b949e}
-.addon.corroborated{border-color:rgba(46,242,255,.55);color:#d7fbff}
-.addon.disagreed{border-color:#f85149;color:#ffb4b0}
-.addon.single_sided{color:#b9c1d6}
-#device{margin-top:.85rem;padding:.75rem .95rem;border-radius:12px;border:1px solid #30363d;background:#0d1117}
-#device strong{letter-spacing:.08em}
-#device .why{display:block;margin-top:.35rem;color:#8b949e}
-#device ul{margin:.4rem 0 0;padding-left:1.1rem}
-#device .meta{display:block;margin-top:.35rem;color:#8b949e}
-#device.invalid{border-color:#f85149;color:#ffb4b0}
-#device.tpm_claimed{border-color:#d29922;color:#e6c07b}
-#device.software{color:#b9c1d6}
-.tier{display:inline-block;margin-left:1rem;font-size:1rem;padding:.2rem .6rem;border:1px solid #30363d;border-radius:99px}
-pre{background:#161b22;padding:.75rem;border-radius:6px;white-space:pre-wrap}small{color:#8b949e}
-.vm{margin:1.25rem 0;padding:1.1rem 1.15rem;border-radius:18px;border:1px solid rgba(228,197,109,.4);background:radial-gradient(420px 180px at 100% 0%,rgba(46,242,255,.14),transparent 60%),linear-gradient(165deg,#0c1c33,#071018)}
-.vm h2{margin:.2rem 0 .4rem;font:900 28px/1 "Big Shoulders Display",Impact,sans-serif;letter-spacing:.08em;text-transform:uppercase}
-.vm-test{margin-left:.4rem;font:700 11px ui-monospace,monospace;letter-spacing:.16em;color:#8ee7f2;border:1px solid rgba(142,231,242,.5);border-radius:999px;padding:.15rem .45rem;vertical-align:middle}
-.vm-badge{display:inline-flex;align-items:center;gap:.7rem;margin:.7rem 0;padding:.7rem 1rem;border-radius:999px;font:700 16px/1.2 "Inter Tight",system-ui,sans-serif;letter-spacing:.04em;color:#d5deea;background:#121a28;border:1px solid rgba(130,170,210,.45);box-shadow:none}
-.vm-badge.gold{font:900 18px/1 "Big Shoulders Display",Impact,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:#1a1408;background:linear-gradient(105deg,#f8efc8,#e4c56d 55%,#7fe7f2);border-color:transparent;box-shadow:0 0 0 1px rgba(228,197,109,.7),0 12px 36px rgba(228,197,109,.28)}
-.vm-badge small{color:#3a3018;font:700 11px ui-monospace,monospace;letter-spacing:.18em}
-#vm-buy{color:#1a1408;background:linear-gradient(105deg,#f8efc8,#e4c56d 50%,#7fe7f2)}
-#vm-err{color:#ffb020;min-height:1.2em}
-#vm-return{color:#f0d78a}
-.verdicts{display:grid;gap:8px;margin:1rem 0}
-.verdicts p{margin:0;color:#b9c1d6}
-.row{display:flex;flex-wrap:wrap;gap:.6rem 1rem;align-items:center}
-#sample{background:transparent;color:#e6edf3;border:1px solid rgba(46,242,255,.45)}
-/* phones: 16px fields stop iOS Safari zooming on focus; 44px touch targets */
-@media (max-width:640px){textarea,input{font-size:16px}button,input{min-height:44px}body>p>small>a{display:inline-block;padding:12px 0}}
-</style></head><body>
-<h1>QorTime verifier</h1><p><small><a href="../" style="color:#7df9ff">← QorTime home</a> · <a href="../how-it-works/" style="color:#7df9ff">How it works</a> · <a href="../early-access/" style="color:#7df9ff">Verified Match early access</a></small></p>
-<p><small>Signature checks run in this browser. The receipt JSON is not uploaded. The Verified Match badge sends only the receipt id to the test checkout service. That badge is TEST / early access until KYC. It is not a live paid product.</small></p>
-<div class="verdicts">
- <p><b class="VERIFIED">VERIFIED</b> — every signature, checkpoint, and challenge holds against the pinned referee key.</p>
- <p><b class="PARTIAL">PARTIAL</b> — signatures check out against a <em>trusted</em> QorTime referee, but something is missing (challenge, motion, …).</p>
- <p><b style="color:#ffb000">SELF_ATTESTED</b> — cryptography holds, but the referee key is <strong>not</strong> on QorTime's built-in trusted list (local Start Match key, home-made key, or revoked). Never shown as VERIFIED.</p>
- <p><b class="FAIL">FAIL</b> — a signature, the chain, or a challenge does not hold.</p>
-</div>
+<link rel="stylesheet" href="viewer.css">
+</head><body>
+<header class="top">
+ <a class="brand" href="../">QorTime</a>
+ <nav><a href="../">Home</a><a href="../how-it-works/">How it works</a><a href="../matches/">Matches</a><a href="../early-access/">Verified Match early access</a></nav>
+</header>
+<main class="wrap">
+<section class="hero">
+ <h1>Check a match receipt</h1>
+ <p>Signature checks run in this browser. The receipt JSON is not uploaded. The Verified Match badge sends only the receipt id to the test checkout service. That badge is TEST / early access until KYC. It is not a live paid product.</p>
+</section>
+
+<section class="card" id="input" aria-label="Receipt input">
+ <div class="row">
+  <button type="button" class="btn ghost" id="sample">Load the demo receipt</button>
+  <span class="btn ghost file">Choose files<input type="file" id="file" multiple accept=".json,.jsonl,.pub,application/json" aria-label="Choose a receipt and any evidence files"></span>
+  <a href="sample-receipt.json">sample-receipt.json</a>
+ </div>
+ <label class="lbl" for="json">Receipt JSON. Paste it, choose receipt.json, or drop a bundle's files here. Other files (device_attest.v0.json, score_timeline.json, pairing.json, …) are listed as evidence files.</label>
+ <textarea id="json" spellcheck="false" placeholder='{"schema":"qor-receipt/v0", ...}'></textarea>
+ <label class="lbl" for="pub">Pinned referee public key (hex). Optional. Leave blank and the result is at most self-signed.</label>
+ <input type="text" id="pub" placeholder="64 hex chars" autocomplete="off" spellcheck="false">
+ <div class="attached" id="attached" aria-label="Attached evidence files"></div>
+ <div class="go-row"><button type="button" class="btn primary" id="go">Verify</button><small>The verdict comes only from verify.js. Nothing on this page changes it.</small></div>
+</section>
+
+<section id="verdict" class="verdict" data-tone="idle" aria-live="polite" aria-atomic="false">
+ <div class="v-main">
+  <span class="seal-slot" id="seal"></span>
+  <div><p class="kicker">Verifier result</p><h2 id="word">NO RECEIPT YET</h2><p id="line">Paste a receipt, load the demo, or open one from a match page.</p><div class="tags" id="tags"></div></div>
+ </div>
+</section>
+
+<section id="stepsWrap" hidden>
+ <h2 class="sec">Checks, in the order the verifier runs them</h2>
+ <ol class="steps" id="steps"></ol>
+</section>
+
+<section id="panelsWrap" hidden>
+ <h2 class="sec">Evidence in this receipt</h2>
+ <div class="panels" id="panels"></div>
+ <div class="panels" id="logSlot" style="margin-top:12px"></div>
+</section>
+
 <section class="vm" id="vm">
  <h2>Verified Match <span class="vm-test">test mode</span></h2>
  <p><small>A test payment alone shows a neutral “paid, test mode” tag. Gold appears only when this page’s signature verdict is VERIFIED. The payment does not change that verdict. Live payouts stay off until KYC is done.</small></p>
  <p id="vm-return" hidden></p>
  <div id="vm-badge" class="vm-badge" hidden>paid, test mode</div>
  <p id="vm-state"><small>Paste a receipt to look up its id.</small></p>
- <button id="vm-buy" type="button" disabled>Checkout this receipt (test)</button>
+ <button id="vm-buy" class="btn ghost" type="button" disabled>Checkout this receipt (test)</button>
  <p id="vm-err"></p>
 </section>
-<label>Receipt JSON (paste, choose a file, or load the demo)</label>
-<p class="row"><button type="button" id="sample">Paste the demo receipt</button><a href="sample-receipt.json">sample-receipt.json</a></p>
-<input type="file" id="file" accept=".json,application/json">
-<textarea id="json" placeholder='{"schema":"qor-receipt/v0", ...}'></textarea>
-<label>Pinned referee public key (hex). Leave blank and the result is at most SELF_ATTESTED.</label>
-<input id="pub" placeholder="64 hex chars">
-<button id="go">Verify</button>
-<div id="badge"></div>
-<div id="corroboration" class="addon" hidden></div>
-<div id="device" hidden></div>
-<pre id="out" hidden></pre>
+
+<details class="raw-out"><summary>Raw verifier output</summary><pre id="out">Nothing checked yet.</pre></details>
+
+<h2 class="sec">What the results mean</h2>
+<div class="legend">
+ <p><b>VERIFIED</b> — every signature, checkpoint, and challenge holds against a trusted QorTime referee key. The only result shown in gold.</p>
+ <p><b>PARTIAL</b> — signatures check out against a trusted QorTime referee, but something is missing (challenge, motion, …). Not a verified result.</p>
+ <p><b>SELF-SIGNED</b> — cryptography holds, but the referee key is <strong>not</strong> on QorTime's built-in trusted list (local Start Match key, home-made key, or revoked). Never shown as VERIFIED. The raw output calls this status <code>SELF_ATTESTED</code>.</p>
+ <p><b>FAIL</b> — a signature, the chain, or a challenge does not hold.</p>
+ <p>Device keys are reported as software or TPM claimed (unverified). TPM claimed is the strongest device status the referee gives. It is not hardware proof.</p>
+</div>
+<p class="foot">Evidence panels explain the verifier's result. They never decide it.</p>
+</main>
 <script type="module">
-import { verifyReceipt } from "./verify.js";
 import { apiBase, badgeMatchesReceipt, isValidReceiptId, receiptIdFrom } from "./verified-match.js";
 import { sha256Hex } from "./verify.js";
+import { runVerify, setIdle, logPanel, observe, describeSidecar } from "./viewer-ui.js";
 const $ = (id) => document.getElementById(id);
 const q = new URLSearchParams(location.search);
+const ui = { verdict: $("verdict"), word: $("word"), line: $("line"), tags: $("tags"), seal: $("seal"),
+  steps: $("steps"), stepsWrap: $("stepsWrap"), panels: $("panels"), panelsWrap: $("panelsWrap") };
   if (q.get("referee")) {
     $("pub").value = q.get("referee");
     const warn = document.createElement("p");
-    warn.style.cssText = "color:#ffb000;font-size:.9rem;margin:.4rem 0 0";
-    warn.textContent = "Warning: the pinned referee key was filled from the URL (?referee=). That pin never yields VERIFIED unless the key is already on QorTime's built-in trusted-referee allowlist. A cheater can send a link that pins their own key — the result will be SELF_ATTESTED at best.";
+    warn.className = "pin-warn";
+    warn.textContent = "Warning: the pinned referee key was filled from the URL (?referee=). That pin never yields VERIFIED unless the key is already on QorTime's built-in trusted-referee allowlist. A cheater can send a link that pins their own key — the result will be self-signed at best.";
     $("pub").parentNode.insertBefore(warn, $("pub").nextSibling);
   }
 let pollTimer = 0;
 let sigStatus = null;
+let sidecars = [];
+let checked = false;
 
 function currentReceipt() {
   try { return JSON.parse($("json").value); } catch { return null; }
@@ -169,7 +172,65 @@ function watchReceipt() {
   refreshPaid(id).catch((err) => { $("vm-err").textContent = err instanceof Error ? err.message : "Paid lookup failed"; });
 }
 
-$("file").onchange = async (e) => { sigStatus = null; $("json").value = await e.target.files[0].text(); watchReceipt(); };
+function paintAttached() {
+  $("attached").replaceChildren(...sidecars.map((f) => {
+    const s = document.createElement("span");
+    s.textContent = `${f.name} · ${f.schema || (f.state === "fail" ? "unreadable" : "no schema")}`;
+    return s;
+  }));
+}
+
+/** A receipt goes in the box; every other file is listed as an evidence file. Files are read locally and never uploaded. */
+async function ingest(files) {
+  const list = [...files];
+  if (!list.length) return;
+  const read = await Promise.all(list.map(async (f) => ({ name: f.name, text: await f.text() })));
+  const isReceipt = (x) => { try { const d = JSON.parse(x.text); return d && d.schema === "qor-receipt/v0"; } catch { return false; } };
+  const receipt = read.find((x) => x.name === "receipt.json" && isReceipt(x)) || read.find(isReceipt);
+  sidecars = read.filter((x) => x !== receipt).map((x) => describeSidecar(x.name, x.text));
+  paintAttached();
+  if (receipt) { sigStatus = null; $("json").value = receipt.text; }
+  if ($("json").value.trim()) await check();
+}
+
+async function check() {
+  $("go").disabled = true; $("go").setAttribute("aria-busy", "true");
+  const text = $("json").value;
+  try {
+    const { receipt, v } = await runVerify(ui, text, $("pub").value.trim() || null, { sidecars });
+    sigStatus = v ? v.status : null;
+    checked = !!v;
+    if (v) {
+      $("logSlot").replaceChildren(logPanel(currentReceipt));
+      observe($("logSlot").children);
+      const res = receipt.result || {};
+      const basis = v.verification_basis === "official-post-hoc-review"
+        ? `basis: official post-hoc review (${v.review?.video_method}: ${v.review?.segments_verified}/${v.review?.segments_total} video segments checked by the QorTime referee)\n` +
+          `not proven: ${(v.review?.not_proven || []).join("; ")}\n`
+        : "";
+      const deleg = v.delegation
+        ? `signed by: online referee key ${v.referee_id} (delegation serial ${v.delegation.serial} from root ${v.delegation.delegated_by}, valid until ${new Date(v.delegation.not_after_ms).toISOString().slice(0, 10)}; not revoked)\n`
+        : "";
+      $("out").textContent = `match ${receipt.match?.match_id}  ${receipt.match?.game}/${receipt.match?.platform}\n` +
+        `final: away ${res.away_score} @ home ${res.home_score} (Q${res.quarter}), winner ${res.winner}\n` + basis + deleg + "\n" + JSON.stringify(v, null, 2);
+    } else {
+      $("logSlot").replaceChildren();
+      $("out").textContent = "The verifier did not run.";
+    }
+  } finally {
+    $("go").disabled = false; $("go").removeAttribute("aria-busy");
+  }
+  watchReceipt();
+}
+
+$("file").onchange = (e) => { ingest(e.target.files).catch(() => { $("vm-err").textContent = "Could not read those files."; }); e.target.value = ""; };
+const card = $("input");
+card.addEventListener("dragover", (e) => { e.preventDefault(); });
+card.addEventListener("drop", (e) => {
+  if (!e.dataTransfer || !e.dataTransfer.files.length) return;
+  e.preventDefault();
+  ingest(e.dataTransfer.files).catch(() => { $("vm-err").textContent = "Could not read those files."; });
+});
 $("sample").onclick = async () => {
   $("vm-err").textContent = "";
   try {
@@ -177,12 +238,19 @@ $("sample").onclick = async () => {
     if (!res.ok) throw new Error("Demo receipt failed to load");
     sigStatus = null;
     $("json").value = await res.text();
-    watchReceipt();
+    await check();
   } catch (err) {
     $("vm-err").textContent = err instanceof Error ? err.message : "Demo receipt failed to load";
   }
 };
-$("json").addEventListener("input", () => { sigStatus = null; $("corroboration").hidden = true; $("device").hidden = true; watchReceipt(); });
+const stale = () => {
+  sigStatus = null;
+  if (checked) { checked = false; setIdle(ui, "The receipt or pinned key changed. Press Verify to check it again."); $("logSlot").replaceChildren(); }
+  watchReceipt();
+};
+$("json").addEventListener("input", stale);
+$("pub").addEventListener("input", stale);
+$("go").onclick = () => { check(); };
 
 function sameOriginReceipt(raw) {
   if (!raw) return null;
@@ -201,7 +269,7 @@ if (preloaded) {
   }).then((text) => {
     sigStatus = null;
     $("json").value = text;
-    watchReceipt();
+    return check();
   }).catch(() => {
     $("vm-err").textContent = "Could not load the receipt from that URL.";
   });
@@ -243,171 +311,4 @@ if (q.get("checkout") === "success" && isValidReceiptId(returned)) {
     tick();
   }, 2000);
 }
-
-function reasonText(code) {
-  const labels = {
-    final_score_mismatch: "The two final scores differ.",
-    final_score_missing: "A final score is missing.",
-    score_timeline_missing: "A signed score timeline is missing.",
-    unsigned_score_timeline: "The score timeline is missing, or its signature did not check.",
-    timeline_result_mismatch: "The last score event does not match that recording’s final score.",
-    timeline_file_mismatch: "timeline.jsonl does not match the signed score events.",
-    pairing_unverified: "The pairing token was not signed by this referee.",
-    role_conflict: "Both submissions claimed the same role.",
-    same_player_key: "Both recordings were signed by the same player key.",
-    same_checkpoint_head: "Both recordings share a checkpoint head.",
-    shared_challenge_nonce: "The recordings share a challenge nonce.",
-    copied_challenge_response: "A challenge response was copied from the other recording.",
-  };
-  if (labels[code]) return `${labels[code]} (${code})`;
-  if (typeof code === "string" && code.includes("time_differs")) {
-    return `A score change is further apart than the tolerance. (${code})`;
-  }
-  return code;
-}
-
-function finalsText(finals) {
-  if (!finals || typeof finals !== "object") return "";
-  const one = (pair) => (Array.isArray(pair) && pair.length === 2) ? `home ${pair[0]}, away ${pair[1]}` : null;
-  const bits = [];
-  const home = one(finals.home);
-  const away = one(finals.away);
-  if (home) bits.push(`home recording ${home}`);
-  if (away) bits.push(`away recording ${away}`);
-  return bits.length ? `Finals read: ${bits.join("; ")}.` : "";
-}
-
-function paintCorroboration(v) {
-  const el = $("corroboration");
-  const c = v && v.corroboration;
-  el.replaceChildren();
-  if (!c) { el.hidden = true; el.className = "addon"; return; }
-  el.hidden = false;
-  el.className = "addon " + c.status;
-  const title = document.createElement("strong");
-  const labels = { corroborated: "CORROBORATED", disagreed: "DISAGREED", single_sided: "SINGLE-SIDED" };
-  title.textContent = labels[c.status] || c.status;
-  el.append(title);
-  const why = document.createElement("span");
-  why.className = "why";
-  if (c.status === "disagreed") {
-    why.textContent = "The two recordings do not agree. This is a separate indicator. It does not change the verdict above.";
-  } else if (c.status === "corroborated") {
-    why.textContent = "Both recordings agree on the final score and on score changes within the stated tolerance, and their challenge responses are independent. This is a separate indicator. It does not change the verdict above.";
-  } else {
-    why.textContent = "Only one recording is linked. A single-sided receipt is still judged by the existing rules. This is a separate indicator. It does not change the verdict above.";
-  }
-  el.append(why);
-  if (typeof c.pairing_id === "string" && c.pairing_id) {
-    const id = document.createElement("span");
-    id.className = "meta";
-    id.textContent = `Pairing ${c.pairing_id}`;
-    el.append(id);
-  }
-  const finals = finalsText(c.finals);
-  if (finals) {
-    const line = document.createElement("span");
-    line.className = "meta";
-    line.textContent = finals;
-    el.append(line);
-  }
-  if (typeof c.detail === "string" && c.detail) {
-    const detail = document.createElement("span");
-    detail.className = "meta";
-    detail.textContent = c.detail;
-    el.append(detail);
-  }
-  if (c.reasons && c.reasons.length) {
-    const ul = document.createElement("ul");
-    for (const reason of c.reasons) {
-      const li = document.createElement("li");
-      li.textContent = reasonText(reason);
-      ul.append(li);
-    }
-    el.append(ul);
-  }
-  if (Number.isInteger(c.tolerance_ms)) {
-    const tol = document.createElement("span");
-    tol.className = "why";
-    tol.textContent = `Score-change tolerance: ${c.tolerance_ms} ms. No clock offset is removed.`;
-    el.append(tol);
-  }
-  const sides = c.sides || {};
-  for (const role of ["home", "away"]) {
-    const own = sides[role] && sides[role].own_checks;
-    if (own && own !== "pass") {
-      const note = document.createElement("span");
-      note.className = "why";
-      note.textContent = `${role} own checks: ${own}. Corroboration does not repair a receipt that fails on its own.`;
-      el.append(note);
-    }
-  }
-}
-
-const DEVICE_FLAGS = {
-  exportable_key: "The bundle says this key can be exported.",
-  key_provider_unknown: "The key provider is not one this referee recognizes.",
-};
-
-function paintDevice(v) {
-  const el = $("device");
-  const d = v && v.device_key;
-  el.replaceChildren();
-  if (!d) { el.hidden = true; el.className = ""; return; }
-  el.hidden = false;
-  el.className = d.status;
-  const labels = {
-    tpm_claimed: "DEVICE KEY · TPM CLAIMED (UNVERIFIED)",
-    software: "DEVICE KEY · SOFTWARE",
-    invalid: "DEVICE KEY · INVALID",
-  };
-  const title = document.createElement("strong");
-  title.textContent = labels[d.status] || d.status;
-  el.append(title);
-  const why = document.createElement("span");
-  why.className = "why";
-  why.textContent = d.detail || "";
-  el.append(why);
-  const meta = [];
-  if (typeof d.key_provider === "string" && d.key_provider) meta.push(`key provider ${d.key_provider}`);
-  if (typeof d.algorithm === "string" && d.algorithm) meta.push(`algorithm ${d.algorithm}`);
-  if (typeof d.non_exportable === "boolean") meta.push(d.non_exportable ? "non-exportable: yes" : "non-exportable: no");
-  if (meta.length) {
-    const line = document.createElement("span");
-    line.className = "meta";
-    line.textContent = meta.join(" · ");
-    el.append(line);
-  }
-  if (d.flags && d.flags.length) {
-    const ul = document.createElement("ul");
-    for (const flag of d.flags) {
-      const li = document.createElement("li");
-      li.textContent = DEVICE_FLAGS[flag] ? `${DEVICE_FLAGS[flag]} (${flag})` : flag;
-      ul.append(li);
-    }
-    el.append(ul);
-  }
-}
-
-$("go").onclick = async () => {
-  let r; try { r = JSON.parse($("json").value); } catch { $("badge").className = "FAIL"; $("badge").textContent = "FAIL: not JSON"; $("corroboration").hidden = true; $("device").hidden = true; return; }
-  const v = await verifyReceipt(r, $("pub").value.trim() || null);
-  sigStatus = v.status;
-  $("badge").className = v.status;
-  $("badge").innerHTML = `${v.status}<span class="tier">${v.trust_tier ?? "no tier"} · referee ${v.referee_trust ?? "?"}${v.referee_id ? " ("+v.referee_id+")" : ""}</span>`;
-  paintCorroboration(v);
-  paintDevice(v);
-  const res = r.result || {};
-  $("out").hidden = false;
-  const basis = v.verification_basis === "official-post-hoc-review"
-    ? `basis: official post-hoc review (${v.review?.video_method}: ${v.review?.segments_verified}/${v.review?.segments_total} video segments checked by the QorTime referee)\n` +
-      `not proven: ${(v.review?.not_proven || []).join("; ")}\n`
-    : "";
-  const deleg = v.delegation
-    ? `signed by: online referee key ${v.referee_id} (delegation serial ${v.delegation.serial} from root ${v.delegation.delegated_by}, valid until ${new Date(v.delegation.not_after_ms).toISOString().slice(0, 10)}; not revoked)\n`
-    : "";
-  $("out").textContent = `match ${r.match?.match_id}  ${r.match?.game}/${r.match?.platform}\n` +
-    `final: away ${res.away_score} @ home ${res.home_score} (Q${res.quarter}), winner ${res.winner}\n` + basis + deleg + "\n" + JSON.stringify(v, null, 2);
-  watchReceipt();
-};
 </script></body></html>

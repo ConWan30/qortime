@@ -25,15 +25,15 @@ Not affiliated with EA, the NFL, or Sony. Madden NFL is a trademark of its owner
 
 [![QorTime homepage: one app, one recording, one receipt](docs/readme/shots/site-desktop.webp)](https://conwan30.github.io/qortime/)
 
-**[Match 021003](https://conwan30.github.io/qortime/matches/021003/)** — motion playback of burst stills, touchdown reads, and controller advisory. Status on the page: **SELF-ATTESTED · NOT REFEREE-SIGNED**. The official referee rejected the submission with HTTP 422 because receipt checkpoint 0 differs from `countersigned.jsonl`. Away 22 – home 41 is what this receipt and the end-of-game menu read. It is not a referee-verified result. The player UI itself says the burst is not continuous video.
+**[Match 021003](https://conwan30.github.io/qortime/matches/021003/)** — motion playback of burst stills, touchdown reads, and controller advisory. Status on the page: **SELF-SIGNED · NOT REFEREE-SIGNED**. The official referee rejected the submission with HTTP 422 because receipt checkpoint 0 differs from `countersigned.jsonl`. Away 22 – home 41 is what this receipt and the end-of-game menu read. It is not a referee-verified result. The player UI itself says the burst is not continuous video. The raw verifier status for this case is `SELF_ATTESTED`.
 
-[![Match 021003 viewer, self-attested, not referee-signed, final 22 to 41](docs/readme/shots/match-021003-desktop.webp)](https://conwan30.github.io/qortime/matches/021003/)
+[![Match 021003 viewer, self-signed, not referee-signed, final 22 to 41](docs/readme/shots/match-021003-desktop.webp)](https://conwan30.github.io/qortime/matches/021003/)
 
-[![Phone-width view of match 021003, still marked self-attested](docs/readme/shots/match-021003-mobile.webp)](https://conwan30.github.io/qortime/matches/021003/)
+[![Phone-width view of match 021003, still marked self-signed](docs/readme/shots/match-021003-mobile.webp)](https://conwan30.github.io/qortime/matches/021003/)
 
-Playback of the 6–0 Q1 touchdown burst (12 stills). The header stays **SELF-ATTESTED** the whole time.
+Playback of the 6–0 Q1 touchdown burst (12 stills). The header stays **SELF-SIGNED** the whole time.
 
-[![Burst playback of the 021003 touchdown read, self-attested, not continuous video](docs/readme/shots/match-021003-playback.gif)](https://conwan30.github.io/qortime/matches/021003/)
+[![Burst playback of the 021003 touchdown read, self-signed, not continuous video](docs/readme/shots/match-021003-playback.gif)](https://conwan30.github.io/qortime/matches/021003/)
 
 **[Match 125430](https://conwan30.github.io/qortime/matches/125430/)** — clips tied to the signed receipt. The page checks the proof in the browser and shows **RECEIPT FAIL · NOT A VERIFIED RESULT**. Published verifier errors:
 
@@ -60,7 +60,7 @@ flowchart LR
 
 1. **HDMI capture.** QorCap records the capture card on Windows and fingerprints the video as it is written (hash chain, timestamped checkpoints). Since v0.3.0 it also logs controller button reports from that same session.
 2. **Scorebug read.** The score is read off the recording, digit by digit, and locked only when consecutive frames agree. A refused read is dropped. The reader does not guess.
-3. **Signed receipt.** The laptop signs `qor-receipt/v0` with ed25519. That signature is **self-attested**: the signing key sits on the player's PC.
+3. **Signed receipt.** The laptop signs `qor-receipt/v0` with ed25519. That signature is **self-signed**: the signing key sits on the player's PC. The verifier status code is `SELF_ATTESTED`.
 4. **QorTime referee.** `qorcap submit` can upload the bundle to the official referee at `https://qortime-referee-production.up.railway.app`. It re-checks chains, video bytes, and the ending, and only then may countersign. Any check error is HTTP 422. Code and rules: [docs/REFEREE_SERVICE.md](docs/REFEREE_SERVICE.md).
 5. **Public viewer.** `qortime publish` writes `site/matches/<id>/`. The page is labeled with the status the verifier computed. A FAIL receipt is refused unless `--allow-fail`, and then every surface says the result is not verified.
 
@@ -113,7 +113,7 @@ docs/PHASE2.md               not built yet
 
 ## Honesty rules
 
-- **Gold only for `VERIFIED`.** A self-attested, partial, or failed receipt never gets a gold score.
+- **Gold only for `VERIFIED`.** A self-signed, partial, or failed receipt never gets a gold score.
 - **FAIL is a result.** It is shown. It is not rewritten into a quieter label.
 - **The page is not the signer.** Publishing refuses a FAIL receipt unless `--allow-fail`, strips raw inputs, haptics, device ids, and local paths, and refuses if a private field leaks. A clip is tagged locked only when its score lock sits in a receipt that does not FAIL.
 - **An observer cannot fix a receipt by editing the page.** The browser check hashes the published bytes. Change a score and verification fails.
@@ -126,7 +126,7 @@ docs/PHASE2.md               not built yet
 - **One countersigned match.** The official referee has not produced a published `VERIFIED` receipt. 021003 came back HTTP 422. 125430 fails the checkpoint gap and clock-skew checks above.
 - **Challenge timing that fits a real pause.** Rule v1 asks the pause menu to land within 600 ms. On captured Madden footage the drawn menu is later than that, so an honest press cannot pass v1. Rule v2 is opt-in. Detail: [docs/REFEREE_SERVICE.md](docs/REFEREE_SERVICE.md).
 - **Verified Match leaves test mode only after KYC.** Not before.
-- **Device key, claimed only.** QorCap v0.3.29 and later can add an opt-in TPM device key. The referee shows that as TPM CLAIMED (unverified). That is not attestation and it is not hardware-verified. Real TPM attestation is still roadmap, along with receipt inclusion proofs, a sealed capture device, and C2PA on clips. [docs/PHASE2.md](docs/PHASE2.md).
+- **Device key, claimed only.** QorCap v0.3.29 and later can add an opt-in TPM device key. The referee shows that as TPM claimed (unverified). That is the strongest device status it gives. A checked TPM quote is still roadmap, along with receipt inclusion proofs, a sealed capture device, and C2PA on clips. [docs/PHASE2.md](docs/PHASE2.md).
 
 ## License and credits
 
@@ -167,7 +167,7 @@ The Jev final-screen detector (`qor_receipt/agent/final_screen_jev.py`) is shado
 
 ### Head-to-head links
 
-`/challenge/` is bragging rights only: no money, no entry fee, no Stripe. One QorCap receipt can settle it because both players see the same scoreboard. Only a receipt the verifier computes as `VERIFIED` can name a winner. Self-attested, failed, or missing receipts show unverified and no winner. The challenge record is not signed with the referee key.
+`/challenge/` is bragging rights only: no money, no entry fee, no Stripe. One QorCap receipt can settle it because both players see the same scoreboard. Only a receipt the verifier computes as `VERIFIED` can name a winner. Self-signed, failed, or missing receipts show unverified and no winner. The challenge record is not signed with the referee key.
 
 ### Where the design can still break
 
