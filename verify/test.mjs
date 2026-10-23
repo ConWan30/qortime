@@ -137,5 +137,66 @@ ok(claimedView && claimedView.status === "tpm_claimed" && claimedView.affects_ve
 ok((await verifyReceipt(rv.receipt, rv.referee_pub, { allowlist: rv.allowlist })).status === "VERIFIED"
    && !(await verifyReceipt(rv.receipt, rv.referee_pub, { allowlist: rv.allowlist })).device_key,
    "a review receipt with no device sidecar stays VERIFIED");
+
+// ---- verifier page display model: explains verifyReceipt, never re-decides it ----
+const { buildPanels, buildSteps, describeSidecar, explainCode, goldAllowed, verdictLabel } = await import("./receipt-view.js");
+const { readdirSync } = await import("node:fs");
+const fxDir = new URL("../tests/vectors/viewer/", import.meta.url);
+const fixtures = readdirSync(fxDir).filter((f) => f.endsWith(".json")).sort();
+ok(fixtures.length >= 4, "viewer fixtures are present");
+const panelOf = (panels, id) => panels.find((p) => p.id === id);
+for (const name of fixtures) {
+  const fx = JSON.parse(readFileSync(new URL(name, fxDir)));
+  const fv = await verifyReceipt(fx.receipt, fx.referee_pub, { allowlist: fx.allowlist });
+  ok(fv.status === fx.expect, `${name}: JS verifier returns ${fx.expect}`);
+  const panels = buildPanels(fx.receipt, fv, {});
+  const res = panelOf(panels, "result");
+  ok(res.gold === (fv.status === "VERIFIED") && goldAllowed(fv) === (fv.status === "VERIFIED"), `${name}: gold only when VERIFIED`);
+  ok(fv.status === "VERIFIED" || res.state !== "pass", `${name}: result panel is not a pass unless VERIFIED`);
+  const { steps } = buildSteps(fx.receipt, fv);
+  ok(fv.status !== "FAIL" || steps.some((s) => s.state === "fail"), `${name}: a FAIL shows at least one failed step`);
+  ok(steps.every((s) => s.codes.every((c) => [...fv.errors, ...fv.partial].includes(c))), `${name}: every step code comes from the verifier`);
+}
+const loadFx = (n) => JSON.parse(readFileSync(new URL(n, fxDir)));
+const tampered = loadFx("fail-tampered-after-signing.json");
+const tv = await verifyReceipt(tampered.receipt, tampered.referee_pub, { allowlist: tampered.allowlist });
+const tp = buildPanels(tampered.receipt, tv, {});
+ok(panelOf(tp, "device").state === "unchecked" && !panelOf(tp, "device").device, "device key in a bad-signature receipt is not shown as a status");
+ok(panelOf(tp, "corroboration").state === "unchecked", "corroboration in a bad-signature receipt is not shown as a status");
+ok(panelOf(tp, "review").state === "fail", "review block in a bad-signature receipt is not trusted");
+const weak = loadFx("partial-motion-low-device-invalid-disagreed.json");
+const wv = await verifyReceipt(weak.receipt, weak.referee_pub, { allowlist: weak.allowlist });
+const wp = buildPanels(weak.receipt, wv, {});
+ok(panelOf(wp, "device").state === "fail" && panelOf(wp, "corroboration").state === "fail" && panelOf(wp, "motion").state === "partial",
+   "invalid device key, disagreement and low motion each show their own state");
+ok(panelOf(wp, "input").device === "Xbox Wireless Controller (USB)" && panelOf(wp, "capture").facts.some(([k, v]) => k === "platform" && v === "xbox-series"),
+   "controller and platform are shown as written, not assumed");
+const generic = loadFx("verified-software-single-sided-unknown-evidence.json");
+const gv = await verifyReceipt(generic.receipt, generic.referee_pub, { allowlist: generic.allowlist });
+const gp = buildPanels(generic.receipt, gv, {});
+const unk = panelOf(gp, "unknown");
+ok(unk.state === "info" && unk.items.some((x) => x.where === "review.checks" && x.key === "example_vendor_probe")
+   && unk.items.some((x) => x.where === "review" && x.key === "example_sidecar"), "unknown evidence is listed raw, not dropped");
+ok(panelOf(gp, "review").checks.some((c) => c.name === "example_vendor_probe" && !c.known), "unknown review check is labelled unknown");
+const plain = buildPanels(rv.receipt, untouched, {});
+for (const id of ["device", "corroboration", "handles"]) ok(panelOf(plain, id).state === "absent" && /^Not provided/.test(panelOf(plain, id).note), `missing ${id} renders as not provided`);
+const dualP = buildPanels(d.receipt, await verifyReceipt(d.receipt, d.referee_pub), {});
+ok(panelOf(dualP, "result").gold === false && panelOf(dualP, "agreement").state !== "absent", "self-signed dual receipt: no gold, agreement shown");
+for (const s of ["VERIFIED", "PARTIAL", "SELF_ATTESTED", "FAIL", "WHATEVER"]) {
+  const l = verdictLabel(s);
+  ok(!/attest|hardware.verified/i.test(`${l.word} ${l.line}`), `verdict copy for ${s} avoids attested wording`);
+  ok((l.tone === "gold") === (s === "VERIFIED"), `only VERIFIED gets the gold tone (${s})`);
+}
+for (const c of ["referee_local_self_attested", "home:key_kind_claim_unverified:tpm-attested", "dual_timelines_disagree", "home:cp[3]:gap_too_long"]) {
+  const x = explainCode(c);
+  ok(!/attest/i.test(x.text) && (x.code === null || !/attest/i.test(x.code)), `explanation for ${c} avoids attested wording`);
+}
+const odd = describeSidecar("vendor_probe.v3.json", JSON.stringify({ schema: "acme-probe/v3", samples: [1, 2] }));
+ok(odd.state === "info" && odd.family === "acme-probe" && odd.version === "v3" && odd.known === null && odd.fields.length === 2,
+   "an unknown sidecar is identified by schema and listed generically");
+ok(describeSidecar("bad.json", "{not json").state === "fail", "an unreadable sidecar is flagged, not thrown");
+ok(describeSidecar("device_attest.v0.json", JSON.stringify({ schema: "qorcap-device-attest/v0", key_provider: "windows-tpm" })).known !== null,
+   "device key sidecar is recognized");
+ok(describeSidecar("inputs.jsonl", '{"t_ms":1}\n{"t_ms":2}\n').rows === 2, "JSON lines sidecars are counted");
 process.exit(fails ? 1 : 0);
 

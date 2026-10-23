@@ -7,12 +7,12 @@ export const SCHEMA = "qor-receipt/v0";
 export const SELF_ATTESTED = "SELF_ATTESTED";
 const PHASES = ["kickoff", "halftime", "end"];
 const ALPHABET = ["CROSS", "CIRCLE", "SQUARE", "TRIANGLE", "UP", "DOWN", "LEFT", "RIGHT"];
-const MAX_GAP_MS = 10000, MAX_SKEW_MS = 3000, MOTION_MIN = 300;
+export const MAX_GAP_MS = 10000, MAX_SKEW_MS = 3000, MOTION_MIN = 300;
 const DEFAULT_LEN = 4;
 const MAX_WINDOW_MS = 120000; // v0.3.11: challenge windows are 90 s; longer is not a timed challenge
 // Challenge measurement. Absent result.rule is v1. Rule 2 is opt-in (bundle challenge_rule = 2).
 const RULE_V1 = 1, RULE_V2 = 2;
-const MAX_LATENCY_MS = 600, RULE2_MAX_LATENCY_MS = 2500, RULE2_CONSISTENCY_MS = 300;
+export const MAX_LATENCY_MS = 600, RULE2_MAX_LATENCY_MS = 2500, RULE2_CONSISTENCY_MS = 300;
 const RESULT_METHODS = new Set(["agreed_scorebug_final", "end_menu_read", "last_scorebug_read_unconfirmed"]);
 const UNCONFIRMED = "last_scorebug_read_unconfirmed";
 
