@@ -123,7 +123,7 @@
    <div class="cp glass"><b>CP 411</b><span class="mono">00:27:24</span><code>h411 9c0f…4e8a</code><i class="ref">PC ✓</i></div>
    <div class="cp glass fin"><b>FINAL</b><span class="mono">00:27:28</span><code>seal 21–17</code><i class="ref">SEALED</i></div>
   </div>
-  <p class="note center">Illustrative values. PC is the laptop key. QOR is an official referee timestamp, not a hardware attestation.</p>
+  <p class="note center">Illustrative values. PC is the laptop key. QOR is an official referee timestamp. It is not proof of a TPM.</p>
  </div>
 </section>
 
@@ -133,7 +133,7 @@
   <div class="scene-copy">
    <p class="num">04 / seal</p>
    <h2 class="split">The receipt prints. Everyone signs.</h2>
-   <p>At the final whistle the player’s key signs the result. A receipt from one console is <b>single-attested</b>. Two-sided corroboration is a separate indicator. It never changes the verdict. It is available from QorCap v0.3.31 when both players pair their match: each client sends the referee’s pairing token and a signed score timeline. It has not yet been tested on a real two-player match.</p>
+   <p>At the final whistle the player’s key signs the result. A receipt from one console is the <b>one-player tier</b>. Two-sided corroboration is a separate indicator. It never changes the verdict. It is available from QorCap v0.3.31 when both players pair their match: each client sends the referee’s pairing token and a signed score timeline. It has not yet been tested on a real two-player match.</p>
   </div>
   <div class="scene-art">
    <div class="printer"><div class="slot"></div>
@@ -173,7 +173,7 @@ receipt_hash</pre>
     <div class="face front glass"><div class="spin"></div><b class="mono">checking 412 signatures…</b></div>
     <div class="face back glass"><img src="assets/logo.svg" alt="" width="72"><b class="big">VERIFIED</b><small class="mono">trusted referee key · chain intact · 3/3 challenges</small></div>
    </div></div>
-   <div class="badges"><span class="badge single">◆ single-attested · one recording</span><span class="badge dual">corroboration · separate · paired matches</span></div>
+   <div class="badges"><span class="badge single">◆ one-player tier · one recording</span><span class="badge dual">corroboration · separate · paired matches</span></div>
   </div>
  </div>
 </section>
@@ -184,7 +184,7 @@ receipt_hash</pre>
  <div class="cards">
   <div class="card glass"><h3>Verify in one call</h3><p>The reference verifier ships as a Python CLI and a small browser JS module. Run it on every result before paying out.</p><code>qortime verify r.json --referee-pub &lt;hex&gt;</code><span class="tag">hosted verify API · roadmap</span></div>
   <div class="card glass"><h3>Fewer score disputes</h3><p>A sealed receipt replaces "he lied about the score" tickets with something a machine can check. What it can't see, we list plainly below.</p></div>
-  <div class="card glass"><h3>Open format</h3><p>JSON, canonicalized (JCS), Ed25519 signatures. Spec and schema in the repo, MIT licensed.</p><span class="tag">TPM device key · claimed, unverified (<a href="https://github.com/ConWan30/qortime/blob/main/docs/PHASE2.md">attestation is roadmap</a>)</span></div>
+  <div class="card glass"><h3>Open format</h3><p>JSON, canonicalized (JCS), Ed25519 signatures. Spec and schema in the repo, MIT licensed.</p><span class="tag">TPM device key · claimed, unverified (<a href="https://github.com/ConWan30/qortime/blob/main/docs/PHASE2.md">a checked TPM quote is roadmap</a>)</span></div>
  </div>
 </section>
 

@@ -261,10 +261,24 @@ h1.finalsum.gold{color:var(--gold)}
  .burn{width:58%}.burn .meta{display:none}
 }
 @media (pointer:coarse){body::before{display:none}}
+.sig{display:grid}
+.sigrow{display:grid;grid-template-columns:12px minmax(0,1fr);gap:8px;align-items:start;padding:8px 0;border-top:1px solid var(--line);opacity:0;transform:translateY(8px)}
+.sigrow:first-child{border-top:0}
+body.ready .sigrow{opacity:1;transform:none;transition:opacity .4s var(--ease),transform .5s var(--ease);transition-delay:calc(var(--k,0) * 70ms + 180ms)}
+.sigrow .pip{width:8px;height:8px;margin-top:4px;border-radius:50%;background:var(--dim)}
+.sigrow.pass .pip{background:var(--aqua)}.sigrow.fail .pip{background:var(--bad)}.sigrow.partial .pip{background:var(--warn)}
+.sigrow.info .pip{background:var(--steel)}.sigrow.absent .pip{background:transparent;box-shadow:inset 0 0 0 1.5px var(--dim)}
+.sigrow .nm{font-weight:650}.sigrow .st{float:right;margin-left:8px;font:10px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--mute)}
+.sigrow.fail .st{color:var(--bad)}.sigrow.partial .st{color:var(--warn)}.sigrow.pass .st{color:var(--aqua)}
+.meter{height:4px;border-radius:4px;background:var(--line2);overflow:hidden;margin-top:6px}
+.meter i{display:block;height:100%;background:var(--aqua);transform-origin:0 50%;transform:scaleX(0)}
+body.ready .meter i{transform:scaleX(var(--f,0));transition:transform .7s var(--ease) .4s}
+.chk .code{color:var(--dim)}
 @media (prefers-reduced-motion:reduce){
  *,*::before,*::after{animation:none!important;transition:none!important}
- .enter{opacity:1;transform:none}
+ .enter,.sigrow{opacity:1;transform:none}
  .chainClip:not(.booted) .link{opacity:1;transform:none}
+ .meter i{transform:scaleX(var(--f,0))}
 }
 </style>__HEAD__</head><body>
 <header class="top enter d0">
@@ -302,7 +316,7 @@ h1.finalsum.gold{color:var(--gold)}
   </div>
   <div class="clipstat" id="clipStat"></div>
   <div class="pad" id="pad">
-   <div class="h"><span class="lbl">Controller</span><span class="sub">advisory evidence, not proof · the referee does not check who held the controller</span></div>
+   <div class="h"><span class="lbl">Controller</span><span class="sub" id="padDev">advisory evidence, not proof · the referee does not check who held the controller</span></div>
    <div class="padstage"><canvas id="padcv" aria-label="Controller presses and haptics aligned to the playhead"></canvas><div class="padph" id="padPh" hidden><i></i></div></div>
    <div class="sub" id="padSub"></div>
   </div>
@@ -333,6 +347,7 @@ h1.finalsum.gold{color:var(--gold)}
   <section class="card" id="evCard" aria-label="Selected moment"></section>
   <section class="card" id="playsCard" aria-label="Plays in this match"></section>
   <section class="card" id="rcCard" aria-label="Receipt and verification"></section>
+  <section class="card" id="sigCard" aria-label="Signals in this recording"></section>
   <details class="card scope-card" id="scopeCard">
    <summary class="lbl">Inputs &amp; haptics · advisory evidence, not proof</summary>
    <canvas id="scope" aria-label="Button presses and haptic energy around this moment"></canvas>
@@ -356,6 +371,18 @@ const clk=s=>nil(s)?"–:––":`${Math.floor(s/60)}:${String(Math.floor(s%60))
 const mmss=s=>nil(s)?"–":`${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,"0")}`;
 const sc=s=>s&&!nil(s.away)&&!nil(s.home)?`${s.away}–${s.home}`:null;
 const short=h=>h?esc(String(h).slice(0,12))+"…":MISS;
+/* display wording only: the data blob keeps the verifier's status codes byte for byte */
+const human=s=>String(s??"").replace(/SELF_ATTESTED/g,"SELF-SIGNED").replace(/\bself-attested\b/gi,"self-signed")
+ .replace(/\(single-attested\)/g,"(one-player tier)").replace(/\(dual-attested\)/g,"(two-player tier)");
+const hx=s=>esc(human(s));
+const CODES={gap_too_long:"two checkpoints more than 10 s apart",clock_skew:"checkpoint time more than 3 s from its countersign",prev_mismatch:"does not link to the checkpoint before it",
+ hash_mismatch:"hash does not recompute",seq_gap:"checkpoint numbers skip",bad_referee_sig:"countersignature does not check",chain_ends_before_match_end:"chain stops more than 10 s before the match ended",
+ referee_key_not_pinned:"no referee key pinned",referee_not_on_allowlist:"signing key is not on QorTime's trusted list",referee_local_self_attested:"signed by a local key on the player's own PC, not the QorTime referee",
+ challenge_missing:"no nonce challenge",motion_signal_missing:"no motion correlation",motion_correlation_low:"motion correlation below the floor",bad_referee_signature:"referee signature does not check"};
+function codeText(c){const s=String(c),p=s.split(":"),k=p.find(x=>CODES[x])||p[p.length-1];
+ const where=p.filter(x=>x!==k).map(x=>x.replace(/^cp\[(\d+)\]$/,"checkpoint $1")).join(" ");
+ const txt=CODES[k]?(where?`${where}: ${CODES[k]}`:CODES[k]):human(s.replace(/_/g," "));
+ return /attest/i.test(s)?esc(txt):`${esc(txt)} <span class="code">${esc(s)}</span>`}
 const EV=Array.isArray(D.events)?D.events:[];
 const P0=D.publish||{};
 const RCPT=P0.receipt||{};
@@ -607,8 +634,9 @@ function evCard(e){const a=e.score_after||{},gold=VERIFIED&&e.locked===true;
  <div class="kv"><b>quarter · clock</b><span>Q${v(e.quarter)} · ${clk(e.clock_s)}</span><b>recording</b><span>${mmss(e.recording_s)}</span><b>wall time</b><span>${wall}</span>
  <b>confidence</b><span>${v(e.confidence)} <span class="sub">${esc(e.confidence_note||"")}</span><div class="conf"><i style="transform:scaleX(${Math.max(0,Math.min(1,+e.confidence||0))})"></i></div></span>
  <b>basis</b><span>${v(e.basis)}</span></div>`}
-function chk(ok,title,body){const c=ok===true?["ok","✓"]:ok===false?["no","✗"]:["na","–"];
- return `<div class="chk"><span class="${c[0]}">${c[1]}</span><div><div>${title}</div>${body?`<div class="hx">${body}</div>`:""}</div></div>`}
+function chk(ok,title,body){const mark=ok===true&&VERIFIED?"✓":ok===true?"●":ok===false?"✕":"○";
+ const c=ok===true?"ok":ok===false?"no":"na";
+ return `<div class="chk"><span class="${c}">${mark}</span><div><div>${title}</div>${body?`<div class="hx">${body}</div>`:""}</div></div>`}
 function cpLine(x,label){if(!x)return chk(null,label+" checkpoint",MISS);
  const ok=x.frames_hash_matches_evidence;return chk(ok===true?true:ok===false?false:null,`${label} checkpoint #${esc(x.seq)} · frames_hash ${ok?"matches evidence":ok===false?"does not match":"unchecked"}`,`hash ${short(x.hash)}`)}
 function verifyHref(){const rel=/\/site\/matches\//.test(location.pathname)?"../../../verify/":(RCPT.verify_url||"../../verify/");
@@ -633,6 +661,8 @@ function indicatorBlock(){const c=RCPT.corroboration,d=RCPT.device_key,bits=[];
   if(typeof d.non_exportable==="boolean")meta.push(d.non_exportable?"non-exportable":"exportable");
   const flags=(Array.isArray(d.flags)?d.flags:[]).filter(x=>typeof x==="string").map(f=>f==="exportable_key"?"the bundle says this key can be exported":f==="key_provider_unknown"?"the key provider is not recognized":f);
   bits.push(`<div class="ind ${klass}"><span class="tag ${tag}">DEVICE KEY · ${esc(labels[d.status]||d.status)}</span> Does not change the receipt status.${meta.length?` ${esc(meta.join(" · "))}.`:""}${flags.length?` ${esc(flags.join("; "))}.`:""}</div>`)}
+ else bits.push(`<div class="ind"><span class="tag">not provided</span> Device key. No device key file was reviewed for this receipt.</div>`);
+ if(!(c&&typeof c==="object"&&typeof c.status==="string")) bits.unshift(`<div class="ind"><span class="tag">not provided</span> Two-sided corroboration. No pairing was published with this page. Separate indicator. Does not change the receipt status.</div>`);
  return bits.join("")}
 function rcCard(e){const ck=e.checkpoints||{},c=!nil(e.highlight)?CL[e.highlight]:null;
  const partial=RCPT.partial||[];const refNote=partial.find(x=>/referee/i.test(x))||(VERIFIED?"":"not signed by the QorTime referee");
@@ -643,17 +673,49 @@ function rcCard(e){const ck=e.checkpoints||{},c=!nil(e.highlight)?CL[e.highlight
  <li>Source segment hashes are checked against the original video by qorcap verify-bundle. Those bytes are not on this page.</li></ol>
  <pre>qorcap highlights --check manifest.json --bundle BUNDLE</pre>
  ${RCPT.url?"":`<p class="sub">No receipt.json was published with this page, so the verifier opens without one preloaded.</p>`}</details>`;
- $("#rcCard").innerHTML=`<div class="h"><span class="lbl">Receipt &amp; verification</span><span class="tag ${STATUS==="FAIL"?"x":VERIFIED?"g":"w"}">${esc(STATUS||"missing")}</span></div>
- ${chk(VERIFIED?true:STATUS==="FAIL"?false:null,`Receipt: ${esc(RCPT.label||STATUS||"missing")}`,"")}
+ $("#rcCard").innerHTML=`<div class="h"><span class="lbl">Receipt &amp; verification</span><span class="tag ${STATUS==="FAIL"?"x":VERIFIED?"g":"w"}">${hx(STATUS||"missing")}</span></div>
+ ${chk(VERIFIED?true:STATUS==="FAIL"?false:null,`Receipt: ${hx(RCPT.label||STATUS||"missing")}`,"")}
  ${indicatorBlock()}
- ${(RCPT.errors||[]).length?`<ul class="errs">${RCPT.errors.map(x=>`<li>${esc(x)}</li>`).join("")}</ul>`:""}
- ${chk(VERIFIED?true:false,"Referee countersignature",esc(refNote))}
+ ${(RCPT.errors||[]).length?`<ul class="errs">${RCPT.errors.map(x=>`<li>${codeText(x)}</li>`).join("")}</ul>`:""}
+ ${chk(VERIFIED?true:false,"Referee countersignature",/referee/i.test(refNote)?codeText(refNote):esc(refNote))}
  ${cpLine(ck.before,"Before")}${cpLine(ck.after,"After")}
  ${c?chk(c.lock&&c.lock.in_receipt===true,`Clip lock #${esc(c.lock&&c.lock.seq)} ${c.lock&&c.lock.in_receipt?"is in the receipt":"is not in the receipt"}${VERIFIED?"":" · receipt is not a verified result"}`,`lock ${short(c.lock&&c.lock.hash)} · clip sha256 ${short(c.sha256)}`):chk(null,"Highlight clip",P0.footage_note?esc(P0.footage_note):"none for this moment")}
  ${chk(null,`Chain · ${v(CH.checkpoints)} checkpoints · ${v(CH.segments)} segments`,`head ${short(CH.chain_head)}`)}
  <div class="note">${RCPT.url?`<a href="${esc(RCPT.url)}">receipt.json</a> · `:""}<a id="verifyLink" href="${esc(verifyHref())}">check it in the verifier</a></div>
- ${RCPT.submission?`<div class="note">${esc(RCPT.submission)}</div>`:""}
- ${RCPT.history_url?`<div class="note"><a href="${esc(RCPT.history_url)}">${esc(RCPT.history_label||"earlier receipt")}</a></div>`:""}${how}`}
+ ${RCPT.submission?`<div class="note">${hx(RCPT.submission)}</div>`:""}
+ ${RCPT.history_url?`<div class="note"><a href="${esc(RCPT.history_url)}">${hx(RCPT.history_label||"earlier receipt")}</a></div>`:""}${how}`}
+function sigRow(k,state,name,label,body){return `<div class="sigrow ${state}" style="--k:${k}"><i class="pip" aria-hidden="true"></i><div><div><span class="nm">${name}</span><span class="st">${label}</span></div>${body?`<div class="sub">${body}</div>`:""}</div></div>`}
+function sigCard(){const box=$("#sigCard");if(!box)return;
+ const rows=[];
+ const rstate=STATUS==="VERIFIED"?"pass":STATUS==="FAIL"?"fail":STATUS==="PARTIAL"?"partial":STATUS?"info":"absent";
+ rows.push(sigRow(0,rstate,"Receipt",STATUS?hx(STATUS):"not provided",hx(RCPT.label||(STATUS?"":"No receipt was published with this page."))));
+ const c=RCPT.corroboration;
+ if(c&&typeof c.status==="string"){const map={corroborated:["pass","corroborated"],disagreed:["fail","disagreed"],single_sided:["info","single-sided"]};
+  const pair=map[c.status]||["info",hx(c.status)];
+  rows.push(sigRow(1,pair[0],"Two-sided corroboration",pair[1],"Separate indicator. Does not change the receipt status."))}
+ else rows.push(sigRow(1,"absent","Two-sided corroboration","not provided","No pairing was published with this page."));
+ const d=RCPT.device_key;
+ if(d&&typeof d.status==="string"){const map={tpm_claimed:["partial","TPM claimed (unverified)"],software:["info","software key"],invalid:["fail","invalid"]};
+  const pair=map[d.status]||["info",hx(d.status)];
+  const who=[d.key_provider,d.algorithm].filter(x=>typeof x==="string"&&x).map(esc).join(" · ");
+  rows.push(sigRow(2,pair[0],"Device key",pair[1],(who?who+" · ":"")+"Does not change the receipt status."))}
+ else rows.push(sigRow(2,"absent","Device key","not provided","No device key file was reviewed. The strongest status the referee gives is TPM claimed (unverified)."));
+ if(typeof IS.device==="string"&&IS.device){const bits=[esc(IS.device)];
+  if(Number.isInteger(IS.human_permille))bits.push("human-likeness "+IS.human_permille+"/1000");
+  if(Number.isInteger(IS.haptic_events))bits.push(IS.haptic_events+" haptic events");
+  const f=Number.isInteger(IS.human_permille)?Math.max(0,Math.min(1,IS.human_permille/1000)):null;
+  rows.push(sigRow(3,"info","Controller","shown as recorded",bits.join(" · ")+" · advisory, not who held it"+(f==null?"":`<div class="meter" role="img" aria-label="human-likeness"><i style="--f:${f.toFixed(3)}"></i></div>`)))}
+ else rows.push(sigRow(3,"absent","Controller","not provided","No controller name in this recording."));
+ const cracks=(RAIL&&Array.isArray(RAIL.cracks)?RAIL.cracks:[]).length;
+ const chainState=!CH.checkpoints?"absent":cracks?"fail":VERIFIED?"pass":"info";
+ rows.push(sigRow(4,chainState,"Hash chain",!CH.checkpoints?"not provided":cracks?cracks+" cracked":VERIFIED?"checks out":"present",
+  CH.checkpoints?`${v(CH.checkpoints)} checkpoints · ${v(CH.segments)} segments`:"No checkpoint chain on this page."));
+ const cap=D.capture&&typeof D.capture==="object"?D.capture:{};
+ const fact=(k,val)=>`${esc(k)} ${val==null||val===""?'<span class="miss">not provided</span>':esc(val)}`;
+ rows.push(sigRow(5,D.match_id?"info":"absent","Capture",cap.platform?"shown as recorded":"partial",
+  [fact("platform",cap.platform),fact("game",cap.game),fact("mode",cap.mode),fact("side",D.role),fact("qorcap",D.qorcap_version),
+   fact("length",Number.isFinite(VD.recording_duration_s)?Math.round(VD.recording_duration_s)+" s":null)].join(" · ")));
+ box.innerHTML=`<div class="h"><span class="lbl">Signals</span><span class="sub">published with this page · a blank row was not in the data</span></div><div class="sig">${rows.join("")}</div>`}
 function drawScope(){const e=S.ev,cv=$("#scope"),cx=cv.getContext("2d");const I=e&&e.inputs,s=I&&I.strip;
  const dpr=Math.min(2,devicePixelRatio||1),w=cv.clientWidth||320,h=120;
  if(cv.width!==Math.round(w*dpr)){cv.width=Math.round(w*dpr);cv.height=Math.round(h*dpr)}
@@ -690,8 +752,8 @@ function playsCard(){const box=$("#playsCard");if(!box)return;
  <div class="sub">${scores} score changes · ${tds} touchdowns · ${rows.length} listed moments</div>
  <ol class="plays">${rows.map(({e,i})=>`<li><button type="button" data-i="${i}"><b>${esc(String(e.play||e.kind||"").replace(/_/g," "))}</b><span>${esc(sc(e.score_after)||"—")}</span><span class="sub">Q${v(e.quarter)} ${clk(e.clock_s)}${nil(e.confidence)?"":` · ${esc(e.confidence)}`}</span></button></li>`).join("")}</ol>`;
  box.querySelectorAll("button").forEach(b=>b.onclick=()=>select(+b.dataset.i))}
-function foot(){const bits=[`<b>Claims.</b> ${esc(D.claims||"")}`,
- `<b>Missing in the bundle:</b> ${(D.missing||[]).length?(D.missing||[]).map(esc).join(" · "):"none listed"}`];
+function foot(){const bits=[`<b>Claims.</b> ${hx(D.claims||"")}`,
+ `<b>Missing in the bundle:</b> ${(D.missing||[]).length?(D.missing||[]).map(x=>hx(x)).join(" · "):"none listed"}`];
  if(P0.footage_note)bits.push(esc(P0.footage_note));
  bits.push("Per-frame scorebug reads and the scorebug crop box are not in the QorCap bundle yet, so “what the AI saw” is the frames the reader was given, tagged at the new-score frame. Keys ← → moments · Space play.");
  $("#foot").innerHTML=bits.join("<br>")}
@@ -889,10 +951,10 @@ function paintFinal(){const R=D.result||{},fin=R.final,h=$("#finalSum"),w=$("#fi
  const confirmed=!!(fin&&R.final_confirmed);if(h)h.classList.toggle("gold",VERIFIED&&confirmed);
  let sentence;
  if(confirmed){if(h)h.textContent=`Final ${fin.away}–${fin.home}`;
-  if(w)w.textContent=(VERIFIED?"Referee-verified.":"Confirmed in the recording, not referee-signed.")+(fin.basis?` ${fin.basis}`:"");
+  if(w)w.textContent=(VERIFIED?"Referee-verified.":"Confirmed in the recording, not referee-signed.")+(fin.basis?` ${human(fin.basis)}`:"");
   sentence=`final ${fin.away}–${fin.home}${VERIFIED?" · referee-verified":" · confirmed in the recording, not referee-signed"}`}
  else{if(h)h.textContent="No confirmed final.";
-  if(w)w.textContent=miss?String(miss):"bundle.final is missing, so this page does not state a final score.";
+  if(w)w.textContent=miss?human(miss):"bundle.final is missing, so this page does not state a final score.";
   sentence="No confirmed final."}
  if(w&&P0.recorded)w.textContent=(w.textContent?w.textContent+" ":"")+P0.recorded;
  const sub=$("#railSub");if(sub&&sentence&&!(sub.textContent||"").includes(sentence))sub.textContent=sub.textContent?`${sub.textContent} · ${sentence}`:sentence}
@@ -910,14 +972,16 @@ async function startProof(){if(proofRunning){showProofBtn("run");return}
  const job=runProof();if(S.clip&&S.armed)checkClip(S.clip);
  try{await job}finally{proofRunning=false;showProofBtn("done")}}
 function boot(){const st=$("#status");
- const SHORT={FAIL:"Receipt FAIL · not a verified result",SELF_ATTESTED:"Self-attested · not referee-signed",PARTIAL:"Partial · not a verified result",VERIFIED:"Verified by the referee"};
- st.textContent=SHORT[STATUS]||STATUS||"receipt status missing";st.title=RCPT.label||"";st.classList.add(STATUS==="FAIL"?"fail":VERIFIED?"ok":"warn");
+ const SHORT={FAIL:"Receipt FAIL · not a verified result",SELF_ATTESTED:"Self-signed · not referee-signed",PARTIAL:"Partial · not a verified result",VERIFIED:"Verified by the referee"};
+ st.textContent=SHORT[STATUS]||human(STATUS)||"receipt status missing";st.title=human(RCPT.label||"");st.classList.add(STATUS==="FAIL"?"fail":VERIFIED?"ok":"warn");
+ const pd=$("#padDev");if(pd)pd.textContent=(typeof IS.device==="string"&&IS.device?IS.device:"controller name not recorded")+" · "+pd.textContent;
  $("#mid").textContent=`${D.match_id||""} · qorcap ${D.qorcap_version||"?"}`;
  document.title=`QorTime · ${D.match_id||"match"}`;
  if(!RAIL)RAIL=sparseRail();
  if(RAIL){CRACKS=new Set((RAIL.cracks||[]).map(c=>c.i));$("#railCard").classList.toggle("seal",!!RAIL.seal);
   const why=(RAIL.cracks||[]).map(c=>`#${c.i} ${c.why}`).join(" · ");
-  $("#railSub").textContent=`${RAIL.n} links${RAIL.dt_s?` · ~${RAIL.dt_s}s each`:""} · ${RAIL.note||""}${why?` · cracked ${why}`:""}`}
+  $("#railSub").textContent=`${RAIL.n} links${RAIL.dt_s?` · ~${RAIL.dt_s}s each`:""} · ${human(RAIL.note||"")}${why?` · cracked ${why}`:""}`}
+ sigCard();
  DUR=(VD.recording_duration_s||VD.duration_s||Math.max(1,...EV.map(e=>e.recording_s||0),1));
  MAXS=Math.max(7,...EV.map(e=>e.score_after?Math.max(e.score_after.away||0,e.score_after.home||0):0));
  NAV=EV.map((e,i)=>i).filter(i=>["score_change","kickoff","end_of_game"].includes(EV[i].kind)&&!nil(EV[i].recording_s));

@@ -257,7 +257,7 @@ def _publish(bdir: Path, site: Path, video: Path | None, hdir: Path | None, slug
                     "lock": {k: lk.get(k) for k in ("source", "seq", "t_ms", "hash", "frames_hash", "frames_hash_matches_evidence",
                                                     "in_receipt", "score_before", "score_after", "quarter", "clock_s", "play",
                                                     "delta")},
-                    # gold / "locked" only for a referee-verified receipt. A FAIL or self-attested lock is not a seal.
+                    # gold / "locked" only for a referee-verified receipt. A FAIL or self-signed lock is not a seal.
                     "locked": bool(status == "VERIFIED" and lk.get("in_receipt") and lk.get("frames_hash_matches_evidence")),
                 })
         _link_clips(idx["events"], clips_pub)
@@ -267,7 +267,7 @@ def _publish(bdir: Path, site: Path, video: Path | None, hdir: Path | None, slug
         res = receipt.get("result") or {}
         label = {"VERIFIED": "VERIFIED · co-signed by the QorTime referee",
                  "PARTIAL": "PARTIAL · some checks not covered",
-                 "SELF_ATTESTED": "SELF_ATTESTED · signed on the player's own PC, not by the QorTime referee",
+                 "SELF_ATTESTED": "SELF-SIGNED · signed on the player's own PC, not by the QorTime referee",
                  "FAIL": "FAIL · this receipt does not verify; nothing on this page is a verified result"}[status]
         idx["result"]["trust_tier"] = label
         idx["publish"] = {
@@ -284,6 +284,8 @@ def _publish(bdir: Path, site: Path, video: Path | None, hdir: Path | None, slug
             "chain_rail": chain_rail(receipt, idx["events"], status, ver["errors"]),
         }
         idx["claims"] = (f"Receipt status (computed by the QorTime verifier when this page was built): {label}. " + idx["claims"])
+        match = receipt.get("match") or {}
+        idx["capture"] = {k: match[k] for k in ("platform", "game", "mode", "scorebug_profile") if match.get(k) not in (None, "")}
         blob = json.dumps(idx)
         bad = privacy_problems(blob)
         if bad:
@@ -357,6 +359,7 @@ def _card(m: dict) -> str:
     # gold is a referee-verified seal, not "we read a final on the recording"
     gold = bool(fin) and st == "VERIFIED"
     cls = "a" if st == "VERIFIED" else "x" if st == "FAIL" else "w" if st in ("SELF_ATTESTED", "PARTIAL") else ""
+    tag = "SELF-SIGNED" if st == "SELF_ATTESTED" else st
     when = time.strftime("%b %d, %Y", time.gmtime((m.get("started_ms") or 0) / 1000 - 5 * 3600)) if m.get("started_ms") else ""
     score = (f'<span class="{"lockg" if gold else "unl"}">{e(str(shown["away"]))}<i>–</i>{e(str(shown["home"]))}</span>'
              if shown else '<span class="miss">no score read</span>')
@@ -369,7 +372,7 @@ def _card(m: dict) -> str:
     else:
         basis = "last scorebug read · not a verified result"
     return (f'<a class="mc glass" href="{e(m["url"])}"><div class="top"><span class="lbl">{e(m.get("game") or "match")} · {e(when)}</span>'
-            f'<span class="tag {cls}">{e(st)}</span></div><div class="sc">{score}</div><div class="sub">away – home · {e(basis)}</div>'
+            f'<span class="tag {cls}">{e(tag)}</span></div><div class="sc">{score}</div><div class="sub">away – home · {e(basis)}</div>'
             f'<div class="meta"><span>{e(str(m.get("events", 0)))} events</span><span>{e(str(m.get("touchdowns", 0)))} TDs</span>'
             f'<span>{e(str(m.get("clips", 0)))} highlight clips</span></div><div class="id mono">{e(m.get("match_id") or "")}</div></a>')
 

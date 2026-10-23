@@ -94,6 +94,7 @@ def og_png(idx: dict) -> bytes:
     status = str((pub.get("receipt") or {}).get("status") or "MISSING").upper()
     verified = status == "VERIFIED"
     accent = (240, 201, 92) if verified else (255, 109, 109) if status == "FAIL" else (63, 224, 208)
+    shown = "SELF-SIGNED" if status == "SELF_ATTESTED" else status
     ink = (227, 237, 248)
     mute = (139, 155, 176)
     res = idx.get("result") or {}
@@ -103,7 +104,7 @@ def og_png(idx: dict) -> bytes:
     buf = bytearray((4, 8, 15) * (width * height))
     _rect(buf, width, height, 0, 0, width, 18, accent)
     _text(buf, width, height, "QORTIME", 64, 70, 8, ink)
-    _text(buf, width, height, status[:18], 64, 170, 12, accent)
+    _text(buf, width, height, shown[:18], 64, 170, 12, accent)
     _text(buf, width, height, score, 64, 300, 8, ink)
     _text(buf, width, height, trust, 64, 400, 6, accent)
     _text(buf, width, height, str(idx.get("match_id") or pub.get("slug") or "MATCH")[:42], 64, 500, 4, mute)
@@ -128,8 +129,9 @@ def _public_head(idx: dict) -> str:
     fin = res.get("final") if res.get("final_confirmed") else None
     score = f"Final {fin.get('away')}–{fin.get('home')}" if fin else "No confirmed final"
     trust = "Referee-verified." if status == "VERIFIED" else "Not a referee-verified result."
+    shown = "SELF-SIGNED" if status == "SELF_ATTESTED" else status
     mid = str(idx.get("match_id") or slug or "match")
-    desc = f"{mid}. {score}. Receipt {status}. {trust}"
+    desc = f"{mid}. {score}. Receipt {shown}. {trust}"
     url = f"{_ORIGIN}/matches/{slug}/" if slug else f"{_ORIGIN}/"
     image = f"{url}og.png" if slug else f"{_ORIGIN}/assets/og.png"
     title = f"QorTime · {mid}"
