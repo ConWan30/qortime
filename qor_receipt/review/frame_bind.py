@@ -17,6 +17,7 @@ See spec/match-receipt-v0.md §7.
 """
 from __future__ import annotations
 
+import bisect
 import hashlib
 import json
 import re
@@ -38,18 +39,26 @@ _MISSING = FRAME_BIND_STATUSES[1]
 _STRIPPED = FRAME_BIND_STATUSES[2]
 _BROKEN = FRAME_BIND_STATUSES[3]
 _BUNDLE_MAGIC = b"qor-frame-bind-bundle/v0\n"
-# Same byte budget as read_meta_zip. frames.jsonl counts against it on upload.
+# Same byte budget as read_meta_zip. The bundle and the referee upload share it.
 MAX_BUNDLE_BYTES = MAX_META_BYTES
 MAX_MEMBER_BYTES = MAX_META_BYTES
 # checkpoints.jsonl is a few hundred bytes a row, about 900 rows an hour.
 MAX_CHECKPOINT_BYTES = 4 * 1024 * 1024
 # readers.json is one closed object.
 MAX_READERS_BYTES = 64 * 1024
+# frames.jsonl is about 20 MB per hour. 64 MiB is a few hours and stays under the upload budget.
+MAX_FRAMES_BYTES = 64 * 1024 * 1024
+# A real frame row is under 300 bytes. A longer line is rejected before json.loads.
+MAX_FRAME_LINE_BYTES = 4 * 1024
+# A frame row is a flat object: one or two `{` and a handful of colons. An array, or a
+# wider object, is rejected before json.loads so a 4 KiB line cannot expand into a tree.
+MAX_FRAME_LINE_BRACES = 4
+MAX_FRAME_LINE_COLONS = 24
 MAX_ZIP_MEMBERS = 64
 MAX_LINE_BYTES = 1024 * 1024
 MAX_ROWS = 1_000_000
-# Checkpoint and reader objects are a handful of levels deep. Wide arrays are
-# bounded by the member caps; this stops a nested bomb before json.loads.
+# Checkpoint and reader objects are a handful of levels deep. This stops a nested
+# bomb before json.loads. Frame lines are also rejected for `[` and extra colons.
 MAX_JSON_DEPTH = 32
 _SYMLINK_MODE = 0o120000
 
@@ -61,16 +70,16 @@ CHECKPOINTS_FILE = "checkpoints.jsonl"
 _MEMBER_ORDER = (CHECKPOINTS_FILE, FRAMES_FILE, READERS_FILE)
 
 PATH_PATTERN = (
-    r"^(?!.*\.(?:[Kk][Ee][Yy]|[Pp][Ee][Mm]|[Pp]12|[Pp][Ff][Xx]|[Jj][Ww][Kk])$)"
+    r"^(?!.*\.(?:[Kk][Ee][Yy]|[Pp][Ee][Mm]|[Pp]12|[Pp][Ff][Xx]|[Jj][Ww][Kk]|[Pp][Pp][Kk]|[Jj][Kk][Ss])$)"
     r"(?!.*(?:^|/)[Kk][Ee][Yy][Ss](?:/|$))"
     r"(?!.*(?:^|/)[Ss][Ee][Cc][Rr][Ee][Tt][Ss]?(?:/|$))"
-    r"(?!.*(?:^|/)[^/]*_[Kk][Ee][Yy](?:\.[^/]+)?$)"
-    r"(?!.*(?:^|/)[Ii][Dd]_(?:[Rr][Ss][Aa]|[Dd][Ss][Aa]|[Ee][Cc][Dd][Ss][Aa](?:_[Ss][Kk])?|[Ee][Dd]25519(?:_[Ss][Kk])?)(?:\.[^/]+)?$)"
+    r"(?!.*(?:^|/)[^/]*_[Kk][Ee][Yy](?:\.[^/]+)?(?:/|$))"
+    r"(?!.*(?:^|/)[Ii][Dd]_(?:[Rr][Ss][Aa]|[Dd][Ss][Aa]|[Ee][Cc][Dd][Ss][Aa](?:_[Ss][Kk])?|[Ee][Dd]25519(?:_[Ss][Kk])?|[Ee][Dd]448(?:_[Ss][Kk])?)(?:\.[^/]+)?(?:/|$))"
     r"(?:[A-Za-z0-9_][A-Za-z0-9_.+-]*/)*[A-Za-z0-9_][A-Za-z0-9_.+-]*$"
 )
 _FORBIDDEN_SEGMENTS = frozenset({"keys", "secret", "secrets"})
 _PATH_RE = re.compile(PATH_PATTERN)
-_PRIVATE_KEY_NAME = re.compile(r"(?i)^id_(?:rsa|dsa|ecdsa(?:_sk)?|ed25519(?:_sk)?)$")
+_PRIVATE_KEY_NAME = re.compile(r"(?i)^id_(?:rsa|dsa|ecdsa(?:_sk)?|ed25519(?:_sk)?|ed448(?:_sk)?)$")
 _RUNTIME_ID_RE = re.compile(r"^[A-Za-z0-9._+-]{1,80}$")
 _HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
 _GAP_REASONS = frozenset({
@@ -133,7 +142,8 @@ def frame_bind_status(files: Mapping[str, bytes]) -> str:
     try:
         if not isinstance(files, Mapping):
             return _BROKEN
-        return _plain_status(_status(files))
+        status, _loaded = _classify(files)
+        return _plain_status(status)
     except Exception:
         return _BROKEN
 
@@ -147,11 +157,16 @@ def verify_frame_bind(bundle: str | Path | bytes | bytearray) -> FrameBindResult
     """
     try:
         raw, files = _open_bundle(bundle)
-        status = frame_bind_status(files)
+        status, loaded = _classify(files)
         # Coverage is filled only when the commitments and files are both present
         # (verified, or broken on content) and the frame rows still parse. missing
-        # and stripped report no coverage.
-        coverage = _coverage(files) if status in (FRAME_BIND_VERIFIED, _BROKEN) and _rows_parse(files) else ()
+        # and stripped report no coverage. The rows parsed for the status are reused.
+        if status in (FRAME_BIND_VERIFIED, _BROKEN):
+            if loaded is None and isinstance(files.get(FRAMES_FILE), (bytes, bytearray)):
+                loaded = _load_frames(bytes(files[FRAMES_FILE]))
+            coverage = _segments(loaded.objs) if loaded is not None and loaded.ok and loaded.objs else ()
+        else:
+            coverage = ()
     except Exception:
         raw = bytes(bundle) if isinstance(bundle, (bytes, bytearray)) else b""
         status = _BROKEN
@@ -373,31 +388,20 @@ def _zip_member_forbidden(info: zipfile.ZipInfo) -> bool:
     return name not in _MEMBER_ORDER
 
 
-def _rows_parse(files: Mapping[str, bytes]) -> bool:
-    return _frame_objects(files) is not None
+@dataclass(frozen=True, slots=True)
+class _LoadedFrames:
+    """One parse of ``frames.jsonl``. ``ok`` means the rows satisfy the frame rules."""
+
+    lines: tuple[bytes, ...]
+    objs: tuple[dict[str, Any], ...] | None
+    heads: tuple[str, ...]
+    ok: bool
 
 
-def _coverage(files: Mapping[str, bytes]) -> tuple[FrameBindSegment, ...]:
-    objs = _frame_objects(files)
-    if not objs:
-        return ()
-    return _segments(objs)
+_NO_FRAMES = _LoadedFrames((), None, (), False)
 
 
-def _frame_objects(files: Mapping[str, bytes]) -> list[dict[str, Any]] | None:
-    raw = files.get(FRAMES_FILE)
-    if not isinstance(raw, (bytes, bytearray)):
-        return None
-    lines = _split_lines(bytes(raw))
-    if not lines:
-        return None
-    objs = _canonical_objects(lines)
-    if objs is None or not _rows_ok(objs):
-        return None
-    return objs
-
-
-def _segments(objs: list[dict[str, Any]]) -> tuple[FrameBindSegment, ...]:
+def _segments(objs: list[dict[str, Any]] | tuple[dict[str, Any], ...]) -> tuple[FrameBindSegment, ...]:
     by_seg: dict[int, list[dict[str, Any]]] = {}
     order: list[int] = []
     for obj in objs:
@@ -451,18 +455,35 @@ def _member_cap(name: str) -> int:
         return MAX_CHECKPOINT_BYTES
     if name == READERS_FILE:
         return MAX_READERS_BYTES
+    if name == FRAMES_FILE:
+        return MAX_FRAMES_BYTES
     return MAX_MEMBER_BYTES
 
 
-def _status(files: Mapping[str, bytes]) -> str:
+def _line_cap(name: str) -> int:
+    if name == FRAMES_FILE:
+        return MAX_FRAME_LINE_BYTES
+    return MAX_LINE_BYTES
+
+
+def _classify(files: Mapping[str, bytes]) -> tuple[str, _LoadedFrames | None]:
+    """Status, plus the frames parse when this call already did one.
+
+    The checkpoint chain is checked once. ``frames.jsonl`` is parsed once, and only
+    when a commitment points at it. ``None`` means this call did not parse frames
+    (a later coverage fill may parse them once).
+    """
     total = 0
     for key, val in files.items():
         if not isinstance(key, str) or not isinstance(val, (bytes, bytearray)):
-            return _BROKEN
+            return _BROKEN, None
         blob = bytes(val)
         total += len(blob)
-        if len(blob) > _member_cap(key) or total > MAX_BUNDLE_BYTES or _payload_over_cap(blob):
-            return _BROKEN
+        cap = _member_cap(key)
+        if len(blob) > cap or total > MAX_BUNDLE_BYTES or _payload_over_cap(
+            blob, line_limit=_line_cap(key), member_limit=cap,
+        ):
+            return _BROKEN, None
     raw_cps = files.get(CHECKPOINTS_FILE)
     if raw_cps is None or bytes(raw_cps) == b"":
         cps: list[dict[str, Any]] = []
@@ -472,7 +493,7 @@ def _status(files: Mapping[str, bytes]) -> str:
         # is broken before leftover classification. missing and stripped require a
         # chain that matches, or no checkpoint bytes.
         if parsed is None or not _checkpoint_chain_ok(parsed):
-            return _BROKEN
+            return _BROKEN, None
         cps = parsed
 
     has_frames = FRAMES_FILE in files
@@ -482,74 +503,44 @@ def _status(files: Mapping[str, bytes]) -> str:
     all_fb = bool(cps) and all(flagged)
     readers_present, readers_val = _readers_on_seq0(cps)
 
+    loaded: _LoadedFrames | None = None
     # A frames file that is present and does not match its commitments is broken
     # even when another sidecar is missing. Absence of the file, on a chain that
     # recomputes, stays a leftover.
-    if has_frames and any_fb and not _frames_match(cps, bytes(files[FRAMES_FILE])):
-        return _BROKEN
+    if has_frames and any_fb:
+        loaded = _load_frames(bytes(files[FRAMES_FILE]))
+        if not _frames_prefix_ok(cps, loaded):
+            return _BROKEN, loaded
 
     if cps and any_fb and not all_fb:
-        return _STRIPPED
+        return _STRIPPED, loaded
     if any_fb and not readers_present:
-        return _STRIPPED
+        return _STRIPPED, loaded
     if readers_present and not all_fb:
-        return _STRIPPED
+        return _STRIPPED, loaded
     if has_frames and not any_fb:
-        return _STRIPPED
+        return _STRIPPED, loaded
     if has_readers_file and not readers_present:
-        return _STRIPPED
+        return _STRIPPED, loaded
     if any_fb and not has_frames:
-        return _STRIPPED
+        return _STRIPPED, loaded
     if readers_present and _sha_shaped(readers_val) and not has_readers_file:
-        return _STRIPPED
+        return _STRIPPED, loaded
     if readers_present and _unbound_shaped(readers_val) and has_readers_file:
-        return _STRIPPED
+        return _STRIPPED, loaded
     if not any_fb and not readers_present and not has_frames and not has_readers_file:
-        return _MISSING
+        return _MISSING, loaded
     if not all_fb or not readers_present or not has_frames:
-        return _BROKEN
+        return _BROKEN, loaded
     if _unbound_shaped(readers_val):
-        if has_readers_file or not _content_ok(cps, bytes(files[FRAMES_FILE]), readers_val, None):
-            return _BROKEN
-        return FRAME_BIND_VERIFIED
+        if has_readers_file or not _readers_tail_ok(cps, loaded, readers_val, None):
+            return _BROKEN, loaded
+        return FRAME_BIND_VERIFIED, loaded
     if not _sha_shaped(readers_val) or not has_readers_file:
-        return _BROKEN
-    if not _content_ok(cps, bytes(files[FRAMES_FILE]), readers_val, bytes(files[READERS_FILE])):
-        return _BROKEN
-    return FRAME_BIND_VERIFIED
-
-
-def _content_ok(cps: list[dict[str, Any]], frames: bytes, readers_val: Any,
-                readers_file: bytes | None) -> bool:
-    if not _checkpoint_chain_ok(cps):
-        return False
-    lines = _split_lines(frames)
-    if not lines:
-        return False
-    objs = _canonical_objects(lines)
-    if objs is None or not _rows_ok(objs):
-        return False
-    heads = _prefix_heads(lines)
-    prev_n = -1
-    for cp in cps:
-        q = cp.get("qorcap")
-        if not isinstance(q, dict):
-            return False
-        fb = q.get("frame_bind")
-        if not _frame_commitment_ok(fb):
-            return False
-        n = fb["n"]
-        if n < prev_n or n > len(lines):
-            return False
-        expect = GENESIS if n == 0 else heads[n - 1]
-        if fb["head"] != expect:
-            return False
-        prev_n = n
-    if prev_n != len(lines):
-        return False
-    if readers_file is None:
-        return _unbound_commitment_ok(readers_val)
-    return _hashed_commitment_ok(readers_val) and _readers_file_ok(readers_file, readers_val["sha256"])
+        return _BROKEN, loaded
+    if not _readers_tail_ok(cps, loaded, readers_val, bytes(files[READERS_FILE])):
+        return _BROKEN, loaded
+    return FRAME_BIND_VERIFIED, loaded
 
 
 def _checkpoint_chain_ok(cps: list[dict[str, Any]]) -> bool:
@@ -641,50 +632,82 @@ def _rows_ok(objs: list[dict[str, Any]]) -> bool:
 def _frame_indexes_covered(frames: list[dict[str, Any]], gaps: dict[int, dict[str, Any]]) -> bool:
     """Frame indexes run from 0 with no hole, unless an align_gap span covers the jump.
 
-    The check is across segments. A segment that starts at 100, or a later segment
-    whose first index skips ahead of the previous segment, is broken when no gap
-    covers the missing indexes.
+    Gap spans are sorted and merged once. Each jump then advances a cursor over that
+    list, so the walk is linear after the sort. A span that also contains a frame
+    row of a different segment is rejected: that index would be counted twice.
     """
-    spans = [(gap["from_frame"], gap["from_frame"] + gap["samples"]) for gap in gaps.values()]
+    if _gap_overlaps_other_segment(frames, gaps):
+        return False
+    merged = _merged_spans(gaps)
     cursor = 0
+    at = 0
     for row in frames:
         index = row["frame"]
-        if index > cursor and not _span_covers(spans, cursor, index):
-            return False
+        if index > cursor:
+            while at < len(merged) and merged[at][1] <= cursor:
+                at += 1
+            if at >= len(merged) or merged[at][0] > cursor or merged[at][1] < index:
+                return False
         cursor = index + 1
     return True
 
 
-def _span_covers(spans: list[tuple[int, int]], start: int, end: int) -> bool:
-    """True when every integer in ``[start, end)`` lies in some half-open span."""
-    if start >= end:
-        return True
-    cursor = start
-    for lo, hi in sorted(spans):
-        if hi <= cursor:
+def _merged_spans(gaps: dict[int, dict[str, Any]]) -> list[tuple[int, int]]:
+    """Half-open spans, sorted and folded so overlapping or abutting spans are one."""
+    spans = sorted((gap["from_frame"], gap["from_frame"] + gap["samples"]) for gap in gaps.values())
+    merged: list[tuple[int, int]] = []
+    for lo, hi in spans:
+        if merged and lo <= merged[-1][1]:
+            prev_lo, prev_hi = merged[-1]
+            if hi > prev_hi:
+                merged[-1] = (prev_lo, hi)
+        else:
+            merged.append((lo, hi))
+    return merged
+
+
+def _gap_overlaps_other_segment(frames: list[dict[str, Any]], gaps: dict[int, dict[str, Any]]) -> bool:
+    """True when a gap span contains a frame row whose ``seg`` is not the gap's.
+
+    Frame rows are strictly increasing and ``seg`` is non-decreasing, so a span
+    holds another segment's row exactly when either end of the covered slice differs.
+    """
+    if not frames or not gaps:
+        return False
+    indexes = [row["frame"] for row in frames]
+    for gap in gaps.values():
+        lo = gap["from_frame"]
+        hi = lo + gap["samples"]
+        left = bisect.bisect_left(indexes, lo)
+        right = bisect.bisect_left(indexes, hi)
+        if left >= right:
             continue
-        if lo > cursor:
-            return False
-        cursor = hi
-        if cursor >= end:
+        seg = gap["seg"]
+        if frames[left]["seg"] != seg or frames[right - 1]["seg"] != seg:
             return True
     return False
 
 
-def _frames_match(cps: list[dict[str, Any]], frames: bytes) -> bool:
-    """True when every frame_bind commitment matches a prefix of ``frames``.
+def _load_frames(raw: bytes) -> _LoadedFrames:
+    """Parse ``frames.jsonl`` once. A line over the frame cap is not passed to ``json.loads``."""
+    lines = _split_lines(raw, line_limit=MAX_FRAME_LINE_BYTES, member_limit=MAX_FRAMES_BYTES)
+    if not lines:
+        return _NO_FRAMES
+    objs = _canonical_objects(lines, frame=True)
+    if objs is None or not _rows_ok(objs):
+        return _LoadedFrames(tuple(lines), None, (), False)
+    return _LoadedFrames(tuple(lines), tuple(objs), tuple(_prefix_heads(lines)), True)
+
+
+def _frames_prefix_ok(cps: list[dict[str, Any]], loaded: _LoadedFrames) -> bool:
+    """True when every frame_bind commitment matches a prefix of the parsed lines.
 
     A trailing uncommitted line is still a leftover, so this does not require the
     last commitment to cover the whole file. A file that is present and does not
     match is not classified as stripped.
     """
-    lines = _split_lines(frames)
-    if not lines:
+    if not loaded.ok:
         return False
-    objs = _canonical_objects(lines)
-    if objs is None or not _rows_ok(objs):
-        return False
-    heads = _prefix_heads(lines)
     prev_n = -1
     saw = False
     for cp in cps:
@@ -695,14 +718,39 @@ def _frames_match(cps: list[dict[str, Any]], frames: bytes) -> bool:
         if not _frame_commitment_ok(fb):
             return False
         n = fb["n"]
-        if n < prev_n or n > len(lines):
+        if n < prev_n or n > len(loaded.lines):
             return False
-        expect = GENESIS if n == 0 else heads[n - 1]
+        expect = GENESIS if n == 0 else loaded.heads[n - 1]
         if fb["head"] != expect:
             return False
         prev_n = n
         saw = True
     return saw
+
+
+def _readers_tail_ok(cps: list[dict[str, Any]], loaded: _LoadedFrames | None, readers_val: Any,
+                     readers_file: bytes | None) -> bool:
+    """The last commitment covers every line, and the readers commitment matches.
+
+    Prefix heads were checked in ``_frames_prefix_ok``. The chain was checked once
+    before this runs.
+    """
+    if loaded is None or not loaded.ok:
+        return False
+    last = -1
+    for cp in cps:
+        q = cp.get("qorcap")
+        if not isinstance(q, dict):
+            return False
+        fb = q.get("frame_bind")
+        if not _frame_commitment_ok(fb):
+            return False
+        last = fb["n"]
+    if last != len(loaded.lines):
+        return False
+    if readers_file is None:
+        return _unbound_commitment_ok(readers_val)
+    return _hashed_commitment_ok(readers_val) and _readers_file_ok(readers_file, readers_val["sha256"])
 
 
 def _header_ok(obj: dict[str, Any]) -> bool:
@@ -867,9 +915,25 @@ def _parse_objects(raw: bytes) -> list[dict[str, Any]] | None:
     return out
 
 
-def _canonical_objects(lines: list[bytes]) -> list[dict[str, Any]] | None:
+def _frame_line_hostile(line: bytes) -> bool:
+    """True when a frames line is an array or a wider object than a frame row.
+
+    Checked on the raw bytes, before ``json.loads``. A real row has no ``[`` and
+    at most a handful of keys.
+    """
+    return (
+        len(line) > MAX_FRAME_LINE_BYTES
+        or b"[" in line
+        or line.count(b"{") > MAX_FRAME_LINE_BRACES
+        or line.count(b":") > MAX_FRAME_LINE_COLONS
+    )
+
+
+def _canonical_objects(lines: list[bytes], *, frame: bool = False) -> list[dict[str, Any]] | None:
     out: list[dict[str, Any]] = []
     for line in lines:
+        if frame and _frame_line_hostile(line):
+            return None
         try:
             obj = _loads_strict(line.decode("utf-8"))
         except (UnicodeError, ValueError, RecursionError):
@@ -926,13 +990,14 @@ def _loads_strict(text: str) -> Any:
     return json.loads(text, object_pairs_hook=pairs, parse_constant=reject)
 
 
-def _payload_over_cap(raw: bytes) -> bool:
-    """True when ``raw`` is over the shared member, row, or line cap.
+def _payload_over_cap(raw: bytes, *, line_limit: int = MAX_LINE_BYTES,
+                      member_limit: int = MAX_MEMBER_BYTES) -> bool:
+    """True when ``raw`` is over its member, row, or line cap.
 
     Row count is ``newline count + 1`` on the body. The member is not split into
     a list of lines, so a run of ``1\\n`` cannot allocate one object per row.
     """
-    if len(raw) > MAX_MEMBER_BYTES:
+    if len(raw) > member_limit:
         return True
     body = raw[:-1] if raw.endswith(b"\n") else raw
     if body == b"":
@@ -941,19 +1006,19 @@ def _payload_over_cap(raw: bytes) -> bool:
         return True
     start = 0
     length = len(body)
-    limit = MAX_LINE_BYTES
     while start < length:
         nl = body.find(b"\n", start)
         if nl < 0:
-            return length - start > limit
-        if nl - start > limit:
+            return length - start > line_limit
+        if nl - start > line_limit:
             return True
         start = nl + 1
     return False
 
 
-def _split_lines(raw: bytes) -> list[bytes] | None:
-    if _payload_over_cap(raw) or b"\r" in raw:
+def _split_lines(raw: bytes, *, line_limit: int = MAX_LINE_BYTES,
+                 member_limit: int = MAX_MEMBER_BYTES) -> list[bytes] | None:
+    if _payload_over_cap(raw, line_limit=line_limit, member_limit=member_limit) or b"\r" in raw:
         return None
     if raw.endswith(b"\n"):
         raw = raw[:-1]

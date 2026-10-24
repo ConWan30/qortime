@@ -14,6 +14,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import zipfile
 from pathlib import Path
 
@@ -28,6 +29,8 @@ from qor_receipt.review.frame_bind import (
     FRAME_BIND_VERIFIED,
     FRAMES_FILE,
     MAX_BUNDLE_BYTES,
+    MAX_FRAME_LINE_BYTES,
+    MAX_FRAMES_BYTES,
     MAX_LINE_BYTES,
     MAX_MEMBER_BYTES,
     PATH_PATTERN,
@@ -35,6 +38,7 @@ from qor_receipt.review.frame_bind import (
     READERS_SCHEMA,
     SCHEMA,
     FrameBindResult,
+    _frame_indexes_covered,
     _read_limited,
     frame_bind_bundle_bytes,
     frame_bind_result_ok,
@@ -624,6 +628,8 @@ def test_key_like_reader_paths_are_rejected():
     rejected = (
         "secrets/referee_key.json", "secret/reader.py", "sidecar/referee_key.json", "a/foo_KEY.py",
         "id_ed25519", "id_rsa", "ID_ED25519", "a/id_rsa.pub", "id_ecdsa_sk", "x.jwk", "a_key.tar.gz",
+        "api_key/x.py", "id_rsa/x.py", "id_ed448", "id_ed448_sk", "a/id_ed448.pub", "id_ed448/x.py",
+        "wallet.ppk", "store.jks", "DIR.PPK",
     )
     allowed = ("secretary", "foo_keyish.py", "key.json", "monkey_keyboard.py", "sidecar/qorcap_standard.py")
     for path in rejected:
@@ -685,11 +691,21 @@ def test_frame_index_holes_across_segments_are_broken():
         _header(),
         _frame(0, 0, 0, 1000),
         _frame(0, 1, 3003, 1100),
-        _gap(0, 0, 6, 2, "clock_lost"),
+        _gap(0, 0, 5, 2, "clock_lost"),
         _frame(1, 5, 6006, 1200),
         _frame(1, 6, 9009, 1300),
     ]
     assert frame_bind_status(_sealed(covered)) == VERIFIED
+    # samples 6 reaches frame 5, which is a row of the next segment. That index would be counted twice.
+    overlap = [
+        _header(),
+        _frame(0, 0, 0, 1000),
+        _frame(0, 1, 3003, 1100),
+        _gap(0, 0, 6, 2, "clock_lost"),
+        _frame(1, 5, 6006, 1200),
+        _frame(1, 6, 9009, 1300),
+    ]
+    assert frame_bind_status(_sealed(overlap)) == BROKEN
     leading_gap = [
         _header(),
         _gap(0, 0, 100, 0, "unreadable"),
@@ -822,6 +838,103 @@ print(json.dumps({
     assert got["growth"] < 16 * 1024
     assert got["line_status"] == BROKEN
     assert got["line_growth"] < 16 * 1024
+
+
+def test_gap_coverage_stays_linear_at_100k_segments():
+    """X1: each segment is a gap and a jump. The old walk re-sorted every span per jump."""
+    k = 100_000
+    frames = [{"frame": 2 * i + 1, "seg": i} for i in range(k)]
+    gaps = {i: {"from_frame": 2 * i, "samples": 2, "seg": i} for i in range(k)}
+    started = time.perf_counter()
+    assert _frame_indexes_covered(frames, gaps) is True
+    elapsed = time.perf_counter() - started
+    assert elapsed < 2.0, elapsed
+
+
+def test_oversized_frames_lines_stay_bounded():
+    """X2: a deflated frames.jsonl of lines over 4 KiB is broken before json.loads."""
+    script = r"""
+import gc, io, json, zipfile
+from qor_receipt.review.frame_bind import (
+    CHECKPOINTS_FILE, FRAMES_FILE, MAX_FRAME_LINE_BYTES, verify_frame_bind,
+)
+
+def rss():
+    for line in open("/proc/self/status"):
+        if line.startswith("VmRSS:"):
+            return int(line.split()[1])
+    raise SystemExit("no VmRSS")
+
+checkpoint = (
+    b'{"frames_hash":"' + b"ab" * 32 + b'","hash":"' + b"cd" * 32
+    + b'","input_hash":"' + b"ef" * 32 + b'","prev":"' + b"00" * 32
+    + b'","qorcap":{"frame_bind":{"head":"' + b"11" * 32
+    + b'","n":1,"schema":"qorcap-frame-bind/v0"}},"seq":0,"t_ms":1}\n'
+)
+line = b'{"a":[' + (b"[]," * 20000) + b"1]}\n"
+if len(line) <= MAX_FRAME_LINE_BYTES:
+    raise SystemExit("line is not over the cap")
+buf = io.BytesIO()
+with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
+    zf.writestr(CHECKPOINTS_FILE, checkpoint)
+    with zf.open(FRAMES_FILE, "w") as member:
+        for _ in range(40):
+            member.write(line)
+raw = buf.getvalue()
+del line, buf
+gc.collect()
+before = rss()
+status = verify_frame_bind(raw).status
+after = rss()
+print(json.dumps({"status": status, "growth": after - before, "zip": len(raw)}))
+"""
+    proc = subprocess.run([sys.executable, "-c", script], check=True, capture_output=True, text=True)
+    got = json.loads(proc.stdout)
+    assert got["status"] == BROKEN
+    assert got["zip"] < 200 * 1024
+    assert got["growth"] < 16 * 1024
+
+
+def test_a_verified_bundle_parses_each_sidecar_once(monkeypatch):
+    """frames.jsonl and the checkpoint chain are not walked again for coverage."""
+    import qor_receipt.review.frame_bind as fb
+
+    loads = {"n": 0}
+    chains = {"n": 0}
+    real_loads = fb.json.loads
+    real_chain = fb._checkpoint_chain_ok
+
+    def counting_loads(text, *args, **kwargs):
+        loads["n"] += 1
+        return real_loads(text, *args, **kwargs)
+
+    def counting_chain(cps):
+        chains["n"] += 1
+        return real_chain(cps)
+
+    monkeypatch.setattr(fb.json, "loads", counting_loads)
+    monkeypatch.setattr(fb, "_checkpoint_chain_ok", counting_chain)
+    lines, cps, readers = _valid_parts()
+    blob = frame_bind_bundle_bytes(_bundle(lines, cps, readers))
+    loads["n"] = 0
+    chains["n"] = 0
+    got = verify_frame_bind(blob)
+    assert got.status == VERIFIED
+    assert loads["n"] == len(lines) + len(cps) + 1
+    assert chains["n"] == 1
+
+
+def test_frame_lines_over_4kib_or_with_an_array_are_broken():
+    lines, cps, readers = _valid_parts()
+    files = _bundle(lines, cps, readers)
+    files[FRAMES_FILE] = b"{" + b"a" * MAX_FRAME_LINE_BYTES + b"}\n"
+    assert frame_bind_status(files) == BROKEN
+    wide = dict(files)
+    wide[FRAMES_FILE] = b'{"a":[[]]}\n'
+    assert len(wide[FRAMES_FILE]) < MAX_FRAME_LINE_BYTES
+    assert frame_bind_status(wide) == BROKEN
+    assert MAX_FRAMES_BYTES < MAX_MEMBER_BYTES
+    assert MAX_FRAME_LINE_BYTES < MAX_LINE_BYTES
 
 
 def test_zip_names_symlinks_and_size_caps_are_broken(tmp_path: Path):

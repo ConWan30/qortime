@@ -127,7 +127,8 @@ without a frame row are the gap. `reason` is `pts_regression`, `composition_offs
 indexes, so its bound frame count equals its sample count. Frame indexes are also contiguous across segments and
 start at 0. A jump,
 including a first frame above 0 or a hole moved onto the next segment, is broken unless an `align_gap` span covers
-every missing index. A hole, or a return to an earlier `seg` after a later one, is broken.
+every missing index. An `align_gap` span that also contains a frame row of a different segment is broken, so that
+index is not counted twice. A hole, or a return to an earlier `seg` after a later one, is broken.
 
 `readers.json` (`qorcap-readers/v0`) is one closed object (`additionalProperties` false): hashes of the scorebug
 and vision reader code and packs, plus a `runtimes` array of the builds that produced the reads (ffmpeg and cv2
@@ -177,7 +178,8 @@ trust a caller-supplied result. A copy of a real result compares equal; that sti
 * **broken** — the commitments and the files they require are present, and the hash chain, PTS monotonicity, gap
   coverage, or a schema check fails. The checkpoint chain is checked before leftover classification, so a `seq`,
   `prev`, `frames_hash`, or body `hash` that does not match is broken rather than stripped or missing. That includes
-  a frame-index hole with no `align_gap` (inside a segment, across segments, or a first frame above 0), interleaved
+  a frame-index hole with no `align_gap` (inside a segment, across segments, or a first frame above 0), an
+  `align_gap` span that contains another segment's frame row, interleaved
   segments, a header and no frame row, an `align_gap` whose `samples` is 0, a `readers` object after seq 0, or a
   duplicate JSON key (the same key twice; NaN and Infinity too). A checkpoints file that cannot be parsed, a
   symlink, a zip member whose name is not exactly `checkpoints.jsonl`, `frames.jsonl`, or `readers.json`, and any
@@ -194,11 +196,13 @@ not a limit.
 
 `frames.jsonl` is a bundle meta file, so the referee upload counts it toward the same 96 MiB budget as
 `read_meta_zip` (`MAX_META_BYTES`). At about 150–200 bytes a frame and 30 frames a second, that is about 20 MB per
-hour. A long capture can cross that budget and be refused before a receipt verdict. `verify_frame_bind` uses that
-same 96 MiB cap on the bundle and on `frames.jsonl`, read with a bounded stream so a declared or inflated member
-cannot grow past it. `checkpoints.jsonl` is capped at 4 MiB and `readers.json` at 64 KiB. Those caps are enforced
-while the member is read, before it is parsed. A line over 1 MiB, more than 1,000,000 rows (counted from newlines,
-without splitting the member into a line list), or more than 64 zip members is broken. A
+hour. A long capture can cross that budget and be refused before a receipt verdict. `verify_frame_bind` caps the
+bundle at that same 96 MiB, read with a bounded stream so a declared or inflated member cannot grow past it.
+`frames.jsonl` itself is capped at 64 MiB. A frame line over 4 KiB is broken before it is parsed, as is a line that
+contains `[` or more than 24 colons: a real row is a flat object under 300 bytes, and a wide array must not be
+expanded. `checkpoints.jsonl` is capped at 4 MiB and `readers.json` at 64 KiB. Those caps are enforced
+while the member is read, before it is parsed. A checkpoints or readers line over 1 MiB, more than 1,000,000 rows
+(counted from newlines, without splitting the member into a line list), or more than 64 zip members is broken. A
 directory member that is a symlink is broken. None of these caps is a receipt verdict.
 
 `verify/verify.js` does not walk these files. `verify/frame-bind-status.js` exports the same status set, frozen,
