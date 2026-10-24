@@ -2,7 +2,7 @@
 
 Test-only harness under `tests/redteam/`. It scores controller logs by calling `input_energy_series`, `score_motion`, `check_inputs`, `check_checkpoints`, and `check_input_files` in process. It does not sign a receipt, does not hold a referee key, and does not open a network connection. Nothing here is a submission.
 
-Harness `redteam-aimbot/v2` for package `qor-receipt==0.1.0`. Harness sha256 `644f801d0e65aefdb8e4d160032fbe828d2f4e1aca60c85f87be3d13f655b4ab` over 16 files.
+Harness `redteam-aimbot/v2` for package `qor-receipt==0.1.0`. Harness sha256 `46ac530ebc5bf804e42fb3f68ffe257d710920fff79d1ef5517b5461042fb256` over 16 files.
 
 The harness sha256 moved because `tests/redteam/scorers.py` and `tests/redteam/aimbot_harness.py` changed. It is still the package version plus the sorted in-repo Python files reachable from the harness. It does not include scorer settings.
 
@@ -75,7 +75,7 @@ Each scorer sha256 is the hash of `qor-receipt==0.1.0`, the scorer and estimator
 
 **SYNTHETIC-DATA CAVEAT:** these rates come from synthetic data with only one benign sample (n=1 control) and are NOT real-world or measured detection/false-alarm rates; '0/1 false alarms' is not a false-alarm rate.
 
-The 150 ms event window is valid only on synthetic data with a shared clock. On real footage, a video-vs-log mismatch claim is allowed only for a bundle that carries a frame_bind chain (qorcap #75, --frame-bind) that verifies; if that bundle's chain is missing, stripped or broken, every mismatch claim is no-claim. This is checked per bundle, not switched on by merging code, so older footage stays no-claim.
+The 150 ms event window is valid only on synthetic data with a shared clock. On real footage, no video-vs-log mismatch claim is ever allowed: the mismatch claim gate has no allow path, so every mismatch claim is no-claim with ceiling PARTIAL, for every bundle, and older footage stays no-claim. A frame_bind chain (qorcap #75, --frame-bind) that verifies proves frames were not altered after recording, not press-to-frame timing. An allow path may come only in a separate reviewed PR that verifies the bundle itself; even then a mismatch signal may lower a verdict to at most PARTIAL and never raises one.
 
 | scorer | version | package | estimator | file set | sha256 | headline catch rate | headline false-alarm rate | abstained |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -138,7 +138,7 @@ report = evaluate(scorers=[PanAgreementScorer(MyPanEstimator()), EventPressAgree
       "tests/redteam/scorers.py"
     ],
     "package_version": "0.1.0",
-    "sha256": "644f801d0e65aefdb8e4d160032fbe828d2f4e1aca60c85f87be3d13f655b4ab",
+    "sha256": "46ac530ebc5bf804e42fb3f68ffe257d710920fff79d1ef5517b5461042fb256",
     "version": "redteam-aimbot/v2"
   },
   "headline_stick_aimbots": {

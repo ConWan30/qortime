@@ -759,7 +759,7 @@ def render_report(report: Report | None = None) -> str:
         "",
         "**SYNTHETIC-DATA CAVEAT:** these rates come from synthetic data with only one benign sample (n=1 control) and are NOT real-world or measured detection/false-alarm rates; '0/1 false alarms' is not a false-alarm rate.",
         "",
-        "The 150 ms event window is valid only on synthetic data with a shared clock. On real footage, a video-vs-log mismatch claim is allowed only for a bundle that carries a frame_bind chain (qorcap #75, --frame-bind) that verifies; if that bundle's chain is missing, stripped or broken, every mismatch claim is no-claim. This is checked per bundle, not switched on by merging code, so older footage stays no-claim.",
+        "The 150 ms event window is valid only on synthetic data with a shared clock. On real footage, no video-vs-log mismatch claim is ever allowed: the mismatch claim gate has no allow path, so every mismatch claim is no-claim with ceiling PARTIAL, for every bundle, and older footage stays no-claim. A frame_bind chain (qorcap #75, --frame-bind) that verifies proves frames were not altered after recording, not press-to-frame timing. An allow path may come only in a separate reviewed PR that verifies the bundle itself; even then a mismatch signal may lower a verdict to at most PARTIAL and never raises one.",
         "",
         _md_table(
             ["scorer", "version", "package", "estimator", "file set", "sha256", "headline catch rate", "headline false-alarm rate", "abstained"],
