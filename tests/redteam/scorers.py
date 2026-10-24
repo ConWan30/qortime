@@ -1,9 +1,18 @@
 """Pluggable scorers for the aimbot red-team harness.
 
 A scorer is a small object with ``name``, ``version``, ``score``, and ``identity``.
-``identity().sha256`` covers the package version, the scorer module, and every
-in-repo module that module reaches by import. A re-run of the same tree prints
-the same hash. An edit to any of those files prints a different one.
+``identity().sha256`` covers the package version, the scorer and estimator version
+strings, the canonical JSON of runtime settings, the scorer module, every in-repo
+module that module reaches by import, the source of an injected estimator or
+``core`` (outside the repo, recorded relative to the module root), and any
+declared non-Python data files. A re-run of the same tree prints the same hash.
+An edit to any of those files prints a different one. A file that cannot be read
+is recorded as ``unhashed`` and is not dropped. An implementation whose file
+cannot be resolved or read makes the identity ``unhashed``. An estimator sha256
+is recorded only when the class object is ``OpticalFlowPanEstimator``, and then
+it is recomputed from that module's source. A copied attribute, property,
+``__module__``, or ``__qualname__`` is not trusted. An ``unhashed`` result is
+not cached.
 
 Two estimator plug-ins feed a scorer. Neither one is implemented here:
 
@@ -22,7 +31,9 @@ from __future__ import annotations
 import ast
 import hashlib
 import inspect
+import json
 import math
+import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -275,70 +286,760 @@ def _imported_names(path: Path) -> list[str]:
 
 
 def transitive_files(start: Sequence[Path]) -> tuple[Path, ...]:
-    """Source files reachable from ``start`` by in-repo imports, sorted by repo-relative path."""
+    """In-repo source files reachable from ``start``, sorted by repo-relative path.
+
+    A start file outside the repo is read so its in-repo imports are followed.
+    The outside file itself is not part of this tuple.
+    """
     seen: set[Path] = set()
     queue = [path.resolve() for path in start]
     while queue:
         path = queue.pop()
         if path in seen or not path.is_file():
             continue
+        seen.add(path)
+        try:
+            names = _imported_names(path)
+        except (OSError, SyntaxError):
+            continue
+        for name in names:
+            resolved = _resolve_module(name)
+            if resolved is not None:
+                queue.append(resolved)
+    in_repo: list[Path] = []
+    for path in seen:
         try:
             path.relative_to(REPO_ROOT)
         except ValueError:
             continue
-        seen.add(path)
-        for name in _imported_names(path):
-            resolved = _resolve_module(name)
-            if resolved is not None:
-                queue.append(resolved)
-    return tuple(sorted(seen, key=lambda item: item.relative_to(REPO_ROOT).as_posix()))
+        in_repo.append(path)
+    return tuple(sorted(in_repo, key=lambda item: item.relative_to(REPO_ROOT).as_posix()))
 
 
-def hash_file_set(start: Sequence[Path], prefix: Sequence[str]) -> tuple[str, tuple[str, ...]]:
-    """SHA-256 of ``prefix`` plus each reachable file's repo-relative path and bytes."""
+def _safe_label(label: str) -> str:
+    """A path label safe to store. Newlines and absolute paths become ``unhashed``."""
+    if not label or any(ch in label for ch in "\n\r") or label.startswith(("/", "\\")):
+        return "unhashed"
+    return label
+
+
+def hash_file_set(
+    start: Sequence[Path],
+    prefix: Sequence[str],
+    extras: Sequence[tuple[str, bytes | None]] = (),
+) -> tuple[str, tuple[str, ...]]:
+    """SHA-256 of ``prefix`` plus each file's recorded path and bytes.
+
+    In-repo files are recorded repo-relative. ``extras`` are ``(label, bytes)``
+    for sources outside the repo and for declared data files. A ``None`` blob
+    records that label as ``unhashed`` instead of dropping it.
+    """
     files = transitive_files(start)
-    lines = list(prefix)
-    rels: list[str] = []
+    items: list[tuple[str, str]] = []
     for path in files:
         rel = path.relative_to(REPO_ROOT).as_posix()
-        rels.append(rel)
-        digest = hashlib.sha256(path.read_bytes()).hexdigest()
-        lines.append(f"{rel} {digest}")
+        try:
+            token = hashlib.sha256(path.read_bytes()).hexdigest()
+        except OSError:
+            token = "unhashed"
+        items.append((rel, token))
+    for label, blob in extras:
+        rel = _safe_label(label)
+        token = "unhashed" if blob is None else hashlib.sha256(blob).hexdigest()
+        items.append((rel, token))
+    items.sort()
+    lines = list(prefix)
+    rels: list[str] = []
+    for rel, token in items:
+        rels.append(rel if token != "unhashed" else f"{rel} unhashed")
+        lines.append(f"{rel} {token}")
     return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest(), tuple(rels)
 
 
-def _class_file(obj: Any) -> Path:
-    return Path(inspect.getfile(type(obj))).resolve()
+def _own_functions(cls: type) -> list[Any]:
+    """Functions defined on ``cls`` itself, including properties."""
+    found: list[Any] = []
+    for value in cls.__dict__.values():
+        if isinstance(value, (staticmethod, classmethod)):
+            found.append(value.__func__)
+        elif isinstance(value, property):
+            found.extend(fn for fn in (value.fget, value.fset, value.fdel) if fn is not None)
+        elif inspect.isfunction(value):
+            found.append(value)
+    return found
+
+
+def _code_path(fn: Any) -> Path | None:
+    code = getattr(fn, "__code__", None)
+    filename = getattr(code, "co_filename", None)
+    if type(filename) is not str or not filename or filename.startswith("<"):
+        return None
+    try:
+        return Path(filename).resolve()
+    except OSError:
+        return None
+
+
+def _probed_path(cls: type) -> Path | None:
+    """File ``getsourcefile`` names. This follows ``__module__`` and can be spoofed."""
+    src: str | None = None
+    try:
+        src = inspect.getsourcefile(cls)
+    except (TypeError, OSError):
+        src = None
+    if not src:
+        module = sys.modules.get(getattr(cls, "__module__", None))
+        file_attr = getattr(module, "__file__", None) if module is not None else None
+        src = file_attr if isinstance(file_attr, str) else None
+    if not src:
+        return None
+    try:
+        return Path(src).resolve()
+    except OSError:
+        return None
+
+
+def _module_holds_class(cls: type) -> bool:
+    """True when ``cls`` is the object stored on its module under ``__qualname__``."""
+    module_name = getattr(cls, "__module__", None)
+    qual = getattr(cls, "__qualname__", None)
+    if type(module_name) is not str or type(qual) is not str or not qual or "<locals>" in qual:
+        return False
+    module = sys.modules.get(module_name)
+    if module is None:
+        return False
+    obj: Any = module
+    for part in qual.split("."):
+        if not part.isidentifier():
+            return False
+        obj = getattr(obj, part, None)
+        if obj is None:
+            return False
+    return obj is cls
+
+
+def _class_path(obj: Any) -> Path | None:
+    """Source file of ``type(obj)``.
+
+    A function's code object wins over ``__module__``. A class with no code of
+    its own may use the module file only when that module does not already hold
+    a different class under the same leaf name. Copying ``__module__`` and
+    ``__qualname__`` from ``OpticalFlowPanEstimator`` therefore does not select
+    that class's file.
+    """
+    cls = type(obj)
+    code_paths: set[Path] = set()
+    for fn in _own_functions(cls):
+        path = _code_path(fn)
+        if path is not None:
+            code_paths.add(path)
+    if len(code_paths) > 1:
+        return None
+    if len(code_paths) == 1:
+        return next(iter(code_paths))
+    probed = _probed_path(cls)
+    if probed is None:
+        return None
+    qual = getattr(cls, "__qualname__", "")
+    leaf = qual.split(".")[-1] if type(qual) is str else ""
+    module = sys.modules.get(getattr(cls, "__module__", None))
+    holder = getattr(module, leaf, None) if module is not None and type(leaf) is str and leaf.isidentifier() else None
+    if isinstance(holder, type) and holder is not cls:
+        return None
+    return probed
+
+
+def _outside_rel(path: Path, module_name: str) -> str:
+    """``path`` relative to the directory that contains its top-level module."""
+    parts = [part for part in module_name.split(".") if part]
+    if not parts:
+        return path.name
+    climb = len(parts) + (path.name == "__init__.py")
+    root = path
+    for _ in range(climb):
+        if root.parent == root:
+            return path.name
+        root = root.parent
+    try:
+        return path.relative_to(root).as_posix()
+    except ValueError:
+        return path.name
+
+
+def _source_rel(path: Path, obj: Any) -> str:
+    try:
+        return path.relative_to(REPO_ROOT).as_posix()
+    except ValueError:
+        return _outside_rel(path, getattr(type(obj), "__module__", "") or "")
+
+
+_THRESHOLD_NAMES = (
+    "min_confidence",
+    "min_claimed_bins",
+    "min_claimed",
+    "rate_floor",
+    "min_disagree_bins",
+    "min_unmatched",
+    "window_ms",
+    "stick_deadzone",
+)
+_PAN_THRESHOLDS = frozenset({"min_claimed_bins", "min_confidence", "rate_floor", "min_disagree_bins", "stick_deadzone"})
+_EVENT_THRESHOLDS = frozenset({"min_claimed", "min_confidence", "min_unmatched", "window_ms", "stick_deadzone"})
+
+
+def _unhashed_identity(scorer: Any, estimator: Any | None, files: Sequence[str] = ()) -> ScorerIdentity:
+    """An identity that records ``unhashed`` and does not carry an attacker-controlled string."""
+    marked = [_safe_label(item) for item in files]
+    if not any(item == "unhashed" or item.endswith(" unhashed") for item in marked):
+        marked.append("unhashed")
+
+    def plain(value: Any) -> str | None:
+        if type(value) is not str or "\n" in value or "\r" in value:
+            return None
+        return value
+
+    return ScorerIdentity(
+        name=plain(getattr(scorer, "name", None)) or "",
+        version=plain(getattr(scorer, "version", None)) or "",
+        sha256="unhashed",
+        package_version=PACKAGE_VERSION,
+        estimator_name=plain(getattr(estimator, "name", None)) if estimator is not None else None,
+        estimator_version=plain(getattr(estimator, "version", None)) if estimator is not None else None,
+        files=tuple(marked),
+        estimator_sha256=None,
+    )
+
+
+def _recomputed_pan_sha(obj: Any) -> str | None:
+    """Sha of the real pan-estimator class, recomputed from source. Never an attribute.
+
+    ``cls is OpticalFlowPanEstimator`` (the class object in that module). A
+    property, a copied string, or a class that only copies ``__module__`` and
+    ``__qualname__`` does not qualify. ``params`` must be the real ``PanParams``
+    type. The digest is ``estimator_sha256(params)`` from the module, not
+    ``obj.sha256``.
+    """
+    mod = sys.modules.get("qor_receipt.vision.pan_estimator")
+    if mod is None or obj is None:
+        return None
+    cls = getattr(mod, "OpticalFlowPanEstimator", None)
+    params_cls = getattr(mod, "PanParams", None)
+    fn = getattr(mod, "estimator_sha256", None)
+    if not isinstance(cls, type) or not isinstance(params_cls, type) or not callable(fn):
+        return None
+    if type(obj) is not cls or type(getattr(obj, "params", None)) is not params_cls:
+        return None
+    try:
+        digest = fn(obj.params)
+    except Exception:
+        return None
+    if type(digest) is not str or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
+        return None
+    return digest
+
+
+def _trusted_estimator_sha(estimator: Any | None) -> str | None:
+    """Recomputed pan-estimator sha, or None. Attributes on ``estimator`` are ignored."""
+    if estimator is None:
+        return None
+    for obj in (estimator, getattr(estimator, "core", None)):
+        digest = _recomputed_pan_sha(obj)
+        if digest is not None:
+            return digest
+    return None
+
+
+def _class_block(source: str, qualname: str) -> str | None:
+    """The ``class`` block for the last component of ``qualname``, read from the file text."""
+    name = qualname.split(".")[-1]
+    if not name.isidentifier():
+        return None
+    lines = source.splitlines(keepends=True)
+    start = None
+    indent = 0
+    prefix = f"class {name}"
+    for index, line in enumerate(lines):
+        stripped = line.lstrip()
+        if not stripped.startswith(prefix):
+            continue
+        rest = stripped[len(prefix):]
+        if rest[:1] not in ("", "(", ":", " "):
+            continue
+        start = index
+        indent = len(line) - len(stripped)
+        break
+    if start is None:
+        return None
+    block = [lines[start]]
+    for line in lines[start + 1:]:
+        if line.strip() and (len(line) - len(line.lstrip())) <= indent:
+            break
+        block.append(line)
+    return "".join(block)
+
+
+def _enclosing_class_block(source: str, lineno: int) -> str | None:
+    """Class block that contains the 1-based ``lineno``, found by indentation."""
+    lines = source.splitlines(keepends=True)
+    if lineno < 1 or lineno > len(lines):
+        return None
+    start = None
+    indent = 0
+    target = lines[lineno - 1]
+    target_indent = len(target) - len(target.lstrip())
+    for index in range(lineno - 1, -1, -1):
+        raw = lines[index]
+        stripped = raw.lstrip()
+        if not stripped.startswith("class "):
+            continue
+        name = stripped[6:].split("(", 1)[0].split(":", 1)[0].strip()
+        if not name.isidentifier():
+            continue
+        this_indent = len(raw) - len(stripped)
+        if index < lineno - 1 and target.strip() and this_indent >= target_indent:
+            continue
+        start = index
+        indent = this_indent
+        break
+    if start is None:
+        return None
+    block = [lines[start]]
+    for line in lines[start + 1:]:
+        if line.strip() and (len(line) - len(line.lstrip())) <= indent:
+            break
+        block.append(line)
+    return "".join(block)
+
+
+def _encode_cell(value: Any) -> bytes | None:
+    """Deterministic bytes for a closure cell or a plain attribute. None if it is not safe to hash."""
+    if value is None or type(value) is bool or type(value) is int:
+        return repr(value).encode("ascii")
+    if type(value) is float and math.isfinite(value):
+        return repr(value).encode("ascii")
+    if type(value) is str:
+        raw = value.encode("utf-8", "surrogateescape")
+        return b"s" + str(len(raw)).encode("ascii") + b":" + raw
+    if type(value) is bytes:
+        return b"b" + str(len(value)).encode("ascii") + b":" + value
+    if type(value) is tuple:
+        parts: list[bytes] = []
+        for item in value:
+            encoded = _encode_cell(item)
+            if encoded is None:
+                return None
+            parts.append(encoded)
+        return b"t" + b",".join(parts)
+    return None
+
+
+def _closure_functions(cls: type) -> list[Any]:
+    """Functions on ``cls`` that close over a cell, including properties."""
+    found: list[Any] = []
+    for base in cls.__mro__:
+        if base is object:
+            continue
+        for value in base.__dict__.values():
+            funcs: list[Any] = []
+            if isinstance(value, (staticmethod, classmethod)):
+                funcs.append(value.__func__)
+            elif isinstance(value, property):
+                funcs.extend(fn for fn in (value.fget, value.fset, value.fdel) if fn is not None)
+            elif inspect.isfunction(value):
+                funcs.append(value)
+            for fn in funcs:
+                if getattr(fn, "__closure__", None):
+                    found.append(fn)
+    return found
+
+
+def _closure_material(cls: type) -> bytes:
+    """Bytes that differ when two classes from the same source close over different values.
+
+    Encodable cells contribute their contents. A cell that cannot be encoded contributes
+    its identity, so two classes still do not hash the same.
+    """
+    parts: list[bytes] = []
+    for fn in _closure_functions(cls):
+        closure = fn.__closure__ or ()
+        for index, cell in enumerate(closure):
+            try:
+                value = cell.cell_contents
+            except ValueError:
+                parts.append(f"empty:{id(cell)}".encode("ascii"))
+                continue
+            encoded = _encode_cell(value)
+            if encoded is None:
+                encoded = f"opaque:{type(value).__name__}:{id(cell)}".encode("ascii", "replace")
+            parts.append(f"{fn.__name__}:{index}:".encode("ascii", "replace") + encoded)
+    return b"\n".join(parts)
+
+
+def _class_source_tag(obj: Any) -> str:
+    """Bound class name plus a hash of that class's own source text.
+
+    The module name is published only when the module actually holds this class
+    object. Otherwise the label is the file the code object (or the defining
+    file) names, so a copied ``__module__`` / ``__qualname__`` is not the label
+    of ``OpticalFlowPanEstimator``.
+    """
+    cls = type(obj)
+    path = _class_path(obj)
+    held = _module_holds_class(cls)
+    qual = cls.__qualname__ if type(getattr(cls, "__qualname__", None)) is str else ""
+    if held:
+        module = cls.__module__ if type(cls.__module__) is str else ""
+    else:
+        qual = cls.__name__ if type(getattr(cls, "__name__", None)) is str else qual.split(".")[-1]
+        module = ""
+        if path is not None:
+            try:
+                module = path.relative_to(REPO_ROOT).as_posix()
+            except ValueError:
+                module = path.name
+    label = f"{module}.{qual}" if module else qual
+    if not label or any(ch in label for ch in "\n\r"):
+        label = "unhashed"
+    text: str | None = None
+    source: str | None = None
+    if path is not None:
+        try:
+            source = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            source = None
+    linenos = [
+        fn.__code__.co_firstlineno
+        for fn in _own_functions(cls)
+        if getattr(fn, "__code__", None) is not None and type(getattr(fn.__code__, "co_firstlineno", None)) is int
+    ]
+    if source and held and qual:
+        text = _class_block(source, qual)
+    elif source and linenos:
+        text = _enclosing_class_block(source, min(linenos))
+    elif source and qual and path is not None and not held:
+        leaf = qual.split(".")[-1]
+        module_obj = sys.modules.get(getattr(cls, "__module__", None))
+        holder = getattr(module_obj, leaf, None) if module_obj is not None else None
+        if not (isinstance(holder, type) and holder is not cls):
+            text = _class_block(source, qual)
+    if not text and held:
+        try:
+            found = inspect.getsource(cls)
+        except (OSError, TypeError):
+            found = None
+        text = found if type(found) is str and found else None
+    closed = _closure_material(cls)
+    payload = (text or "").encode("utf-8")
+    if closed:
+        payload = payload + b"\n" + closed
+    if not payload:
+        return f"{label} unhashed"
+    digest = hashlib.sha256(payload).hexdigest()
+    return f"{label} {digest}"
+
+
+def _jsonable(value: Any) -> Any:
+    if type(value) is str:
+        if "\n" in value or "\r" in value:
+            raise TypeError
+        return value
+    if value is None or type(value) is bool or type(value) is int:
+        return value
+    if type(value) is float and math.isfinite(value):
+        return value
+    raise TypeError
+
+
+def _settings_json(scorer: Any) -> str:
+    """Canonical JSON of the thresholds that change this scorer's output."""
+    names = getattr(scorer, "identity_settings", None)
+    if names is None:
+        names = _THRESHOLD_NAMES
+    payload: dict[str, Any] = {}
+    for name in names:
+        if type(name) is not str or not name.isidentifier() or not hasattr(scorer, name):
+            if type(name) is not str or not name.isidentifier():
+                raise TypeError
+            continue
+        payload[name] = _jsonable(getattr(scorer, name))
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+
+
+def _apply_thresholds(obj: Any, thresholds: Mapping[str, Any], allowed: frozenset[str]) -> None:
+    unknown = [key for key in thresholds if key not in allowed]
+    if unknown:
+        raise TypeError(f"unknown threshold {unknown[0]}")
+    for key, value in thresholds.items():
+        setattr(obj, key, value)
+
+
+def _identity_objects(scorer: Any, estimator: Any | None) -> list[Any]:
+    """Scorer, estimator, and an injected ``core`` or ``estimator`` implementation."""
+    objects: list[Any] = []
+
+    def add(obj: Any) -> None:
+        if obj is None or any(obj is seen for seen in objects):
+            return
+        objects.append(obj)
+
+    add(scorer)
+    add(estimator)
+    add(getattr(scorer, "estimator", None))
+    add(getattr(scorer, "core", None))
+    if estimator is not None:
+        add(getattr(estimator, "core", None))
+    return objects
+
+
+def _declared_paths(obj: Any) -> list[Path]:
+    raw = getattr(obj, "data_files", None)
+    if raw is None:
+        return []
+    if isinstance(raw, (str, Path)):
+        return [Path(raw)]
+    if isinstance(raw, (bytes, bytearray)) or not isinstance(raw, Sequence):
+        raise TypeError
+    return [Path(item) for item in raw]
+
+
+def _data_label(path: Path) -> str:
+    try:
+        resolved = path.resolve()
+    except OSError:
+        resolved = path
+    try:
+        return resolved.relative_to(REPO_ROOT).as_posix()
+    except ValueError:
+        return path.name
+
+
+def _data_extras(scorer: Any, estimator: Any | None) -> tuple[list[tuple[str, bytes]], list[str]]:
+    extras: list[tuple[str, bytes]] = []
+    missing: list[str] = []
+    for obj in (scorer, estimator):
+        if obj is None:
+            continue
+        for path in _declared_paths(obj):
+            label = _safe_label(_data_label(path))
+            try:
+                extras.append((label, path.read_bytes()))
+            except OSError:
+                missing.append("unhashed" if label == "unhashed" else f"{label} unhashed")
+    return extras, missing
 
 
 def source_identity(scorer: Any, estimator: Any | None = None) -> ScorerIdentity:
-    """Identity of one scorer: package version, version strings, and the resolved file set."""
-    start = [_class_file(scorer)]
-    if estimator is not None:
-        start.append(_class_file(estimator))
+    """Identity of one scorer: package version, version strings, settings, and source files."""
+    resolved: list[tuple[Path, Any]] = []
+    missing: list[str] = []
+    for obj in _identity_objects(scorer, estimator):
+        path = _class_path(obj)
+        if path is None:
+            missing.append("unhashed")
+            continue
+        label = _safe_label(_source_rel(path, obj))
+        try:
+            path.read_bytes()
+        except OSError:
+            missing.append("unhashed" if label == "unhashed" else f"{label} unhashed")
+            continue
+        resolved.append((path, obj))
+    if missing:
+        return _unhashed_identity(scorer, estimator, missing)
+
+    reported = _trusted_estimator_sha(estimator)
+    labels = [_safe_label(_source_rel(path, obj)) for path, obj in resolved]
+    try:
+        settings = _settings_json(scorer)
+        data_extras, data_missing = _data_extras(scorer, estimator)
+    except (TypeError, ValueError):
+        return _unhashed_identity(scorer, estimator, labels)
+    if data_missing:
+        return _unhashed_identity(scorer, estimator, data_missing)
+
+    scorer_name = getattr(scorer, "name", "")
+    scorer_version = getattr(scorer, "version", "")
+    estimator_name = "" if estimator is None else getattr(estimator, "name", "")
+    estimator_version = "" if estimator is None else getattr(estimator, "version", "")
+    texts = (scorer_name, scorer_version, estimator_name, estimator_version)
+    if any(type(text) is not str or "\n" in text or "\r" in text for text in texts):
+        return _unhashed_identity(scorer, estimator, labels)
+
     prefix = [
         f"qor-receipt=={PACKAGE_VERSION}",
-        f"scorer={scorer.name}",
-        f"version={scorer.version}",
-        f"estimator={getattr(estimator, 'name', '')}",
-        f"estimator_version={getattr(estimator, 'version', '')}",
+        f"scorer={scorer_name}",
+        f"version={scorer_version}",
+        f"settings={settings}",
+        f"estimator={estimator_name}",
+        f"estimator_version={estimator_version}",
     ]
-    # An estimator may carry its own sha256 (for example one that folds in the
-    # OpenCV build). It joins the prefix only when present, so stubs hash as before.
-    estimator_sha = getattr(estimator, "sha256", None)
-    if estimator_sha:
-        prefix.append(f"estimator_sha256={estimator_sha}")
-    digest, rels = hash_file_set(start, prefix)
+    for tag in sorted({_class_source_tag(obj) for obj in _identity_objects(scorer, estimator)}):
+        prefix.append(f"class={tag}")
+    # The pan estimator's sha joins the prefix only when the class object is
+    # OpticalFlowPanEstimator and the digest was recomputed from source.
+    # Attributes are not read.
+    if type(reported) is str:
+        prefix.append(f"estimator_sha256={reported}")
+    outside: list[tuple[str, bytes | None]] = []
+    seen: set[Path] = set()
+    for path, obj in resolved:
+        if path in seen:
+            continue
+        seen.add(path)
+        try:
+            path.relative_to(REPO_ROOT)
+        except ValueError:
+            try:
+                outside.append((_safe_label(_source_rel(path, obj)), path.read_bytes()))
+            except OSError:
+                return _unhashed_identity(scorer, estimator, labels)
+    digest, rels = hash_file_set([path for path, _obj in resolved], prefix, (*outside, *data_extras))
     return ScorerIdentity(
-        name=scorer.name,
-        version=scorer.version,
+        name=scorer_name,
+        version=scorer_version,
         sha256=digest,
         package_version=PACKAGE_VERSION,
-        estimator_name=getattr(estimator, "name", None),
-        estimator_version=getattr(estimator, "version", None),
+        estimator_name=None if estimator is None else estimator_name,
+        estimator_version=None if estimator is None else estimator_version,
         files=rels,
-        estimator_sha256=estimator_sha or None,
+        estimator_sha256=reported if type(reported) is str else None,
     )
+
+
+def _callable_path(fn: Any) -> str:
+    try:
+        src = inspect.getsourcefile(fn) or ""
+    except (TypeError, OSError):
+        src = ""
+    if not src:
+        code = getattr(fn, "__code__", None)
+        src = getattr(code, "co_filename", "") if code is not None else ""
+    if not isinstance(src, str) or not src:
+        return "unhashed"
+    path = Path(src)
+    try:
+        return _safe_label(path.resolve().relative_to(REPO_ROOT).as_posix())
+    except (OSError, ValueError):
+        return _safe_label(path.name)
+
+
+def _lp(blob: bytes) -> bytes:
+    """Length-prefixed blob, so ``b'a\\nb'`` does not join into ``b'a' + b'b'``."""
+    return str(len(blob)).encode("ascii") + b":" + blob
+
+
+def _pixel_bytes(item: Any) -> bytes | None:
+    """Raw bytes of an array-like frame, including shape and dtype."""
+    tobytes = getattr(item, "tobytes", None)
+    if not callable(tobytes):
+        return None
+    try:
+        blob = tobytes()
+    except Exception:
+        return None
+    if type(blob) is not bytes:
+        return None
+    shape = getattr(item, "shape", ())
+    dtype = getattr(item, "dtype", "")
+    header = f"{shape!r}|{dtype!s}".encode("ascii", "replace")
+    return _lp(header) + _lp(blob)
+
+
+def _frame_material(frames: Sequence[Any]) -> bytes:
+    chunks: list[bytes] = []
+    for item in frames:
+        if isinstance(item, (bytes, bytearray, memoryview)):
+            chunks.append(_lp(bytes(item)))
+            continue
+        pixels = _pixel_bytes(item)
+        if pixels is not None:
+            chunks.append(_lp(pixels))
+            continue
+        if isinstance(item, (tuple, list)) and len(item) == 2:
+            body = _pixel_bytes(item[1])
+            if body is None and isinstance(item[1], (bytes, bytearray, memoryview)):
+                body = _lp(bytes(item[1]))
+            if body is not None:
+                mono = str(item[0]).encode("utf-8", "replace")
+                chunks.append(_lp(_lp(mono) + body))
+                continue
+        path = item if isinstance(item, (str, Path)) else getattr(item, "path", None)
+        if isinstance(path, (str, Path)) and Path(path).is_file():
+            try:
+                chunks.append(_lp(Path(path).read_bytes()))
+                continue
+            except OSError:
+                chunks.append(_lp(b"unhashed"))
+                continue
+        chunks.append(_lp(repr(item).encode("utf-8", "replace")))
+    return b"".join(chunks)
+
+
+def _instance_state(obj: Any, seen: set[int] | None = None, depth: int = 0) -> bytes:
+    """Public instance attributes, so a mutation after the first estimate changes the cache key."""
+    if obj is None or depth > 3:
+        return b""
+    encoded = _encode_cell(obj)
+    if encoded is not None:
+        return encoded
+    if seen is None:
+        seen = set()
+    if id(obj) in seen:
+        return b"cycle"
+    seen.add(id(obj))
+    data = getattr(obj, "__dict__", None)
+    if not isinstance(data, dict):
+        return f"id:{id(obj)}".encode("ascii")
+    parts: list[bytes] = []
+    for key in sorted(data):
+        if type(key) is not str or key.startswith("_"):
+            continue
+        value = data[key]
+        if callable(value):
+            continue
+        parts.append(key.encode("utf-8", "replace") + b"=" + _instance_state(value, seen, depth + 1))
+    return b"\n".join(parts)
+
+
+def frame_source_identity(frame_source: Any, frames: Sequence[Any]) -> str:
+    """Path of the frame source plus a content hash of the frames it produced."""
+    digest = hashlib.sha256(_frame_material(frames)).hexdigest()
+    return f"{_callable_path(frame_source)} {digest}"
+
+
+def estimate_cache_key(scorer: Any, estimator: Any | None, frame_source: Any, frames: Sequence[Any]) -> tuple[str, str, str] | None:
+    """Key by the full scorer identity, the frame-source identity, and instance state.
+
+    The identity covers the core class source, closure cells, and the scorer
+    settings. The frame half is the source path plus a hash of the frame bytes
+    (shape and dtype included, each chunk length-prefixed). Instance state is
+    the public attributes, so mutating one after the first estimate misses.
+    Returns None when the identity is ``unhashed``: two unresolvable cores must
+    not share a stored result.
+    """
+    ident = source_identity(scorer, estimator)
+    if ident.sha256 == "unhashed":
+        return None
+    state = hashlib.sha256(_instance_state(scorer) + b"\n" + _instance_state(estimator)).hexdigest()
+    return ident.sha256, frame_source_identity(frame_source, frames), state
+
+
+class EstimateCache:
+    """Per-instance store of estimate results.
+
+    There is no class-level cache. A second scorer cannot read the first scorer's
+    bins, even when a caller picks the same short cache key for both.
+    """
+
+    def __init__(self) -> None:
+        self._store: dict[tuple[Any, ...], tuple[Any, ...]] = {}
+
+    def get(self, key: tuple[Any, ...]) -> tuple[Any, ...] | None:
+        hit = self._store.get(key)
+        return None if hit is None else tuple(hit)
+
+    def put(self, key: tuple[Any, ...], value: Sequence[Any]) -> None:
+        self._store[key] = tuple(value)
 
 
 def motion_check_state(permille: int | None) -> str:
@@ -509,8 +1210,9 @@ class PanAgreementScorer:
     min_disagree_bins = 10
     stick_deadzone = STICK_DEADZONE
 
-    def __init__(self, estimator: CameraPanEstimator) -> None:
+    def __init__(self, estimator: CameraPanEstimator, **thresholds: Any) -> None:
         self.estimator = estimator
+        _apply_thresholds(self, thresholds, _PAN_THRESHOLDS)
 
     def score(self, sample: VariantSample) -> Score:
         bins = self.estimator.estimate(sample)
@@ -565,8 +1267,9 @@ class EventPressAgreementScorer:
     window_ms = EVENT_MATCH_WINDOW_MS
     stick_deadzone = STICK_DEADZONE
 
-    def __init__(self, estimator: VideoEventEstimator) -> None:
+    def __init__(self, estimator: VideoEventEstimator, **thresholds: Any) -> None:
         self.estimator = estimator
+        _apply_thresholds(self, thresholds, _EVENT_THRESHOLDS)
 
     def score(self, sample: VariantSample) -> Score:
         events = self.estimator.estimate(sample)

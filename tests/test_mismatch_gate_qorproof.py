@@ -11,13 +11,16 @@ Ported as written where possible. Changes:
   a control that passes calibration.
 - A4: ``FrameBindStatus`` was removed (enums are no_claim), so A4 checks it is
   gone and that a module-level enum equal to "verified" is still no_claim.
-- D1 (harness cache) and E1-E3 (estimator identity in tests/redteam/scorers.py and
-  tests/redteam/optical_flow.py) are ported unchanged but marked
-  ``xfail(strict=True)``: that code is fixed in QorVolution Bot's follow-up PR,
-  not here. Their sys.path now points at this repo's tests/ instead of QorProof's
-  checkout.
+- D1 (harness cache) and E1-E3 (estimator identity) run against this repo.
+  The cache is per instance and keyed by ``estimate_cache_key``. An estimator
+  sha256 is stored only when the class object is ``OpticalFlowPanEstimator`` and
+  the digest is recomputed from source. An ``unhashed`` identity is not cached.
+  D1 runs only when that estimator is on the allowlist.
+  Their sys.path points at this repo's tests/ instead of QorProof's checkout.
 """
 import enum
+import sys
+from pathlib import Path
 
 import pytest
 
@@ -248,10 +251,8 @@ def test_C7_int_subclass_time_in_gap_spoofs_coverage():
     assert result(video_ms=EvilInt3(51_000), log_ms=EvilInt3(-10**12)).reason == mg.R_TIME_INVALID
 
 
-# ---- harness cache and estimator identity (must-fix 4, tests/redteam/scorers.py and
-# tests/redteam/optical_flow.py). Out of scope for #68: QorVolution Bot's follow-up PR
-# fixes them. strict=True so these flip loudly when that lands.
-HARNESS_XFAIL = pytest.mark.xfail(strict=True, raises=AssertionError, reason="fixed by QorVolution Bot #67 follow-up PR")
+# ---- harness cache and estimator identity (tests/redteam/scorers.py and
+# tests/redteam/optical_flow.py).
 
 
 def _harness_path():
@@ -263,8 +264,96 @@ def _harness_path():
         sys.path.insert(0, tests_dir)
 
 
-@HARNESS_XFAIL
+def test_cache_includes_duration_when_frames_are_reused():
+    """Same frames and the same short cache key must not reuse bins for a longer window."""
+    _harness_path()
+    from redteam.optical_flow import OpticalFlowHarnessEstimator
+    from redteam.pan_frames import pan_frames
+
+    frames = pan_frames(10, 9.6)
+
+    class S:
+        def __init__(self, duration_ms: int) -> None:
+            self.duration_ms = duration_ms
+
+    est = OpticalFlowHarnessEstimator(lambda s: frames, cache_key=lambda s: "k")
+    short = est.estimate(S(1000))
+    long = est.estimate(S(3000))
+    assert len(short) == 10
+    assert len(long) == 30
+
+
+def test_mutated_core_attribute_is_not_served_from_the_cache():
+    _harness_path()
+    from redteam.optical_flow import OpticalFlowHarnessEstimator
+
+    class YawCore(pe.OpticalFlowPanEstimator):
+        def __init__(self) -> None:
+            super().__init__()
+            self.yaw = 1.0
+
+        def estimate_frames(self, frames, start, end):
+            return [pe.PanBin(t, self.yaw, 0.0, 1.0) for t in range(start, end, 100)]
+
+    class S:
+        duration_ms = 1000
+
+    est = OpticalFlowHarnessEstimator(lambda s: [], cache_key=lambda s: "k", core=YawCore())
+    assert est.estimate(S())[0].yaw_rate == 1.0
+    est.core.yaw = 9.0
+    assert est.estimate(S())[0].yaw_rate == 9.0
+
+
+def test_unhashed_cores_do_not_share_cached_bins(tmp_path: Path):
+    """Two cores whose source files are gone must not serve each other's bins."""
+    import importlib.util
+
+    _harness_path()
+    from redteam.optical_flow import OpticalFlowHarnessEstimator
+
+    def load(yaw: int):
+        path = tmp_path / f"core_{yaw}.py"
+        path.write_text(
+            "class Core:\n"
+            "    name = 'core'\n"
+            "    version = 'v0'\n"
+            f"    yaw = {yaw}\n"
+            "    def estimate_frames(self, frames, start, end):\n"
+            "        out = []\n"
+            "        for t in range(start, end, 100):\n"
+            "            row = type('B', (), {})()\n"
+            "            row.mono_ms = t\n"
+            "            row.yaw_rate = self.yaw\n"
+            "            row.pitch_rate = 0.0\n"
+            "            row.confidence = 1.0\n"
+            "            row.no_claim = False\n"
+            "            out.append(row)\n"
+            "        return out\n",
+            encoding="utf-8",
+        )
+        name = f"unhashed_core_{yaw}"
+        spec = importlib.util.spec_from_file_location(name, path)
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
+        path.unlink()
+        module.__file__ = str(path)
+        return module.Core()
+
+    class S:
+        duration_ms = 1000
+
+    low = OpticalFlowHarnessEstimator(lambda s: [], cache_key=lambda s: "k", core=load(1))
+    high = OpticalFlowHarnessEstimator(lambda s: [], cache_key=lambda s: "k", core=load(9))
+    assert low.estimate(S())[0].yaw_rate == 1
+    assert high.estimate(S())[0].yaw_rate == 9
+
+
 def test_D1_harness_cache_shared_across_frame_sources():
+    """Opposite pans must not share cached bins. Requires an allowlisted estimator."""
+    if not pe.estimator_known():
+        pytest.skip("estimator hash is not on the allowlist")
     _harness_path()
     from redteam.optical_flow import OpticalFlowHarnessEstimator
     from redteam.pan_frames import pan_frames
@@ -279,7 +368,6 @@ def test_D1_harness_cache_shared_across_frame_sources():
     assert [x.yaw_rate for x in ra] != [x.yaw_rate for x in rb]
 
 
-@HARNESS_XFAIL
 def test_E1_estimator_can_claim_any_sha():
     _harness_path()
     from redteam.scorers import NoClaimPanEstimator, PanAgreementScorer, source_identity
@@ -293,7 +381,6 @@ def test_E1_estimator_can_claim_any_sha():
     assert ident.estimator_sha256 != pe.estimator_sha256()
 
 
-@HARNESS_XFAIL
 def test_E2_sha_is_not_validated_as_hex():
     _harness_path()
     from redteam.scorers import NoClaimPanEstimator, PanAgreementScorer, source_identity
@@ -305,7 +392,6 @@ def test_E2_sha_is_not_validated_as_hex():
     assert ident.estimator_sha256 is None
 
 
-@HARNESS_XFAIL
 def test_E3_core_subclass_outside_file_set_keeps_identical_identity():
     _harness_path()
     from redteam.optical_flow import OpticalFlowHarnessEstimator
