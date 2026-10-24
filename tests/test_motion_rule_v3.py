@@ -139,17 +139,74 @@ def test_client_labels_cannot_widen_exclusions():
     assert parts["all"] == {5, 6}
 
 
-def test_sample_is_a_spread_and_ignores_client_flags():
+def _long_manifest():
     segs = [{"seq": 0, "offset": 0, "mono_ms": 0, "motion_exclude": True}]
     segs += [{"seq": i, "offset": 100, "mono_ms": i * 2000, "motion_exclude": True, "skip_motion": True}
              for i in range(1, 61)]
-    chosen = motion_sample_seqs(segs)
+    return segs
+
+
+def test_sample_is_one_per_stratum_and_ignores_client_flags():
+    from qor_receipt.review.motion import _media_segments, _time_strata
+
+    segs = _long_manifest()
+    chosen = motion_sample_seqs(segs, random.Random(0))
     assert len(chosen) == 24
-    assert chosen[0] == 1 and chosen[-1] == 60
     assert 0 not in chosen
     assert chosen == sorted(set(chosen))
-    short = motion_sample_seqs(segs[:10])
+    strata = _time_strata(_media_segments(segs), 24)
+    for bucket in strata:
+        hit = [int(m["seq"]) for m in bucket if int(m["seq"]) in set(chosen)]
+        assert len(hit) == (1 if bucket else 0)
+    short = motion_sample_seqs(segs[:10], random.Random(0))
     assert short == list(range(1, 10))
+
+
+def test_motion_sample_depends_on_rng_and_is_drawn_after_commit(tmp_path):
+    """Two seeds differ, one seed repeats, and the engine draws only after sub.commit."""
+    segs = _long_manifest()
+    a = motion_sample_seqs(segs, random.Random(1))
+    b = motion_sample_seqs(segs, random.Random(2))
+    again = motion_sample_seqs(segs, random.Random(1))
+    assert a == again and a != b
+    assert len(a) == 24 and len(b) == 24
+    if not F.have_ffmpeg():
+        return
+    from test_referee_service import Env
+
+    from qor_receipt.review.engine import SPOT, Referee
+
+    e = Env(tmp_path, tail_ms=8_000, k=4)
+
+    class GateRng(random.Random):
+        def __init__(self, seed):
+            super().__init__(seed)
+            self.ref = None
+            self.commits = []
+
+        def choice(self, seq):
+            sub = next(iter(self.ref.subs.values()))
+            assert isinstance(sub.commit, str) and len(sub.commit) == 64
+            self.commits.append(sub.commit)
+            return random.Random.choice(self, seq)
+
+    def draw(seed):
+        rng = GateRng(seed)
+        ref = Referee(e.key, workdir=tmp_path / f"work-{seed}-{id(rng)}", now=lambda: e.clock["t"], rng=rng,
+                      core_factory=F.fake_factory(), tail_ms=8_000, random_segments=4)
+        rng.ref = ref
+        sub = ref.create(e.fx["files"], SPOT)
+        assert sub.state == "awaiting_segments", sub.errors
+        assert rng.commits and rng.commits[0] == sub.commit
+        plan = json.loads((sub.dir / "plan.json").read_text(encoding="utf-8"))
+        assert plan["commit"] == sub.commit
+        assert plan["motion"] == sub.motion_sample
+        assert plan["motion"] == motion_sample_seqs(sub.bundle.segments, random.Random(seed))
+        return sub.motion_sample
+
+    first = draw(1)
+    assert draw(1) == first
+    assert draw(2) != first
 
 
 def test_motion_clock_matches_frame_clock_at_30_fps_only():
@@ -204,10 +261,11 @@ def test_review_uses_motion_rule_v3_and_client_labels_do_not_widen(tmp_path):
     from qor_receipt import receipt as R
 
     e = Env(tmp_path, tail_ms=8_000, k=4)
+    snap = e.ref.rng.getstate()
     sub = e.submit()
     assert len(sub.required) < len(e.fx["segments"])
     plan = json.loads((sub.dir / "plan.json").read_text(encoding="utf-8"))
-    assert plan["motion"]
+    assert plan["motion"] == sub.motion_sample
     assert len(plan["motion"]) <= 24
     assert min(plan["motion"]) < min(plan["tail"])
     e.upload_all(sub)
@@ -219,6 +277,7 @@ def test_review_uses_motion_rule_v3_and_client_labels_do_not_widen(tmp_path):
     assert out["receipt"]["signals"]["motion_basis"] == MOTION_BASIS_V3
     assert detail["motion_permille"] >= R.MOTION_MIN_PERMILLE
     assert detail["bins"] >= 20
+    assert detail["sample_segments"] == plan["motion"] == sub.motion_sample
     assert detail["sample_max_segments"] == 24
     assert len(detail["sample_segments"]) <= 24
     assert detail["clock"] == "fragment_pts"
@@ -227,9 +286,15 @@ def test_review_uses_motion_rule_v3_and_client_labels_do_not_widen(tmp_path):
     assert detail["excluded"]["scorebug_absent"] == 0
     assert detail["excluded"]["end_menu"] == 0
     assert detail["excluded"]["final_screen"] == 0
-    assert detail["excluded"]["challenge_pause"] >= 1
-    assert "segments for motion" in out["receipt"]["review"]["scope"]
+    pause_ms = [(5_000, 7_000), (17_000, 19_000), (29_000, 31_000)]
+    sampled_pause = [s for s in plan["motion"]
+                     if any(s * 2000 > lo and (s - 1) * 2000 < hi for lo, hi in pause_ms)]
+    if sampled_pause:
+        assert detail["excluded"]["challenge_pause"] >= 1
+    assert "stratified random spread" in out["receipt"]["review"]["scope"]
+    assert "drawn after commit" in out["receipt"]["review"]["scope"]
 
+    e.ref.rng.setstate(snap)
     files = dict(e.fx["files"])
     rows = [{"t_ms": F.W0 + sec * 1000, "until_ms": F.W0 + (sec + 1) * 1000, "obs": "scorebug_absent", "n": 10}
             for sec in range(F.SECS)]

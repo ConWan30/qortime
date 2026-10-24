@@ -158,7 +158,7 @@ def test_v0311_challenge_fixtures_partials():
     assert motion["sample_size"] == list(MOTION_SIZE) == [640, 360]
     assert motion["clock"] == "fragment_pts"
     assert motion["rule_versions"]["3"]["basis"] == MOTION_BASIS_V3
-    assert "motion-rule/v3" in MOTION_BASIS_V3
+    assert "stratified random spread of at most 24 media segments drawn after commit" in MOTION_BASIS_V3
     assert set(motion["rule_versions"]["3"]["excluded_keys"]) == {
         "scorebug_absent", "end_menu", "final_screen", "challenge_pause", "total"}
     js = (ROOT / "verify" / "verify.js").read_text(encoding="utf-8")

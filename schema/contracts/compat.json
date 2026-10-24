@@ -93,6 +93,7 @@
     "sample_hz": 10,
     "sample_size": [640, 360],
     "clock": "fragment_pts",
+    "sample": "stratified random: the media span is split into at most 24 equal mono_ms strata and the referee RNG picks one segment per non-empty stratum, drawn only after the submission commit. The drawn seqs are plan.json motion and review.checks.motion.detail.sample_segments",
     "decode_budget": "at most 24 media fragments (about 48 s when a fragment is ~2 s), 10 Hz, 640x360; the 240 s tail is the final re-read and is not added to this sample",
     "signal": "controller report rate (logged input rows per second); a second with no reports stays zero and is not dropped",
     "exclusions": ["scorebug_absent", "end_menu", "final_screen", "challenge_pause"],
@@ -103,7 +104,7 @@
     "rule_versions": {
       "3": {
         "id": 3,
-        "basis": "motion-rule/v3: controller report rate vs frame-difference energy per second on a spread of at most 24 media segments across the match, timed with the fragment PTS clock (segment close stamps only when a fragment has no tfdt); bins dropped only for referee-measured scorebug absence, end menu, final screen, or challenge pause",
+        "basis": "motion-rule/v3: controller report rate vs frame-difference energy per second on a stratified random spread of at most 24 media segments drawn after commit, timed with the fragment PTS clock (segment close stamps only when a fragment has no tfdt); bins dropped only for referee-measured scorebug absence, end menu, final screen, or challenge pause",
         "where": "signals.motion_basis and review.checks.motion.detail. Not result.rule. Challenge result.rule stays 1 or 2.",
         "detail_keys": ["rule", "bins", "decoded_bins", "motion_permille", "basis", "sample_segments", "sample_max_segments", "clock", "clock_fallbacks", "screen_readers", "excluded"],
         "excluded_keys": ["scorebug_absent", "end_menu", "final_screen", "challenge_pause", "total"],

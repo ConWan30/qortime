@@ -1,7 +1,8 @@
 """Motion rule v3: correlate controller report rate with frame-difference energy on live-play seconds.
 
-The sample is a deterministic spread of at most ``MOTION_SAMPLE_MAX_SEGMENTS`` media fragments
-across the match. The 240 s tail stays the final re-read and is not this sample.
+The sample is a stratified random spread of at most ``MOTION_SAMPLE_MAX_SEGMENTS`` media
+fragments, one per equal time stratum, drawn from the referee's RNG after the submission is
+committed. The 240 s tail stays the final re-read and is not this sample.
 
 Bins are dropped only for signals the referee measured on the frames it decoded:
 
@@ -32,48 +33,64 @@ MOTION_HZ = 10.0
 MOTION_SIZE = (640, 360)
 
 MOTION_BASIS_V3 = (
-    "motion-rule/v3: controller report rate vs frame-difference energy per second on a spread of "
-    "at most 24 media segments across the match, timed with the fragment PTS clock (segment close "
-    "stamps only when a fragment has no tfdt); bins dropped only for referee-measured scorebug "
-    "absence, end menu, final screen, or challenge pause"
+    "motion-rule/v3: controller report rate vs frame-difference energy per second on a stratified "
+    "random spread of at most 24 media segments drawn after commit, timed with the fragment PTS "
+    "clock (segment close stamps only when a fragment has no tfdt); bins dropped only for "
+    "referee-measured scorebug absence, end menu, final screen, or challenge pause"
 )
 
 
-def motion_sample_seqs(segments: Iterable[dict[str, Any]], max_segments: int = MOTION_SAMPLE_MAX_SEGMENTS) -> list[int]:
-    """Media seqs spread evenly by ``mono_ms`` across the match. Deterministic. Init segments are out.
-
-    The choice uses only ``seq``, ``offset``, and ``mono_ms``. A client label on the segment does
-    not add or remove it. At most ``max_segments`` fragments, including the first and the last
-    media fragment when the match is longer than the cap.
-    """
+def _media_segments(segments: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Media fragments only, ordered by manifest time. Init segments and client labels are ignored."""
     media = [m for m in segments if int(m.get("offset", 0) or 0) > 0]
     media.sort(key=lambda m: (int(m.get("mono_ms", 0) or 0), int(m["seq"])))
+    return media
+
+
+def _time_strata(media: list[dict[str, Any]], n: int) -> list[list[dict[str, Any]]]:
+    """Split ``media`` into ``n`` equal spans of ``mono_ms``. The last fragment stays in the last stratum."""
+    buckets: list[list[dict[str, Any]]] = [[] for _ in range(n)]
+    t0 = int(media[0].get("mono_ms", 0) or 0)
+    t1 = int(media[-1].get("mono_ms", 0) or 0)
+    span = t1 - t0
+    if span <= 0:
+        buckets[0] = list(media)
+        return buckets
+    for m in media:
+        mono = int(m.get("mono_ms", 0) or 0)
+        if mono >= t1:
+            idx = n - 1
+        else:
+            idx = int((mono - t0) * n / span)
+            if idx < 0:
+                idx = 0
+            elif idx >= n:
+                idx = n - 1
+        buckets[idx].append(m)
+    return buckets
+
+
+def motion_sample_seqs(segments: Iterable[dict[str, Any]], rng: Any,
+                       max_segments: int = MOTION_SAMPLE_MAX_SEGMENTS) -> list[int]:
+    """One media seq per equal time stratum, chosen with ``rng``.
+
+    At most ``max_segments`` fragments. A match with no more media than that is scored in full,
+    and ``rng`` is not used. A longer match is split into ``max_segments`` equal ``mono_ms``
+    strata; each non-empty stratum contributes ``rng.choice``. The choice uses only ``seq``,
+    ``offset``, and ``mono_ms``. A client label cannot add or remove a segment. Callers draw
+    this after the submission commit, from the referee's RNG.
+    """
+    media = _media_segments(segments)
     if max_segments <= 0 or not media:
         return []
     if len(media) <= max_segments:
         return [int(m["seq"]) for m in media]
-    if max_segments == 1:
-        return [int(media[len(media) // 2]["seq"])]
-    t0 = int(media[0].get("mono_ms", 0) or 0)
-    t1 = int(media[-1].get("mono_ms", 0) or 0)
-    span = t1 - t0
-    used: set[int] = set()
     chosen: list[int] = []
-    for i in range(max_segments):
-        target = t0 + span * i / (max_segments - 1)
-        best_seq = None
-        best_key = None
-        for j, m in enumerate(media):
-            seq = int(m["seq"])
-            if seq in used:
-                continue
-            key = (abs(int(m.get("mono_ms", 0) or 0) - target), j)
-            if best_key is None or key < best_key:
-                best_key = key
-                best_seq = seq
-        used.add(int(best_seq))
-        chosen.append(int(best_seq))
-    return sorted(chosen)
+    for bucket in _time_strata(media, max_segments):
+        if not bucket:
+            continue
+        chosen.append(int(rng.choice(bucket)["seq"]))
+    return sorted(set(chosen))
 
 
 def _pearson_permille(xs: list[int], ys: list[int]) -> int | None:

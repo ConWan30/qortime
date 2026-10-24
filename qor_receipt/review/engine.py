@@ -100,6 +100,7 @@ class Submission:
     required: list[int] = field(default_factory=list)
     decode: set[int] = field(default_factory=set)       # segments kept on disk for decoding
     random_sample: list[int] = field(default_factory=list)
+    motion_sample: list[int] = field(default_factory=list)
     received: dict[int, int] = field(default_factory=dict)  # seq -> bytes verified
     bad: dict[int, str] = field(default_factory=dict)
     review: dict[str, Any] | None = None
@@ -314,10 +315,13 @@ class Referee:
         presses = B.press_events(b)
         for c in b.receipt.get("challenges") or []:
             chal |= set(_challenge_seqs(b, c, presses, wmm))
-        motion = motion_sample_seqs(segs)
+        # Both draws happen only now, after the manifest/checkpoints/inputs are committed (sub.commit),
+        # from the referee's RNG. The motion sample is one segment per time stratum, so the client
+        # cannot know which fragments will be scored before this commit.
+        sub.motion_sample = motion_sample_seqs(segs, self.rng)
+        motion = sub.motion_sample
         fixed = inits | tail | chal | set(motion)
         pool = [int(m["seq"]) for m in segs if int(m["seq"]) not in fixed]
-        # Drawn only now, after the manifest/checkpoints/inputs are committed (sub.commit), from the referee's RNG.
         sub.random_sample = sorted(self.rng.sample(pool, min(self.random_segments, len(pool))))
         sub.decode = fixed | set(sub.random_sample)
         sub.required = sorted(range(len(segs))) if sub.mode == FULL else sorted(sub.decode)
@@ -460,8 +464,8 @@ class Referee:
                   "scope": ("post-hoc review of an uploaded QorCap bundle by the QorTime official referee: "
                             + ("every video byte hashed against the committed manifest" if sub.mode == FULL else
                                f"spot-check of {len(sub.received)}/{len(b.segments)} segments (init, recorded tail, "
-                               f"challenge windows, a spread of at most {MOTION_SAMPLE_MAX_SEGMENTS} media "
-                               f"segments for motion, {k} random segments drawn after commit)")),
+                               f"challenge windows, a stratified random spread of at most {MOTION_SAMPLE_MAX_SEGMENTS} "
+                               f"media segments for motion drawn after commit, {k} random segments drawn after commit)")),
                   "not_proven": NOT_PROVEN}
         device_key = device_key_for_bundle(b)
         if device_key is not None:
@@ -593,17 +597,18 @@ class Referee:
 
     def _motion(self, sub: Submission, rd, pause_spans_wall: list[tuple[int, int]],
                 wmm: int) -> tuple[int | None, dict[str, Any]]:
-        """Motion rule v3 over the spread sample only.
+        """Motion rule v3 over the stratified sample drawn in ``_plan``.
 
         Decode budget: at most ``MOTION_SAMPLE_MAX_SEGMENTS`` media fragments (about 48 s when a
         fragment is ~2 s), at ``MOTION_HZ`` and ``MOTION_SIZE``. That is the whole budget for this
         check. The recorded tail is decoded separately for the final re-read and is not added here.
         Frame time is the fragment PTS clock. A fragment with no ``tfdt`` keeps ``segment_ranges``.
+        The sample is the one already drawn from the referee RNG after commit. It is not redrawn.
         """
         b = sub.bundle
         if not M.ffmpeg_bin() or not b.inputs:
             return None, {"rule": MOTION_RULE, "note": "not computed (no ffmpeg or no controller log)"}
-        sample = motion_sample_seqs(b.segments)
+        sample = list(sub.motion_sample)
         present = [s for s in sample if s in sub.received]
         if not present:
             return None, {"rule": MOTION_RULE, "basis": MOTION_BASIS_V3, "bins": 0, "sample_segments": sample,

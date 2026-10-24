@@ -32,8 +32,8 @@ laptop (QorCap)                                   referee service (official key)
    official_challenges, anchors)                   laptop's own keys.  Reject on any error (HTTP 422).
                                     ◀──────────── commit = H(all of the above); THEN draw the plan:
                                                    init segment(s), recorded tail (last 240 s), segments around
-                                                   each challenge's OPTIONS press, a spread of at most 24 media
-                                                   fragments for motion, 16 random media segments
+                                                   each challenge's OPTIONS press, a stratified random spread of at most 24
+                                                   media fragments for motion (drawn after commit), 16 random media segments
 2 PUT /v1/submissions/{id}/segments/{seq} ─────▶ stream-hash each fMP4 segment; must equal the committed
   (raw bytes from video.mp4 at manifest offset)    sha256 + length (stored only if needed for decoding)
 3 POST …/review ───────────────────────────────▶ decode tail with ffmpeg → QorCap's own ReaderCore (pinned
@@ -132,10 +132,14 @@ New reviews score motion on live-play seconds. The rule id is 3. It is not `resu
 keep the integer they were signed with. Both verifiers still only compare that integer with 300.
 They do not recompute it, so a rule-v1 or rule-v2 receipt verifies exactly as it did before.
 
-The sample is a deterministic spread of at most 24 media fragments across the match, chosen from
-the manifest (`seq`, `offset`, `mono_ms` only). At QorCap's ~2 s fragments that is about 48 s,
-decoded at 10 Hz and 640×360. That is the whole motion decode budget. The 240 s tail is still
-decoded for the final re-read and is not added to the correlation.
+The sample is a stratified random spread of at most 24 media segments drawn after commit.
+The referee splits the media span into 24 equal `mono_ms` strata and picks one segment per
+non-empty stratum with its own RNG, in the same place it draws the spot-check: after `sub.commit`,
+so the client cannot know the fragments before the upload plan exists. The drawn seqs are
+`plan.json` `motion` and `review.checks.motion.detail.sample_segments`. The choice reads `seq`,
+`offset`, and `mono_ms` only. At QorCap's ~2 s fragments that is about 48 s, decoded at 10 Hz and
+640×360. That is the whole motion decode budget. The 240 s tail is still decoded for the final
+re-read and is not added to the correlation.
 
 Frame time is the fragment PTS clock (the same `tfdt` fit as challenge rule v2). A 10 Hz frame is
 mapped through the nominal 30 fps frame so it lands on that clock. A fragment with no `tfdt` keeps

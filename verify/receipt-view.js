@@ -293,7 +293,7 @@ export function buildPanels(receipt, v, extras = {}) {
     state: !Number.isInteger(mp[role]) ? "absent" : mp[role] < MOTION_MIN ? "partial" : "pass" }));
   const motionBasis = typeof sig.motion_basis === "string" ? sig.motion_basis : "";
   const motionNote = motionBasis.includes("motion-rule/v3")
-    ? "Controller report rate against frame-difference energy on a spread of media segments, timed with the fragment PTS clock. Bins dropped only for referee-measured scorebug absence, end menu, final screen, or challenge pause. Supporting evidence, not proof."
+    ? "Controller report rate against frame-difference energy on a stratified random spread of at most 24 media segments drawn after commit, timed with the fragment PTS clock. Bins dropped only for referee-measured scorebug absence, end menu, final screen, or challenge pause. Supporting evidence, not proof."
     : "Controller report rate against frame-difference energy. Supporting evidence, not proof.";
   panels.push({ id: "motion", title: "Motion correlation", motion, floor: MOTION_MIN, basis: sig.motion_basis || null,
     state: !motion.length || motion.every((x) => x.state === "absent") ? "absent" : motion.some((x) => x.state === "partial" || x.state === "absent") ? "partial" : "pass",
