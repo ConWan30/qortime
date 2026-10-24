@@ -4,6 +4,7 @@ import { canonicalize, sha256Hex, verifyReceipt, challengeEvidenceErrors, challe
          corroborationView,
          deviceKeyView,
          revocationsProblem, receiptBodyHash, verifyInclusion, verifyLogEntries, verifyLogHead, loadAllowlist } from "./verify.js";
+import { runAdversarial } from "./adversarial.test.mjs";
 import { REFEREE_REVOCATIONS } from "./referee_revocations.inc.js";
 const v = JSON.parse(readFileSync(new URL("../tests/vectors/jcs_vector.json", import.meta.url)));
 let fails = 0;
@@ -250,5 +251,6 @@ ok(panelOf(livePanels, "input").device === "DualSense Edge (USB)", "match 170123
 const liveCtrl = panelOf(livePanels, "capture").facts.find((row) => row[0] === "controller");
 ok(liveCtrl && liveCtrl[1] === "DualSense Edge (USB)" && !String(liveCtrl[1]).includes("HID#") && !String(liveCtrl[1]).includes("\\"),
    "match 170123 capture panel does not show the instance id");
+await runAdversarial(ok);
 process.exit(fails ? 1 : 0);
 

@@ -1,5 +1,5 @@
 // Verifier page rendering and motion. Builds DOM from receipt-view.js; animates transform and opacity only.
-import { verifyReceipt, receiptBodyHash, verifyInclusion, verifyLogHead, MAX_LATENCY_MS, RULE2_MAX_LATENCY_MS } from "./verify.js";
+import { verifyReceipt, parseCanonical, receiptBodyHash, verifyInclusion, verifyLogHead, MAX_LATENCY_MS, RULE2_MAX_LATENCY_MS } from "./verify.js";
 import { buildPanels, buildSteps, describeSidecar, explainCode, goldAllowed, verdictLabel } from "./receipt-view.js";
 
 export const RM = matchMedia("(prefers-reduced-motion: reduce)");
@@ -360,19 +360,20 @@ export function observe(nodes) {
 }
 
 export async function runVerify(ui, text, pin, extras) {
-  let r;
-  try { r = JSON.parse(text); } catch {
+  if (typeof text !== "string") {
     setError(ui, "CAN'T CHECK", "That is not valid JSON, so the verifier did not run.");
-    return { receipt: null, v: null };
-  }
-  if (!r || typeof r !== "object" || Array.isArray(r)) {
-    setError(ui, "CAN'T CHECK", "That JSON is not a receipt object, so the verifier did not run.");
     return { receipt: null, v: null };
   }
   setChecking(ui);
   const started = performance.now();
   let v;
-  try { v = await verifyReceipt(r, pin || null); } catch (e) {
+  let r = null;
+  try {
+    // Pass the raw text. JSON.parse turns 10.0, -0 and duplicate keys into a value the signature still covers.
+    v = await verifyReceipt(text, pin || null);
+    const parsed = parseCanonical(text);
+    r = parsed.ok ? parsed.value : null;
+  } catch (e) {
     setError(ui, "CAN'T CHECK", `The verifier stopped: ${e && e.name ? e.name : "error"}.`);
     return { receipt: r, v: null };
   }
