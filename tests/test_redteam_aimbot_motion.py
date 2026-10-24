@@ -556,10 +556,11 @@ SYNTHETIC_RATE_CAVEAT = (
 )
 CLOCK_WINDOW_CAVEAT = (
     "The 150 ms event window is valid only on synthetic data with a shared clock. "
-    "On real footage, a video-vs-log mismatch claim is allowed only for a bundle that carries a "
-    "frame_bind chain (qorcap #75, --frame-bind) that verifies; if that bundle's chain is missing, "
-    "stripped or broken, every mismatch claim is no-claim. This is checked per bundle, not switched "
-    "on by merging code, so older footage stays no-claim."
+    "On real footage, no video-vs-log mismatch claim is ever allowed: the mismatch claim gate has no allow path, "
+    "so every mismatch claim is no-claim with ceiling PARTIAL, for every bundle, and older footage stays no-claim. "
+    "A frame_bind chain (qorcap #75, --frame-bind) that verifies proves frames were not altered after recording, "
+    "not press-to-frame timing. An allow path may come only in a separate reviewed PR that verifies the bundle itself; "
+    "even then a mismatch signal may lower a verdict to at most PARTIAL and never raises one."
 )
 # trusted_referees stays here. The harness must not import qor_receipt.receipt, which is what loads it.
 _FORBIDDEN_MODULE_TOKENS = ("qor_receipt.referee", "referee_service", "trusted_referees")
@@ -595,6 +596,7 @@ def test_synthetic_rate_caveat_stays_beside_the_headline_table():
     assert "every mismatch claim is no-claim" in lines[clock_at]
     assert "older footage stays no-claim" in lines[clock_at]
     assert "closer than 719" not in section
+    assert "is allowed only for" not in section
 
 
 def test_harness_process_does_not_import_referee_modules():

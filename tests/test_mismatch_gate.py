@@ -51,6 +51,89 @@ def test_result_is_frozen_and_cannot_be_flipped():
     assert_no_claim(result)
 
 
+def test_patched_ceiling_global_does_not_change_the_result(monkeypatch):
+    monkeypatch.setattr(mg, "CEILING", "VERIFIED")
+    result = gate()
+    assert result.ceiling == "PARTIAL"
+    assert result.to_dict()["ceiling"] == "PARTIAL"
+    assert "ceiling='PARTIAL'" in repr(result)
+    assert_no_claim(result, mg.R_NO_BUNDLE_VERIFIER)
+
+
+def test_object_setattr_cannot_forge_the_reason():
+    result = mg.mismatch_claim_allowed()
+    assert result.reason == mg.R_STATUS_NOT_VERIFIED
+    for name in ("_reason", "reason", "allowed", "ceiling", "__dict__", "x"):
+        with pytest.raises((AttributeError, TypeError)):
+            object.__setattr__(result, name, mg.R_NO_BUNDLE_VERIFIER)
+    assert not hasattr(result, "__dict__") and type(result).__slots__ == ()
+    assert result.reason == mg.R_STATUS_NOT_VERIFIED
+    assert_no_claim(result, mg.R_STATUS_NOT_VERIFIED)
+
+
+def test_direct_construction_bypassing_validation_fails():
+    with pytest.raises(TypeError):
+        mg.MismatchGateResult.__new__(tuple, mg.R_NO_BUNDLE_VERIFIER)
+    forged = tuple.__new__(mg.MismatchGateResult, ("allowed",))
+    with pytest.raises(ValueError):
+        forged.reason  # noqa: B018 - re-validated on read
+    assert forged.allowed is False and forged.ceiling == "PARTIAL" and not forged
+
+
+def test_result_cannot_be_subclassed():
+    with pytest.raises(TypeError):
+        class Evil(mg.MismatchGateResult):
+            __slots__ = ()
+            allowed = property(lambda self: True)
+    with pytest.raises(TypeError):
+        type("Evil", (mg.MismatchGateResult,), {"__slots__": (), "allowed": property(lambda self: True)})
+
+
+def test_lookalike_result_never_compares_equal_to_a_real_one():
+    class LookAlike:
+        __slots__ = ("_reason",)
+        allowed = True
+        ceiling = "VERIFIED"
+
+        def __init__(self, reason):
+            self._reason = reason
+
+    real = gate()
+    fake = LookAlike(mg.R_NO_BUNDLE_VERIFIER)
+    assert real != fake and fake != real
+    assert real.__eq__(fake) is False and real.__ne__(fake) is True
+    plain = (mg.R_NO_BUNDLE_VERIFIER,)
+    assert real != plain and plain != real and not real.__eq__(plain)
+    assert real == mg.MismatchGateResult(mg.R_NO_BUNDLE_VERIFIER)
+    with pytest.raises(ValueError):
+        mg.MismatchGateResult(VerifiedSub(mg.R_NO_BUNDLE_VERIFIER))
+
+
+@pytest.mark.parametrize("how", ["copy", "deepcopy", "pickle"])
+def test_copy_deepcopy_and_pickle_round_trip_stays_no_claim(how):
+    import copy
+    import pickle
+
+    original = gate(video_ms=51_000)
+    clone = {
+        "copy": copy.copy,
+        "deepcopy": copy.deepcopy,
+        "pickle": lambda r: pickle.loads(pickle.dumps(r, protocol=pickle.HIGHEST_PROTOCOL)),
+    }[how](original)
+    assert clone == original and hash(clone) == hash(original)
+    assert_no_claim(clone, mg.R_EVENT_IN_GAP)
+    with pytest.raises(AttributeError):
+        clone.allowed = True  # type: ignore[misc]
+
+
+def test_forged_pickle_cannot_carry_an_unknown_reason():
+    import pickle
+
+    blob = pickle.dumps(mg.MismatchGateResult(mg.R_NO_BUNDLE_VERIFIER)).replace(b"no_bundle_verifier", b"verified_ok_allow!")
+    with pytest.raises(ValueError):
+        pickle.loads(blob)
+
+
 def test_well_formed_inputs_still_no_claim_because_nothing_verifies_a_bundle():
     """Every caller-supplied input looks fine. There is still no allow path."""
     assert_no_claim(gate(), mg.R_NO_BUNDLE_VERIFIER)

@@ -6,6 +6,9 @@ Ported as written where possible. Changes:
 - Cases that expected ``True`` (C1 outer gap edges, C2 ``log_ms=None``, C3
   unsorted/negative coverage) now expect ``False``: the gate has no allow path.
   Each also checks the reason code it now returns.
+- B3-B5 and B7 use n_samples=200 instead of 5 (5 failed the 30-sample minimum
+  before the trick ran) and assert ``encode_latency_calibration_invalid`` next to
+  a control that passes calibration.
 - A4: ``FrameBindStatus`` was removed (enums are no_claim), so A4 checks it is
   gone and that a module-level enum equal to "verified" is still no_claim.
 - D1 (harness cache) and E1-E3 (estimator identity in tests/redteam/scorers.py and
@@ -117,9 +120,20 @@ class EvilFloat(float):
         return False
 
 
+# B3-B5, B7: n_samples was 5 in the original, which failed the 30-sample minimum
+# before the trick ran. Now n_samples=200, a control calibration with the same
+# fields gets past calibration (no_bundle_verifier), and the trick alone decides.
+def _reason_with(cal):
+    return result(cal=cal, log_ms=100_001).reason
+
+
 def test_B3_float_subclass_negative_latency():
-    c = mg.EncodeLatencyCalibration(source="r", n_samples=5, p50_ms=EvilFloat(-50.0), p99_ms=60.0)
+    assert _reason_with(mg.EncodeLatencyCalibration(source="r", n_samples=200, p50_ms=50.0, p99_ms=60.0)) == mg.R_NO_BUNDLE_VERIFIER
+    c = mg.EncodeLatencyCalibration(source="r", n_samples=200, p50_ms=EvilFloat(-50.0), p99_ms=60.0)
     assert allowed(cal=c) is False
+    assert _reason_with(c) == mg.R_CALIBRATION_INVALID
+    positive = mg.EncodeLatencyCalibration(source="r", n_samples=200, p50_ms=EvilFloat(50.0), p99_ms=60.0)
+    assert _reason_with(positive) == mg.R_CALIBRATION_INVALID
 
 
 class EvilInt(int):
@@ -128,14 +142,20 @@ class EvilInt(int):
 
 
 def test_B4_int_subclass_negative_samples():
+    assert _reason_with(mg.EncodeLatencyCalibration(source="r", n_samples=200, p50_ms=1.0, p99_ms=2.0)) == mg.R_NO_BUNDLE_VERIFIER
     c = mg.EncodeLatencyCalibration(source="r", n_samples=EvilInt(-5), p50_ms=1.0, p99_ms=2.0)
     assert allowed(cal=c) is False
+    assert _reason_with(c) == mg.R_CALIBRATION_INVALID
+    # The subclass itself is rejected, even with a value above the minimum.
+    assert _reason_with(mg.EncodeLatencyCalibration(source="r", n_samples=EvilInt(200), p50_ms=1.0, p99_ms=2.0)) == mg.R_CALIBRATION_INVALID
 
 
 def test_B5_post_hoc_mutation_of_frozen_cal():
-    c = mg.EncodeLatencyCalibration(source="r", n_samples=5, p50_ms=1.0, p99_ms=2.0)
+    c = mg.EncodeLatencyCalibration(source="r", n_samples=200, p50_ms=1.0, p99_ms=2.0)
+    assert _reason_with(c) == mg.R_NO_BUNDLE_VERIFIER
     object.__setattr__(c, "p50_ms", -1.0)
     assert allowed(cal=c) is False
+    assert _reason_with(c) == mg.R_CALIBRATION_INVALID
 
 
 def test_B6_duck_typed_and_dict_rejected():
@@ -151,7 +171,10 @@ def test_B6_duck_typed_and_dict_rejected():
 
 @pytest.mark.parametrize("v", [float("inf"), float("-inf"), float("nan"), -0.0001, True, "1", None])
 def test_B7_bad_values_rejected(v):
-    assert allowed(cal=mg.EncodeLatencyCalibration(source="r", n_samples=5, p50_ms=v, p99_ms=10.0)) is False
+    assert _reason_with(mg.EncodeLatencyCalibration(source="r", n_samples=200, p50_ms=5.0, p99_ms=10.0)) == mg.R_NO_BUNDLE_VERIFIER
+    c = mg.EncodeLatencyCalibration(source="r", n_samples=200, p50_ms=v, p99_ms=10.0)
+    assert allowed(cal=c) is False
+    assert _reason_with(c) == mg.R_CALIBRATION_INVALID
 
 
 # ---- rule 5: coverage edges
