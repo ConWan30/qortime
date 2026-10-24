@@ -190,6 +190,30 @@ def _is_hex64(v: Any) -> bool:
     return isinstance(v, str) and len(v) == 64 and all(ch in "0123456789abcdef" for ch in v.lower())
 
 
+def blocking_challenge_errors(challenges: list, role: str) -> list[str]:
+    """Challenge problems that refuse a signature.
+
+    A missing phase and a null result are not here: those stay partial. ``result.ok`` false is here,
+    including ``pattern_mismatch``. That is the same error ``verify_receipt`` uses to block signing.
+    """
+    errors: list[str] = []
+    for ph in PHASES:
+        for c in challenges:
+            if c["role"] != role or c["phase"] != ph:
+                continue
+            pat = c.get("pattern") or []
+            if not isinstance(pat, list) or len(pat) < DEFAULT_LEN + 1:
+                errors.append(f"{role}:{ph}:pattern_too_short")
+            elif c["pattern"] != pattern_for(c["nonce"], len(c["pattern"]) - 1):
+                errors.append(f"{role}:{ph}:pattern_not_from_nonce")
+            res = c.get("result")
+            if res is None:
+                continue
+            if not res.get("ok"):
+                errors.append(f"{role}:{ph}:challenge_failed:{res.get('reason')}")
+    return errors
+
+
 def official_challenge_ok(c: dict[str, Any], *, allowlist_path: str | None = None,
                           delegate_pub: str | None = None) -> bool:
     """Review receipts: the challenge nonce must come from a token signed by an allowlisted active referee key,
@@ -427,22 +451,16 @@ def verify_receipt(r: dict[str, Any], *, referee_pub: str | None = None,
             errors += [f"{role}:{e}" for e in verify_chain(
                 r["checkpoints"].get(role, []), match_id=m["match_id"], role=role, referee_pub=chain_pub,
                 start_ms=m["started_ms"], end_ms=m["ended_ms"])]
+            errors.extend(blocking_challenge_errors(r["challenges"], role))
             for ph in PHASES:
                 cs = [c for c in r["challenges"] if c["role"] == role and c["phase"] == ph]
                 if not cs:
                     partial.append(f"{role}:challenge_missing:{ph}")
                 for c in cs:
-                    pat = c.get("pattern") or []
-                    if not isinstance(pat, list) or len(pat) < DEFAULT_LEN + 1:
-                        errors.append(f"{role}:{ph}:pattern_too_short")
-                    elif c["pattern"] != pattern_for(c["nonce"], len(c["pattern"]) - 1):
-                        errors.append(f"{role}:{ph}:pattern_not_from_nonce")
                     res = c.get("result")
                     if res is None:
                         partial.append(f"{role}:challenge_unanswered:{ph}")
-                    elif not res.get("ok"):
-                        errors.append(f"{role}:{ph}:challenge_failed:{res.get('reason')}")
-                    else:
+                    elif res.get("ok"):
                         # Do not trust bare result.ok: require committed evidence + live referee window.
                         ev_errs = _challenge_evidence_errors(c, r["checkpoints"].get(role, []))
                         if review_mode and not official_challenge_ok(

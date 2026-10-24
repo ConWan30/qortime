@@ -236,6 +236,37 @@ def _check_line(name: str, check: dict) -> str | None:
     return None
 
 
+def _review_check_failed(receipt: dict) -> list[str]:
+    """Names of review checks whose state is fail. Empty when the review did not fail a check."""
+    review = receipt.get("review") if isinstance(receipt.get("review"), dict) else {}
+    checks = review.get("checks") if isinstance(review, dict) else None
+    if not isinstance(checks, dict):
+        return []
+    return [name for name, check in checks.items()
+            if isinstance(check, dict) and check.get("state") == "fail"]
+
+
+def _refusal_reason(receipt: dict, ver: dict) -> str | None:
+    """Reason a blocked challenge carries onto the public page.
+
+    A reason is returned only when the verifier said FAIL or a review check is fail. A reason field
+    on a VERIFIED or PARTIAL receipt is ignored, so that page cannot headline FAIL.
+    """
+    failed_checks = _review_check_failed(receipt)
+    if ver.get("status") != FAIL and not failed_checks:
+        return None
+    review = receipt.get("review") if isinstance(receipt.get("review"), dict) else {}
+    raw = review.get("reason") if isinstance(review, dict) else None
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()
+    if ver.get("status") == FAIL:
+        for err in ver.get("errors") or []:
+            if isinstance(err, str) and ("challenge_failed:" in err or err.startswith("review_check_failed:")):
+                return err
+        return None
+    return "review_check_failed:" + failed_checks[0]
+
+
 def _public_corroboration(co: dict) -> dict:
     """Fields the match page renders. The verifier's detail sentence names status codes and stays off the page."""
     keep = ("schema", "status", "reasons", "tolerance_ms", "affects_verdict", "pairing_id", "finals")
@@ -340,6 +371,7 @@ def _publish(bdir: Path, site: Path, video: Path | None, hdir: Path | None, slug
             for e in idx["events"]:
                 e["locked"] = False
         res = receipt.get("result") or {}
+        reason = _refusal_reason(receipt, ver)
         label = {"VERIFIED": "VERIFIED · co-signed by the QorTime referee",
                  "PARTIAL": "PARTIAL · some checks not covered",
                  "SELF_ATTESTED": "SELF-SIGNED · signed on the player's own PC, not by the QorTime referee",
@@ -354,6 +386,7 @@ def _publish(bdir: Path, site: Path, video: Path | None, hdir: Path | None, slug
             "slug": slug, "generated_ms": now_ms or int(time.time() * 1000),
             "receipt": {"url": "receipt.json", "status": status, "label": label, "errors": ver["errors"],
                         "partial": ver["partial"],
+                        **({"reason": reason} if reason else {}),
                         "trust_tier": {"single-attested": "one-player tier", "dual-attested": "two-player tier"}.get(
                             ver.get("trust_tier"), ver.get("trust_tier")),
                         "referee_kind": (receipt.get("referee") or {}).get("key_kind"),

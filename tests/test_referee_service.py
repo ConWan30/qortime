@@ -85,6 +85,7 @@ def test_spot_check_review_countersigns_and_verifies(tmp_path):
     assert v["status"] == "VERIFIED", v
     assert v["verification_basis"] == "official-post-hoc-review"
     assert v["review"]["video_method"] == SPOT
+    assert "reason" not in out and "reason" not in out["review"]
     # Default (real) allowlist does not know this test key -> never VERIFIED.
     clear_cache()
     assert R.verify_receipt(final["receipt"], referee_pub=e.key.pubkey_hex)["status"] == "SELF_ATTESTED"
@@ -183,6 +184,327 @@ def test_scorebug_only_final_is_partial(tmp_path):
     assert v["status"] == "PARTIAL" and "review_partial:final_reread" in v["partial"]
 
 
+def _flip_pattern_press(sub, phase: str, t_us: int) -> None:
+    """Change the first pattern button after OPTIONS so the referee re-run is a pattern mismatch."""
+    challenge = next(c for c in sub.bundle.receipt["challenges"] if c["phase"] == phase)
+    want = challenge["pattern"][1]
+    wrong = "CROSS" if want != "CROSS" else "CIRCLE"
+    bit = {"CROSS": 0, "CIRCLE": 1}[wrong]
+    hit = False
+    for row in sub.bundle.inputs:
+        if row.get("type") == "in" and row.get("t_us") == t_us and row.get("b"):
+            row["b"] = 1 << bit
+            hit = True
+            break
+    assert hit, f"{phase} pattern press missing from the controller log"
+
+
+def _flip_kickoff_pattern(sub) -> None:
+    _flip_pattern_press(sub, "kickoff", 7_500_000)
+
+
+def _extend_chunks_to_deadlines(sub) -> None:
+    """Chunk rows in the fixture stop with the video. Later challenge windows need times too."""
+    from qor_receipt.review.bundle import wall_anchor
+
+    anchor = wall_anchor(sub.bundle) or 0
+    need = max(int(c["deadline_ms"]) for c in sub.bundle.receipt["challenges"]) - anchor
+    times = [
+        c["t_us"] // 1000 for c in sub.bundle.input_chunks
+        if isinstance(c.get("t_us"), int) and not isinstance(c.get("t_us"), bool)
+    ]
+    cursor = max(times) if times else 0
+    seq = 1 + max((int(c.get("seq") or 0) for c in sub.bundle.input_chunks), default=-1)
+    while cursor < need:
+        cursor += 2_000
+        sub.bundle.input_chunks.append({"type": "chunk", "seq": seq, "seg": 0, "n": 0, "t_us": cursor * 1000})
+        seq += 1
+
+
+def _stamp_chunk_times(sub) -> None:
+    """Give each chunk the segment's mono time. The fixture seals chunks without t_us."""
+    by_seq = {int(m["seq"]): int(m.get("mono_ms") or 0) for m in sub.bundle.segments}
+    for chunk in sub.bundle.input_chunks:
+        seg = chunk.get("seg")
+        if isinstance(seg, int) and not isinstance(seg, bool) and seg in by_seq:
+            chunk["t_us"] = by_seq[seg] * 1000
+
+
+def _status_row(mono_ms: int, state: str) -> dict:
+    return {"type": "status", "t_us": mono_ms * 1000, "state": state, "detail": state, "seg": 0}
+
+
+def _connected_pad(sub) -> None:
+    _stamp_chunk_times(sub)
+    sub.bundle.inputs.append(_status_row(0, "connected"))
+
+
+def _only_options_on_kickoff(sub) -> None:
+    """Leave the kickoff OPTIONS press and clear every other button in that window."""
+    from qor_receipt.review.bundle import wall_anchor
+
+    kick = next(c for c in sub.bundle.receipt["challenges"] if c["phase"] == "kickoff")
+    anchor = wall_anchor(sub.bundle) or 0
+    options = 1 << 9
+    for row in sub.bundle.inputs:
+        if row.get("type") != "in" or not isinstance(row.get("t_us"), int) or isinstance(row.get("t_us"), bool):
+            continue
+        wall = anchor + row["t_us"] // 1000
+        if kick["issued_ms"] <= wall <= kick["deadline_ms"] and row.get("b") and not (row["b"] & options):
+            row["b"] = 0
+
+
+def _mismatch_review(tmp_path):
+    e = Env(tmp_path, tail_ms=8_000, k=1)
+    sub = e.submit()
+    _flip_kickoff_pattern(sub)
+    _connected_pad(sub)
+    e.upload_all(sub)
+    return e, e.ref.review(sub)
+
+
+def _assert_mismatch_refused(out: dict) -> None:
+    challenges = out["review"]["checks"]["challenges"]
+    assert challenges["state"] == "fail", challenges
+    assert out["state"] == "refused"
+    assert out.get("reason") == "home:kickoff:challenge_failed:pattern_mismatch"
+    assert out["review"].get("reason") == out["reason"]
+    assert out["review"].get("post_sign_errors") == [out["reason"]]
+
+
+def _js_verify(receipt: dict, referee_pub: str, allowlist_path: str, tmp: Path) -> dict:
+    """The browser verifier on the same receipt bytes the Python verifier just judged."""
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is not installed")
+    path = tmp / "js-receipt.json"
+    path.write_text(json.dumps(receipt))
+    script = (
+        "import { verifyReceipt } from './verify/verify.js';"
+        "import { readFileSync } from 'node:fs';"
+        "const [receiptPath, pub, allowPath] = process.argv.slice(1);"
+        "const receipt = JSON.parse(readFileSync(receiptPath, 'utf8'));"
+        "const allowlist = JSON.parse(readFileSync(allowPath, 'utf8'));"
+        "const v = await verifyReceipt(receipt, pub, { allowlist });"
+        "process.stdout.write(JSON.stringify({status:v.status, errors:v.errors, partial:v.partial}));"
+    )
+    proc = subprocess.run(
+        [node, "--input-type=module", "-e", script, str(path), referee_pub, allowlist_path],
+        capture_output=True, text=True, cwd=Path(__file__).resolve().parents[1], timeout=60)
+    if proc.returncode != 0:
+        raise AssertionError(proc.stderr or proc.stdout)
+    return json.loads(proc.stdout)
+
+
+def _assert_verifiers_agree(receipt: dict, referee_pub: str, allowlist_path: str, tmp: Path, *,
+                            status: str, present: str, absent: str) -> None:
+    py = R.verify_receipt(receipt, referee_pub=referee_pub, allowlist_path=allowlist_path)
+    js = _js_verify(receipt, referee_pub, allowlist_path, tmp)
+    for name, verdict in (("python", py), ("js", js)):
+        assert verdict["status"] == status, (name, verdict)
+        bag = verdict["errors"] + verdict["partial"]
+        assert present in bag, (name, verdict)
+        assert absent not in bag, (name, verdict)
+        assert verdict["status"] != "VERIFIED"
+
+
+def test_two_blocking_challenge_errors_fill_post_sign_errors(tmp_path):
+    """post_sign_errors is the whole blocking list, not the joined headline and not the first error."""
+    e = Env(tmp_path, tail_ms=8_000, k=1)
+    sub = e.submit()
+    _flip_pattern_press(sub, "kickoff", 7_500_000)
+    _flip_pattern_press(sub, "halftime", 19_500_000)
+    _connected_pad(sub)
+    _extend_chunks_to_deadlines(sub)
+    e.upload_all(sub)
+    out = e.ref.review(sub)
+    expected = [
+        "home:kickoff:challenge_failed:pattern_mismatch",
+        "home:halftime:challenge_failed:pattern_mismatch",
+    ]
+    assert out["state"] == "refused"
+    assert out["review"]["checks"]["challenges"]["state"] == "fail"
+    assert out["review"].get("post_sign_errors") == expected
+    assert out.get("reason") == "; ".join(expected)
+    assert out["review"].get("reason") == out["reason"]
+
+
+def test_pattern_mismatch_is_fail_with_a_top_level_reason(tmp_path):
+    """A gate-passing mismatch blocks signing. The reason is the headline and post_sign_errors."""
+    e, out = _mismatch_review(tmp_path)
+    _assert_mismatch_refused(out)
+    rec = json.loads(e.fx["files"]["receipt.json"])
+    for challenge in rec["challenges"]:
+        if challenge["phase"] == "kickoff":
+            challenge["result"] = {"ok": False, "reason": "pattern_mismatch", "pause_press_ms": None,
+                                   "done_ms": None, "latency_ms": None}
+    signed = R.sign_player(R.sign_referee(rec, e.fx["capture"]), "home", e.fx["device"])
+    _assert_verifiers_agree(
+        signed, e.fx["capture"].pubkey_hex, e.allow, tmp_path,
+        status="FAIL", present="home:kickoff:challenge_failed:pattern_mismatch",
+        absent="home:challenge_unanswered:kickoff")
+
+
+def _receipt_with_stored_mismatch(e):
+    """A #97 receipt: the kickoff result is a recorder pattern_mismatch, and the jsonl may say withheld."""
+    files = dict(e.fx["files"])
+    rec = json.loads(files["receipt.json"])
+    for challenge in rec["challenges"]:
+        if challenge["phase"] == "kickoff":
+            challenge["result"] = {"ok": False, "reason": "pattern_mismatch", "reverified_by": "recorder",
+                                   "pause_press_ms": None, "done_ms": None, "latency_ms": None}
+    signed = R.sign_player(R.sign_referee(rec, e.fx["capture"]), "home", e.fx["device"])
+    files["receipt.json"] = json.dumps(signed).encode()
+    files["challenge_results.jsonl"] = (json.dumps({
+        "phase": "kickoff", "ok": False, "reason": "pattern_mismatch", "withheld": "controller_log"}) + "\n").encode()
+    return files
+
+
+def test_qorcap97_bundle_is_accepted_and_published_as_fail(tmp_path):
+    """Intake keeps a bundle whose only local errors are challenge_failed. The referee's own re-run decides."""
+    e = Env(tmp_path, tail_ms=8_000, k=1)
+    sub = e.submit(files=_receipt_with_stored_mismatch(e))
+    assert sub.state == "awaiting_segments", sub.errors
+    assert not any(str(x).startswith("local_receipt:") for x in sub.errors)
+    _flip_kickoff_pattern(sub)
+    _connected_pad(sub)
+    e.upload_all(sub)
+    out = e.ref.review(sub)
+    _assert_mismatch_refused(out)
+    assert out.get("receipt") is None and sub.receipt is None
+    from test_match_publish import _render_page
+
+    shown = _render_page(tmp_path / "page", {
+        "status": "FAIL", "label": "FAIL · this receipt does not verify", "errors": [out["reason"]],
+        "partial": [], "reason": out["reason"],
+        "checks": [{"name": "challenges", "state": "fail"}]})
+    assert "Challenge failed at kickoff (home): wrong button pattern" in shown["statusText"]
+    assert shown["role"] == "status"
+
+
+def _withheld_review(tmp_path, prepare, *, stamp: bool = True):
+    e = Env(tmp_path, tail_ms=8_000, k=1)
+    sub = e.submit()
+    prepare(sub)
+    if stamp:
+        _stamp_chunk_times(sub)
+    e.upload_all(sub)
+    out = e.ref.review(sub)
+    assert out["state"] == "awaiting_player_signature", json.dumps(out["review"]["checks"], indent=1)
+    assert out["review"]["checks"]["challenges"]["state"] == "partial"
+    assert "reason" not in out and "reason" not in out["review"]
+    assert out["review"].get("post_sign_errors") in (None, [])
+    final = e.player_sign(sub)
+    receipt = final["receipt"]
+    kick = next(c for c in receipt["challenges"] if c["phase"] == "kickoff")
+    assert kick["result"] is None
+    _assert_verifiers_agree(
+        receipt, e.key.pubkey_hex, e.allow, tmp_path,
+        status="PARTIAL", present="home:challenge_unanswered:kickoff",
+        absent="home:kickoff:challenge_failed:pattern_mismatch")
+    return out
+
+
+def _status_at_kickoff_issue(sub, state: str) -> dict:
+    from qor_receipt.review.bundle import wall_anchor
+
+    kick = next(c for c in sub.bundle.receipt["challenges"] if c["phase"] == "kickoff")
+    anchor = wall_anchor(sub.bundle) or 0
+    return _status_row(kick["issued_ms"] - anchor, state)
+
+
+def test_issue_time_status_tie_uses_the_referee_gate(tmp_path):
+    """asleep beside connected at issued_ms is unanswered. connected alone at that ms still fails."""
+    tied = Env(tmp_path / "tie", tail_ms=8_000, k=1)
+    sub = tied.submit()
+    _flip_kickoff_pattern(sub)
+    _stamp_chunk_times(sub)
+    sub.bundle.inputs.append(_status_at_kickoff_issue(sub, "asleep"))
+    sub.bundle.inputs.append(_status_at_kickoff_issue(sub, "connected"))
+    tied.upload_all(sub)
+    out = tied.ref.review(sub)
+    assert out["state"] == "awaiting_player_signature", json.dumps(out["review"]["checks"], indent=1)
+    assert out["review"]["checks"]["challenges"]["state"] == "partial"
+    assert "reason" not in out
+    final = tied.player_sign(sub)
+    kick = next(c for c in final["receipt"]["challenges"] if c["phase"] == "kickoff")
+    assert kick["result"] is None
+
+    alone = Env(tmp_path / "alone", tail_ms=8_000, k=1)
+    sub = alone.submit()
+    _flip_kickoff_pattern(sub)
+    _stamp_chunk_times(sub)
+    sub.bundle.inputs.append(_status_at_kickoff_issue(sub, "connected"))
+    alone.upload_all(sub)
+    refused = alone.ref.review(sub)
+    _assert_mismatch_refused(refused)
+
+
+def test_stall_glitch_is_unanswered_not_fail(tmp_path):
+    """OPTIONS, then a stall, then nothing. That is not a player FAIL."""
+
+    def prepare(sub):
+        _only_options_on_kickoff(sub)
+        sub.bundle.inputs.append(_status_row(0, "connected"))
+        sub.bundle.inputs.append(_status_row(6_000, "stalled"))
+
+    _withheld_review(tmp_path, prepare)
+
+
+def test_old_bundle_without_chunk_times_is_unanswered(tmp_path):
+    """A pre-0.3.34 log with no chunk times withholds the mismatch and stays partial."""
+
+    def prepare(sub):
+        _flip_kickoff_pattern(sub)
+        sub.bundle.inputs.append(_status_row(0, "connected"))
+
+    _withheld_review(tmp_path, prepare, stamp=False)
+
+
+def test_unplugged_then_reconnected_is_unanswered_not_fail(tmp_path):
+    """A drop that reconnects before the deadline still withholds the mismatch."""
+
+    def prepare(sub):
+        _flip_kickoff_pattern(sub)
+        sub.bundle.inputs.append(_status_row(0, "connected"))
+        sub.bundle.inputs.append(_status_row(6_000, "unplugged"))
+        sub.bundle.inputs.append(_status_row(8_000, "connected"))
+
+    _withheld_review(tmp_path, prepare)
+
+
+def test_mixed_local_errors_still_reject_the_upload(tmp_path):
+    """challenge_failed does not excuse a broken signature or any other local error."""
+    e = Env(tmp_path, tail_ms=8_000, k=1)
+    files = _receipt_with_stored_mismatch(e)
+    rec = json.loads(files["receipt.json"])
+    rec["result"]["home_score"] = 99
+    files["receipt.json"] = json.dumps(rec).encode()
+    sub = e.submit(files=files)
+    assert sub.state == "rejected"
+    assert any(x.startswith("local_receipt:") and "challenge_failed" not in x for x in sub.errors)
+    assert any("challenge_failed" in x for x in sub.errors)
+
+
+def test_reverting_the_challenge_mapping_fails_that_check(tmp_path, monkeypatch):
+    """The old mapping (any incomplete phase is partial) must fail the mismatch assertion."""
+
+    def reverted(*, blocking, anchor_bad, phases_passed):
+        if anchor_bad:
+            return "fail", None
+        if phases_passed:
+            return "pass", None
+        return "partial", None
+
+    monkeypatch.setattr("qor_receipt.review.engine.challenge_check_state", reverted)
+    _e, out = _mismatch_review(tmp_path)
+    with pytest.raises(AssertionError):
+        _assert_mismatch_refused(out)
+
+
 def test_no_official_challenges_is_partial(tmp_path):
     e = Env(tmp_path, tokens=False)
     sub = e.submit()
@@ -194,6 +516,7 @@ def test_no_official_challenges_is_partial(tmp_path):
     assert v["status"] == "PARTIAL"
     assert "review_partial:challenges" in v["partial"]
     assert any(p.endswith("challenge_nonce_not_official") for p in v["partial"])
+    assert "reason" not in out and "reason" not in out["review"]
 
 
 def test_unreadable_final_fails_closed_without_reader(tmp_path):

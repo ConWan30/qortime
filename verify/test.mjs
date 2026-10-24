@@ -177,6 +177,15 @@ const gp = buildPanels(generic.receipt, gv, {});
 const unk = panelOf(gp, "unknown");
 ok(unk.state === "info" && unk.items.some((x) => x.where === "review.checks" && x.key === "example_vendor_probe")
    && unk.items.some((x) => x.where === "review" && x.key === "example_sidecar"), "unknown evidence is listed raw, not dropped");
+const refusedPanels = buildPanels({
+  review: { type: "qortime-bundle-review/v1", reason: "home:kickoff:challenge_failed:pattern_mismatch",
+    checks: { challenges: { state: "fail" }, motion: { state: "partial" } } },
+}, { status: "PARTIAL", errors: [], partial: ["review_partial:motion"] });
+const refusedReview = panelOf(refusedPanels, "review");
+ok(refusedReview.state === "fail" && refusedReview.reason === "home:kickoff:challenge_failed:pattern_mismatch"
+   && refusedReview.checks.some((c) => c.name === "challenges" && c.state === "fail"),
+   "a pattern-mismatch refusal is fail on the review panel, with the reason at the top");
+ok(!panelOf(refusedPanels, "unknown").items.some((x) => x.key === "reason"), "review.reason is a known field");
 ok(panelOf(gp, "review").checks.some((c) => c.name === "example_vendor_probe" && !c.known), "unknown review check is labelled unknown");
 const plain = buildPanels(rv.receipt, untouched, {});
 for (const id of ["device", "corroboration", "handles"]) ok(panelOf(plain, id).state === "absent" && /^Not provided/.test(panelOf(plain, id).note), `missing ${id} renders as not provided`);

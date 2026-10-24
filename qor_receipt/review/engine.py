@@ -116,6 +116,12 @@ class Submission:
                "missing_count": len(missing), "received": len(self.received), "bad_segments": self.bad,
                "bytes_required": sum(int(self.bundle.segments[s]["bytes"]) for s in self.required),
                "review": self.review, "verify": self.verify}
+        reason = self.review.get("reason") if isinstance(self.review, dict) else None
+        checks = self.review.get("checks") if isinstance(self.review, dict) else None
+        blocked = isinstance(checks, dict) and any(
+            isinstance(c, dict) and c.get("state") == FAIL_CHECK for c in checks.values())
+        if isinstance(reason, str) and reason and blocked:
+            out["reason"] = reason
         if self.corroboration:
             out["corroboration"] = self.corroboration
         return out
@@ -293,7 +299,11 @@ class Referee:
             errs.append("only single-console bundles are supported by the review service")
         # The laptop's own receipt must be internally sound under its own keys (signatures, chain timing, result).
         v = R.verify_receipt(r, referee_pub=ref.get("pubkey"))
-        errs += [f"local_receipt:{x}" for x in v.get("errors", [])]
+        local_errors = [x for x in (v.get("errors") or []) if isinstance(x, str)]
+        # The referee re-runs every challenge from the raw log. A laptop that already stored
+        # challenge_failed is not a reason to refuse the upload. Any other local error still is.
+        if not _only_challenge_failed(local_errors):
+            errs += [f"local_receipt:{x}" for x in local_errors]
         return errs
 
     def _wall_minus_mono(self, b: B.Bundle) -> int:
@@ -433,7 +443,7 @@ class Referee:
                 final = None
                 checks["final_reread"] = {"state": FAIL_CHECK, "detail": f"decode/read error: {type(e).__name__}: {e}"}
         # ---- challenges (official nonce tokens, raw HID re-run, pause seen on the referee's decode)
-        ch_out, ch_check, pause_spans = self._challenges(sub, rd, wmm)
+        ch_out, ch_check, pause_spans, challenge_reason, challenge_blocking = self._challenges(sub, rd, wmm)
         checks["challenges"] = ch_check
         # ---- motion rule v3: a spread across the match, not the final-reread tail
         try:
@@ -467,6 +477,9 @@ class Referee:
                                f"challenge windows, a stratified random spread of at most {MOTION_SAMPLE_MAX_SEGMENTS} "
                                f"media segments for motion drawn after commit, {k} random segments drawn after commit)")),
                   "not_proven": NOT_PROVEN}
+        if challenge_reason:
+            # First field a reader sees. A refusal must not live only under post_sign_errors.
+            review = {"reason": challenge_reason, **review}
         device_key = device_key_for_bundle(b)
         if device_key is not None:
             # Informational. Not a check, so it cannot pass or fail the review.
@@ -474,6 +487,13 @@ class Referee:
         sub.review = review
         sub.corroboration = corroboration
         if any(c["state"] == FAIL_CHECK for c in checks.values()):
+            # Nothing was signed. qorcap submit prints refusal lines from post_sign_errors, so the
+            # same blocking list that built review.reason is copied there. A video or final failure
+            # with no challenge block leaves the list empty.
+            if challenge_blocking:
+                sub.review["post_sign_errors"] = list(challenge_blocking)
+            elif challenge_reason:
+                sub.review["post_sign_errors"] = [challenge_reason]
             sub.state = "refused"
             self._publish_pair(sub, corroboration)
             return sub.public()
@@ -506,7 +526,8 @@ class Referee:
             out["log_entry"] = sub.log_entry
         return out
 
-    def _challenges(self, sub: Submission, rd, wmm: int) -> tuple[list[dict], dict[str, Any], list[tuple[int, int]]]:
+    def _challenges(self, sub: Submission, rd, wmm: int
+                    ) -> tuple[list[dict], dict[str, Any], list[tuple[int, int]], str | None, list[str]]:
         b = sub.bundle
         toks = {t.get("nonce"): t for t in b.jsonl("official_challenges.jsonl")}
         presses = B.press_events(b)
@@ -573,6 +594,18 @@ class Referee:
             res["rule"] = rule
             res["hid_sha256"] = sha256_hex(win)
             res["reverified_by"] = "official-referee"
+            # Same gate as the recorder. A mismatch the controller log cannot support is unanswered,
+            # not a player failure. Old bundles without chunk times withhold and stay partial.
+            if res.get("ok") is False and res.get("reason") == "pattern_mismatch":
+                from qor_receipt.review.local import mismatch_log_trustworthy
+
+                anchor = B.wall_anchor(b) or 0
+                if not mismatch_log_trustworthy(
+                        sub.dir / "meta", b.inputs + b.input_chunks,
+                        issued_ms=issued, deadline_ms=deadline, anchor_ms=anchor):
+                    out.append(dict(c2, result=None))
+                    notes.append(f"{c.get('phase')}: pattern_mismatch withheld; controller log cannot support it")
+                    continue
             out.append(dict(c2, result=res))
             if not res["ok"] and res["reason"] == "pause_not_seen_on_video":
                 notes.append(M.pause_not_seen_note(str(c.get("phase")), scan, pp, missing=missing or None,
@@ -585,15 +618,20 @@ class Referee:
             for i in apply_consistency(out):
                 notes.append(f"{out[i].get('phase')}: latency_inconsistent")
         phases = {c.get("phase") for c in out if c.get("issuer") and (c.get("result") or {}).get("ok")}
-        if bad:
-            state = FAIL_CHECK
-        elif all(p in phases for p in PHASES):
-            state = PASS
-        else:
-            state = PARTIAL_CHECK
+        blocking: list[str] = []
+        for role in ("home", "away"):
+            if any(isinstance(c, dict) and c.get("role") == role for c in out):
+                blocking.extend(R.blocking_challenge_errors(out, role))
+        state, reason = challenge_check_state(
+            blocking=blocking, anchor_bad=bad, phases_passed=all(p in phases for p in PHASES))
+        if state != FAIL_CHECK:
+            # A partial or a pass never carries a reason. A reason on those states would
+            # headline a signed receipt as FAIL.
+            reason = None
+        if state == PARTIAL_CHECK:
             missing = [p for p in PHASES if p not in phases]
             notes.append(f"official challenges passed for {sorted(phases) or 'none'}; missing/failed: {missing}")
-        return out, {"state": state, "detail": {"count": len(out), "rule": rule, "notes": notes}}, pause_spans
+        return out, {"state": state, "detail": {"count": len(out), "rule": rule, "notes": notes}}, pause_spans, reason, blocking
 
     def _motion(self, sub: Submission, rd, pause_spans_wall: list[tuple[int, int]],
                 wmm: int) -> tuple[int | None, dict[str, Any]]:
@@ -721,6 +759,40 @@ def _end_menu_hit(reader, img) -> bool:
 
 def _final_screen_hit(fn, img) -> bool:
     return bool(fn(img))
+
+
+def _only_challenge_failed(errors: list[str]) -> bool:
+    """True when every local-receipt error is a challenge_failed and there is at least one.
+
+    ``home:kickoff:challenge_failed:pattern_mismatch`` is that shape. A pattern problem, a chain
+    error, or an empty list is not. Empty means the receipt had no errors, which is not this case.
+    """
+    if not errors:
+        return False
+    for err in errors:
+        parts = err.split(":")
+        if len(parts) < 3 or parts[2] != "challenge_failed":
+            return False
+    return True
+
+
+def challenge_check_state(*, blocking: list[str], anchor_bad: bool, phases_passed: bool) -> tuple[str, str | None]:
+    """Map a challenge re-run onto pass / partial / fail.
+
+    A failure that blocks signing (``blocking``) is fail, and the refusal reason is returned with it.
+    Missing or unofficial phases stay partial. An anchor that is not in the manifest is fail on its own.
+    """
+    if anchor_bad or blocking:
+        if len(blocking) == 1:
+            reason = blocking[0]
+        elif blocking:
+            reason = "; ".join(blocking)
+        else:
+            reason = "challenge_anchor_not_in_manifest"
+        return FAIL_CHECK, reason
+    if phases_passed:
+        return PASS, None
+    return PARTIAL_CHECK, None
 
 
 def pause_seen_for(press_ms: int | None, onsets: list[int]) -> int | None:

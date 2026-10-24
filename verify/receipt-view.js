@@ -7,7 +7,7 @@ const KNOWN_TOP = new Set(["schema", "match", "result", "players", "referee", "c
   "signals", "trust_tier", "review", "signatures"]);
 const KNOWN_SIGNALS = new Set(["motion_permille", "motion_basis", "input"]);
 const KNOWN_REVIEW = new Set(["type", "reviewed_ms", "submission", "commit", "capture_referee", "bundle", "checks", "anchors",
-  "corroboration", "final_reread", "scope", "not_proven", "device_key", "post_sign_errors"]);
+  "corroboration", "final_reread", "scope", "not_proven", "device_key", "post_sign_errors", "reason"]);
 const KNOWN_CHECKS = {
   bundle_structure: "Bundle structure",
   capture_chain: "Capture chain countersignatures",
@@ -344,8 +344,10 @@ export function buildPanels(receipt, v, extras = {}) {
       value: name === "final_reread" ? rereadValue(c) : null })) : [];
     const vb = rv.checks && isObj(rv.checks.video_bytes) && isObj(rv.checks.video_bytes.detail) ? rv.checks.video_bytes.detail : null;
     const an = isObj(rv.anchors) ? rv.anchors : null;
+    const reviewFail = checks.some((c) => c.state === "fail");
     panels.push({ id: "review", title: "Official review", checks,
-      state: errors.some((e) => e.startsWith("review_")) || !sigOk ? "fail" : partial.some((p) => p.startsWith("review_partial:")) ? "partial" : "pass",
+      reason: typeof rv.reason === "string" && rv.reason ? rv.reason : null,
+      state: reviewFail || errors.some((e) => e.startsWith("review_")) || !sigOk ? "fail" : partial.some((p) => p.startsWith("review_partial:")) ? "partial" : "pass",
       video: vb ? { verified: vb.segments_verified, total: vb.segments_total, bytes_verified: vb.bytes_verified, bytes_total: vb.bytes_total,
         method: vb.method, random: vb.random_segments, p10: vb.p_undetected_if_missing_10pct } : null,
       anchors: an ? { valid: an.valid, invalid: an.invalid } : null,

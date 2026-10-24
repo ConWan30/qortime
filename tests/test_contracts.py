@@ -174,6 +174,34 @@ def test_v0311_challenge_fixtures_partials():
     assert f"MAX_WINDOW_MS = {CH.MAX_WINDOW_MS};" in js
 
 
+def test_pattern_mismatch_stored_from_does_not_bump_current():
+    """Informational: recorder 0.3.34 stores a pattern_mismatch. current stays the checked release."""
+    versions = COMPAT["recorder_versions"]
+    assert versions["current"] == "0.3.33"
+    assert versions["challenge_mismatch_stored_from"] == "0.3.34"
+    text = COMPAT["challenge_rules"]["recorder_result"]
+    assert "From recorder 0.3.34 a pattern_mismatch is stored as ok:false" in text
+    assert "parse as a JSON object" in text
+    assert "such as 42 or []" in text
+    assert "second header row" in text
+    assert "no gap larger than 3000 ms" in text
+    assert "latest chunk at or before issued_ms" in text
+    assert "are not gap-checked" in text
+    assert "chunk at or after deadline_ms" in text
+    assert "A last chunk before the deadline does not cover it" in text
+    assert "deadline_ms minus that chunk is <= 3000" in text
+    assert "wall_anchor_ms + t_us//1000" in text
+    assert "deadline_ms+2500" in text
+    assert "Any status other than connected" in text
+    assert "including stalled, unplugged, and missing" in text
+    assert "t_us is not an integer, or whose state is not a string" in text
+    assert "The official referee applies the same gate" in text
+    assert "Only a gate-passing mismatch is challenge_failed" in text
+    assert "OPTIONS alone" in text
+    assert "Every other non-ok reason stays null" in text
+    assert "withheld controller_log" in text
+
+
 def test_stop_tail_rule_is_the_verifier_rule():
     """The real-match failure signature (cp[n-2] gap+skew, cp[n-1] skew) is exactly a late-stamped stop tail."""
     e = json.loads((ROOT / "tests/fixtures/contract/v032_late_stop_tail.json").read_text())["expect"]["errors"]

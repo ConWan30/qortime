@@ -270,6 +270,7 @@ function corroborationPanel(p, i) {
 function reviewPanel(p, i) {
   if (p.state === "absent") return panelShell(p, i, null);
   return panelShell(p, i, null,
+    p.reason ? h("p", { class: "pnote bad" }, p.reason) : null,
     h("ul", { class: "checks" }, p.checks.map((c, k) => h("li", { class: `s-${c.state}`, style: { "--k": String(k) } },
       h("span", { class: "mk", "aria-hidden": "true" }, MARK[c.state]), h("b", null, c.label), chip(c.state, c.known ? null : `${c.state} · unknown check`),
       typeof c.detail === "string" ? h("small", null, c.detail) : null,

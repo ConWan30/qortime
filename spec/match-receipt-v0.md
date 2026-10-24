@@ -60,8 +60,27 @@ quarter (`clock_proxy`). Each opening is logged in `challenge_gates.jsonl`. The 
 the security argument (no pre-knowledge, HID + video pause 0–600 ms after the press) is unchanged.
 
 **Recorder result (QorCap ≥ 0.3.11).** At finalize QorCap re-runs each challenge on its own bundle
-(`qor_receipt.review.local`) and writes an ok `result` (`reverified_by: "recorder"`) into the receipt; a miss stays
-`null` with the reason in `challenge_results.jsonl`. The official referee re-runs everything itself.
+(`qor_receipt.review.local`) and writes an ok `result` (`reverified_by: "recorder"`) into the receipt.
+From recorder 0.3.34 a `pattern_mismatch` is stored as `ok: false` (`reason: "pattern_mismatch"`,
+`reverified_by: "recorder"`, no `rule` field) only when the controller log can support it. Every non-empty
+line of `inputs.jsonl` must parse as a JSON object. A JSON value that is not an object, such as `42` or
+`[]`, is malformed, and so is a second `header` row. Chunk rows must cover `[issued_ms, deadline_ms]` with
+no gap larger than 3000 ms (the 2 s fMP4 fragment plus 1 s slack). Coverage uses the latest chunk at or
+before `issued_ms`. That chunk must exist and `issued_ms` minus its wall time must be at most 3000. Chunks
+earlier than it are not gap-checked, and a chunk after `issued_ms` does not close the open. From that chunk
+each next chunk is at most 3000 ms later until a chunk at or after `deadline_ms`. A last chunk before the
+deadline does not cover it, even when `deadline_ms` minus that chunk is at most 3000. A single chunk
+after the deadline does not cover the window, and neither does a crash gap followed by rows after the
+deadline. Wall time is header `wall_anchor_ms` plus `t_us // 1000`. Status is `connected` at `issued_ms`
+and remains `connected` through `deadline_ms + 2500`. Any status other than `connected` in that span
+withholds the result, including `stalled`, `unplugged`, and `missing`, and including a drop that reconnects
+before the deadline. A status row whose `t_us` is not an integer, or whose `state` is not a string,
+withholds it. OPTIONS alone, and OPTIONS inside the window with the rest of the pattern after `deadline_ms`,
+are that stored mismatch when the log passes the gate. Every other non-ok reason stays `null`. A withheld
+mismatch stays in `challenge_results.jsonl` as `reason: pattern_mismatch` with `withheld: controller_log`
+(bundle metadata, not in `receipt.v0`). The official referee applies the same gate: a `pattern_mismatch` on
+a log that fails it is `challenge_unanswered` (partial, never VERIFIED, never FAIL). Only a gate-passing
+mismatch is `challenge_failed`.
 
 ## 4. Checkpoint chain
 

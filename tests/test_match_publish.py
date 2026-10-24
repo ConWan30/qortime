@@ -51,6 +51,143 @@ def test_publishes_page_index_and_never_raw_inputs(tmp_path):
     assert "first" not in idx.lower().replace("first-", "")
 
 
+def _jsdom_prefix() -> Path:
+    """Install the pinned jsdom tree. Skip when npm or the network cannot provide it."""
+    import shutil
+    import subprocess
+
+    prefix = Path(__file__).resolve().parent / "jsdom"
+    if (prefix / "node_modules" / "jsdom").exists():
+        return prefix
+    npm = shutil.which("npm")
+    if not npm:
+        pytest.skip("npm is not available")
+    try:
+        subprocess.check_call([npm, "ci", "--ignore-scripts"], cwd=prefix, timeout=180)
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        pytest.skip("jsdom dependencies could not be installed")
+    if not (prefix / "node_modules" / "jsdom").exists():
+        pytest.skip("jsdom is not installed")
+    return prefix
+
+
+def _render_page(tmp_path, receipt):
+    """Write a page and return the headline and banner the browser actually shows."""
+    import os
+    import shutil
+    import subprocess
+
+    from qor_receipt.match_index.viewer import write_viewer
+
+    if not shutil.which("node"):
+        pytest.skip("node is not installed")
+    prefix = _jsdom_prefix()
+    idx = {"match_id": "m", "events": [
+        {"kind": "kickoff", "recording_s": 12, "quarter": 1, "clock_s": 900, "score_after": {"away": 0, "home": 0}}],
+           "publish": {"receipt": receipt, "highlights": [], "advisory": "advisory evidence, not proof"}}
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    page = write_viewer(idx, tmp_path, embed=False, name="index.html")
+    env = os.environ.copy()
+    proc = subprocess.run(
+        ["node", str(Path(__file__).parent / "render_viewer.mjs"), str(page), str(prefix / "package.json")],
+        check=True, capture_output=True, text=True, env=env, timeout=30)
+    return json.loads(proc.stdout)
+
+
+def test_refusal_reason_requires_a_fail():
+    """A reason on a signed PARTIAL or VERIFIED receipt is not a headline. A fail check names itself."""
+    reason = "home:kickoff:challenge_failed:pattern_mismatch"
+    stray = {"review": {"reason": reason, "checks": {"challenges": {"state": "partial"}, "motion": {"state": "pass"}}}}
+    for status in ("VERIFIED", "PARTIAL", "SELF_ATTESTED"):
+        assert P._refusal_reason(stray, {"status": status, "errors": []}) is None
+    assert P._refusal_reason(stray, {"status": "FAIL", "errors": ["home:cp[1]:gap_too_long"]}) == reason
+    bare = {"review": {"checks": {"input_integrity": {"state": "fail"}}}}
+    assert P._refusal_reason(bare, {"status": "PARTIAL", "errors": []}) == "review_check_failed:input_integrity"
+    from_errors = {"review": {"checks": {}}}
+    err = "home:kickoff:challenge_failed:pattern_mismatch"
+    assert P._refusal_reason(from_errors, {"status": "FAIL", "errors": ["home:cp[1]:gap_too_long", err]}) == err
+    assert P._refusal_reason(from_errors, {"status": "PARTIAL", "errors": [err]}) is None
+
+
+def test_public_page_puts_a_challenge_refusal_at_the_top(tmp_path):
+    """FAIL is the headline only for a fail check or a blocking reason. A plain partial stays Partial."""
+    reason = "home:kickoff:challenge_failed:pattern_mismatch"
+    phrase = "Challenge failed at kickoff (home): wrong button pattern"
+    failed = _render_page(tmp_path / "fail", {
+        "status": "PARTIAL", "label": "PARTIAL · some checks not covered", "errors": [],
+        "partial": ["review_partial:motion"], "reason": reason,
+        "checks": [{"name": "challenges", "state": "fail", "line": "3 challenges, rule 2"},
+                   {"name": "motion", "state": "partial", "line": "low"}]})
+    assert failed["role"] == "status"
+    assert phrase in failed["statusText"]
+    assert "Receipt FAIL" in failed["statusText"]
+    assert "fail" in failed["className"]
+    assert failed["title"] == (
+        "FAIL · Challenge failed at kickoff (home): wrong button pattern. "
+        "The referee refused to sign because challenges failed.")
+    assert "PARTIAL" not in failed["title"]
+    assert phrase in failed["banner"] and "pattern_mismatch" in failed["bannerHtml"]
+    assert "referee refused to sign because challenges failed" in failed["banner"]
+    assert "PARTIAL" in (tmp_path / "fail" / "index.html").read_text(encoding="utf-8")
+
+    plain = _render_page(tmp_path / "partial", {
+        "status": "PARTIAL", "label": "PARTIAL · some checks not covered", "errors": [],
+        "partial": ["review_partial:motion", "home:challenge_unanswered:kickoff"],
+        "checks": [{"name": "challenges", "state": "partial"}, {"name": "motion", "state": "partial"}]})
+    assert plain["statusText"] == "Partial · not a verified result"
+    assert "Receipt FAIL" not in plain["statusText"] and plain["banner"] == ""
+    assert "fail" not in plain["className"].split()
+
+    local = _render_page(tmp_path / "local", {
+        "status": "FAIL", "label": "FAIL · this receipt does not verify", "errors": [reason],
+        "partial": [], "reason": reason, "checks": []})
+    assert phrase in local["statusText"]
+    assert "Recorded on this receipt" in local["banner"]
+    assert "referee refused" not in local["banner"]
+
+    unknown = _render_page(tmp_path / "unknown", {
+        "status": "FAIL", "label": "FAIL", "errors": [], "partial": [],
+        "reason": "home:kickoff:challenge_failed:brand_new_code", "checks": []})
+    assert "<code>home:kickoff:challenge_failed:brand_new_code</code>" in unknown["statusHtml"]
+    assert "brand_new_code" in unknown["statusText"]
+
+    other = _render_page(tmp_path / "other", {
+        "status": "PARTIAL", "label": "PARTIAL · some checks not covered", "errors": [], "partial": [],
+        "checks": [{"name": "input_integrity", "state": "fail"}]})
+    assert "review_check_failed:input_integrity" in other["statusHtml"]
+    assert other["title"] == "FAIL · The referee refused to sign because input integrity failed."
+    assert "PARTIAL" not in other["title"]
+    assert "input integrity" in other["banner"] and "referee refused to sign" in other["banner"]
+    assert "challenges failed" not in other["banner"]
+
+    label = "FAIL · this receipt does not verify; nothing on this page is a verified result"
+    card = _render_page(tmp_path / "card", {
+        "status": "FAIL", "label": label,
+        "errors": ["home:cp[0]:gap_too_long", "home:cp[1]:clock_skew", reason],
+        "partial": [], "checks": []})
+    assert card["title"] == label
+    assert "two checkpoints more than 10 s apart" in card["errsText"]
+    assert "checkpoint time more than 3 s from its countersign" in card["errsText"]
+    assert "wrong button pattern" in card["errsText"]
+    assert reason in card["errsHtml"]
+
+
+def test_refused_page_keeps_a_partial_label_off_the_tooltip(tmp_path):
+    """A refused receipt can still be labelled PARTIAL. The tooltip says FAIL, not that label."""
+    reason = "home:kickoff:challenge_failed:pattern_mismatch"
+    shown = _render_page(tmp_path, {
+        "status": "PARTIAL", "label": "PARTIAL · some checks not covered", "errors": [],
+        "partial": ["review_partial:motion"], "reason": reason,
+        "checks": [{"name": "challenges", "state": "fail"}]})
+    assert "Receipt FAIL" in shown["statusText"]
+    assert "wrong button pattern" in shown["statusText"]
+    assert shown["title"] == (
+        "FAIL · Challenge failed at kickoff (home): wrong button pattern. "
+        "The referee refused to sign because challenges failed.")
+    assert shown["title"] != "PARTIAL · some checks not covered"
+    assert "PARTIAL" not in shown["title"]
+
+
 def test_fail_receipt_needs_allow_fail_and_is_never_gold(tmp_path):
     b = _bundle(tmp_path, status_fail=True)
     with pytest.raises(P.PublishRefused, match="FAIL"):
