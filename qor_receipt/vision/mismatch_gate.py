@@ -51,6 +51,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, final
 
+from qor_receipt.review.frame_bind import FRAME_BIND_STATUSES
+
 # Observed clip/capture clock skew, match 170123, single session, 3 highlight clips:
 # (min, max) in ms. A measurement, not a limit or threshold.
 OBSERVED_CLIP_CLOCK_SKEW_RANGE_MS = (120, 719)
@@ -61,9 +63,8 @@ SKEW_MARGIN_FACTOR = 1.5
 # Both observation constants get replaced once bundles carry a verified frame_bind
 # result and a verified encode-latency calibration. The gate does not read them.
 
-# Vocabulary of the future frame_bind check. Only the exact str "verified" would
-# ever pass condition 1; enums and str subclasses do not.
-FRAME_BIND_STATUSES = ("verified", "missing", "stripped", "broken")
+# Status vocabulary is FRAME_BIND_STATUSES from qor_receipt.review.frame_bind.
+# Only the first value would ever pass condition 1; enums and str subclasses do not.
 
 # Sanity bounds used only to pick a reason code. Guesses, not bounds anyone verified.
 MIN_CALIBRATION_SAMPLES = 30
@@ -300,7 +301,7 @@ def mismatch_claim_allowed(
     well formed the reason is ``no_bundle_verifier``: nothing in qortime verifies
     a bundle's frame_bind chain or a bundle-bound calibration yet.
     """
-    if type(frame_bind_status) is not str or frame_bind_status != "verified":
+    if type(frame_bind_status) is not str or frame_bind_status != FRAME_BIND_STATUSES[0]:
         return MismatchGateResult(R_STATUS_NOT_VERIFIED)
     cal_reason = _calibration_reason(encode_latency)
     if cal_reason is not None:

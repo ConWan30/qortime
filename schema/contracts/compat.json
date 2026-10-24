@@ -6,6 +6,8 @@
   "bundle_schemas": ["qorcap-bundle/v0"],
   "inputs_schemas": ["qorcap-inputs/v0"],
   "input_proof_schemas": ["qorcap-input-proof/v0"],
+  "frame_bind_schemas": ["qorcap-frame-bind/v0"],
+  "readers_schemas": ["qorcap-readers/v0"],
   "trusted_referees_schemas": ["qortime-trusted-referees/v1"],
   "review_type": "qortime-bundle-review/v1",
   "challenge_token_type": "qortime-challenge/v1",
@@ -15,12 +17,13 @@
              "haptics.jsonl", "input_proof.json", "receipt.json", "receipt.draft.json", "timeline.jsonl",
              "challenges.jsonl", "official_challenges.jsonl", "anchors.jsonl", "referee.pub",
              "challenge_gates.jsonl", "challenge_results.jsonl", "pairing.json", "device_attest.v0.json",
-             "score_timeline.json"]
+             "score_timeline.json", "frames.jsonl", "readers.json"]
   },
   "hash_chain": {
     "canonical_json": "RFC 8785 JCS, integers only (|n| <= 2^53-1), no floats",
     "genesis": "0000000000000000000000000000000000000000000000000000000000000000",
     "segment_link": "head_n = sha256(JCS({prev, seq, sha256}))",
+    "frames_hash": "sha256(JCS(qorcap))",
     "checkpoint_hash": "sha256(JCS({seq, t_ms, frames_hash, input_hash, prev}))",
     "countersign_payload": "JCS({type:'checkpoint', match_id, role, hash, referee_ts_ms})",
     "signature": "Ed25519 over JCS(receipt minus signatures); {key_id, sig}; key_id = 16 hex"
@@ -151,6 +154,17 @@
     "checkpoint_head": "receipt.checkpoints[role][-1].hash",
     "signature_receipt_key": "Ed25519 hex pub and sig; pub is the receipt player pubkey (QorCap finalize device key)",
     "signature_device_attest_key": "same bytes signed by device_attest.v0.json (ECDSA_P256 or RSA_2048 PKCS#1 v1.5 SHA-256); pub is that SPKI base64 or the hex of the SPKI DER"
+  },
+  "frame_bind": {
+    "schema": "qorcap-frame-bind/v0",
+    "file": "frames.jsonl",
+    "readers_schema": "qorcap-readers/v0",
+    "readers_file": "readers.json",
+    "statuses": ["verified", "missing", "stripped", "broken"],
+    "verified": "verified",
+    "chain": "head_0 = 64 zero hex chars; head_n = sha256(JCS({prev, sha256})) where sha256 is the hex sha256 of line n's exact bytes and the newline is not hashed",
+    "time": "encoder PTS in the header time_base {num, den}; seconds = pts * num / den; no fps field",
+    "checkpoint": "optional qorcap.frame_bind {schema, n, head} on every checkpoint when bound, and qorcap.readers on seq 0 only ({schema, sha256} or {schema, state: unbound}); old checkpoints that omit both stay valid"
   },
   "submit_auth": {"scheme": "install-key-v1", "header": "X-Qor-Submit", "challenge": "/v1/submit/challenge",
                   "request_type": "qortime-submit/v1", "pow_prefix": "qortime-pow/v1|", "min_client": "0.3.10",
