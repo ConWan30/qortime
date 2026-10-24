@@ -1,0 +1,394 @@
+{
+  "schema": "qorcap-highlights/v0",
+  "tool": "qorcap-highlights 0.1.0",
+  "generated_ms": 1792809952529,
+  "match_id": "local-20261023-170123",
+  "params": {
+    "pre_s": 8.0,
+    "post_s": 4.0,
+    "burn": true,
+    "lock_source": "live_checkpoint"
+  },
+  "receipt": {
+    "file": "receipt.json",
+    "sha256": "69480a406d1621409cf03dc98eadcb9020c384a368d9fb0fcab63b61c9f12bb0",
+    "receipt_id": "local-20261023-170123",
+    "schema": "qor-receipt/v0",
+    "result": {
+      "home_score": 0,
+      "away_score": 10,
+      "quarter": 4,
+      "final_t_ms": 1792793925340,
+      "winner": "away",
+      "method": "end_menu_read",
+      "final_basis": "end_menu",
+      "final_confirmed": true
+    },
+    "claimed_trust_tier": "single-attested",
+    "referee": {
+      "key_id": "4fc237e4c6a24cf6",
+      "key_kind": "qortime-official-review"
+    },
+    "signed_by_referee": true,
+    "signed_by_players": [
+      "away"
+    ],
+    "note": "claimed_trust_tier is what the receipt says; the tier that counts is the one the QorTime verifier computes."
+  },
+  "video": {
+    "chain_head": "a7a9af1997c512c064078bbdc0b69deb6c0056ce56371f074bc3b0b9ee53e5c0",
+    "files": [
+      "video.mp4"
+    ]
+  },
+  "claims": "Each clip shows hash-chained recording bytes around a score change that QorCap committed into its checkpoint chain. Clips are re-encoded, so check the lock, the receipt hash and the source segment hashes, not the clip bytes against the video. Integrity and timing only: this does not show who was playing.",
+  "how_to_check": [
+    "sha256 each clip file and compare with clips[].sha256",
+    "sha256 receipt.json and compare with receipt.sha256; verify the receipt at https://conwan30.github.io/qortime/verify/",
+    "for each clip: lock.hash must appear in receipt.checkpoints when lock.in_receipt is true, and lock.frames_hash must equal sha256(JCS(lock.evidence))",
+    "source.segments[].sha256 must match manifest.jsonl, which `qorcap verify-bundle` checks against the video bytes",
+    "`qorcap highlights --check manifest.json --bundle BUNDLE` runs all of the above"
+  ],
+  "clips": [
+    {
+      "id": "hl00-q3-a3-h0",
+      "file": "hl00-q3-a3-h0.mp4",
+      "sha256": "46e732640b65a1cdbf8e4f593713cfecea9abb1e6910dad55f070045d19ec70b",
+      "bytes": 7099986,
+      "vtt": "hl00-q3-a3-h0.vtt",
+      "duration_s": 12.0,
+      "lock_at_s": 8.0,
+      "overlay": "burned+sidecar",
+      "overlay_text": [
+        "AWAY 3 - HOME 0   Q3 --:--",
+        "lock #306 255d214be88e  receipt 69480a406d16"
+      ],
+      "source": {
+        "file": "video.mp4",
+        "start_s": 587.359,
+        "end_s": 599.359,
+        "segments": [
+          {
+            "seq": 294,
+            "sha256": "8aa9148322ec8e10e27c6df7da98a5532cb4a5ab7f9c73a3702e18856262e9d0",
+            "chain_head": "03ad8c258334874df30074c9c37be37873a88b279a4ee2dcf1247eeed0ef3447",
+            "wall_ms": 1792793481816
+          },
+          {
+            "seq": 295,
+            "sha256": "f0bbc83381284a1c46bef49fc20172a3f68f9f20b25c912bcdd43fced3417615",
+            "chain_head": "02cae500b85ae5c6ac1ed2938b97a8bbf733aefaad6c3e4b315faf5b466e7685",
+            "wall_ms": 1792793483801
+          },
+          {
+            "seq": 296,
+            "sha256": "767f300e3c35c185ad0e2c10594347714e7b82641b0b3af60d98b760ba2ea757",
+            "chain_head": "a3d28ad58fac15a7bef852fc3590a5af93e78b7ffdb6e5bfc87623fb9289b22d",
+            "wall_ms": 1792793485811
+          },
+          {
+            "seq": 297,
+            "sha256": "352f49cedcef8d57db67505b79ec554d62a2af3844c55b807caf39aa13d4b933",
+            "chain_head": "9be621970b5f5f4fde4372ad6e8412f09020c5005e0a3bbbecf5db7dabfb5e07",
+            "wall_ms": 1792793487806
+          },
+          {
+            "seq": 298,
+            "sha256": "ac46b5e4d4ae59842b49aada638173656ba4a42cb68321f11c8bbe475204923e",
+            "chain_head": "1d3fee7c993e073f42673e98ee3480e4c5d9410419eb5e67164fdbd7ce39023c",
+            "wall_ms": 1792793489816
+          },
+          {
+            "seq": 299,
+            "sha256": "99b7bbd9b0af8c5d00d64b27fb268f5b8bb16f931f7982ddf4b6bd0ba4aeabfa",
+            "chain_head": "ab157d564b9a3650cd6f7fd363fd942d4baac04376e0062a201d533728c6462d",
+            "wall_ms": 1792793491799
+          },
+          {
+            "seq": 300,
+            "sha256": "3df557e3431d70b061def6f31f4e5360f3b9099277dab929947aa1edbf432d8e",
+            "chain_head": "a26f909fc19dcbb75e6fd6868d4fb8ac0f56eddb731dca56c5082af0c53c87e2",
+            "wall_ms": 1792793493802
+          }
+        ]
+      },
+      "lock": {
+        "source": "live_checkpoint",
+        "seq": 306,
+        "t_ms": 1792793488090,
+        "hash": "255d214be88e3e98906ecf2ccb37530268a8d8a5fc91ec37183e62947f1d80b3",
+        "prev": "e7b22005abf3c3163c476a5448104bb7b66b4d1d1c9cf4c37134ffe70e74e02b",
+        "frames_hash": "945b7f8beb4ba0f8234ca24e6e10b88070b62404d713d4ce0ad31f163efc3b97",
+        "frames_hash_matches_evidence": true,
+        "in_receipt": true,
+        "trigger": "score_change",
+        "score_before": {
+          "away": 0,
+          "home": 0
+        },
+        "score_after": {
+          "away": 3,
+          "home": 0
+        },
+        "quarter": 3,
+        "clock_s": null,
+        "segment_seq": 298,
+        "segment_hash": "352f49cedcef8d57db67505b79ec554d62a2af3844c55b807caf39aa13d4b933",
+        "chain_head": "9be621970b5f5f4fde4372ad6e8412f09020c5005e0a3bbbecf5db7dabfb5e07",
+        "delta": {
+          "away": 3,
+          "home": 0
+        },
+        "play": "field goal",
+        "evidence": {
+          "trigger": "score_change",
+          "segment_seq": 298,
+          "segment_hash": "352f49cedcef8d57db67505b79ec554d62a2af3844c55b807caf39aa13d4b933",
+          "chain_head": "9be621970b5f5f4fde4372ad6e8412f09020c5005e0a3bbbecf5db7dabfb5e07",
+          "score": {
+            "home": 0,
+            "away": 3,
+            "quarter": 3,
+            "clock_s": null,
+            "clock_red": false
+          },
+          "mono_ms": 597121,
+          "match_id": "local-20261023-170123",
+          "role": "away",
+          "prev_score": {
+            "home": 0,
+            "away": 0,
+            "quarter": 3
+          }
+        }
+      }
+    },
+    {
+      "id": "hl01-q4-a9-h0",
+      "file": "hl01-q4-a9-h0.mp4",
+      "sha256": "7355a9fb5c058aa8a546cef920c034706dd42f541eb11bb67b7e8da7d18a8680",
+      "bytes": 8498111,
+      "vtt": "hl01-q4-a9-h0.vtt",
+      "duration_s": 12.0,
+      "lock_at_s": 8.0,
+      "overlay": "burned+sidecar",
+      "overlay_text": [
+        "AWAY 9 - HOME 0   Q4 --:--",
+        "lock #459 b89d944536b6  receipt 69480a406d16"
+      ],
+      "source": {
+        "file": "video.mp4",
+        "start_s": 888.648,
+        "end_s": 900.648,
+        "segments": [
+          {
+            "seq": 444,
+            "sha256": "da62c0a25a00c4c5b2118d6884256cc1daae22fcaec830d60fcfa98b29ebe0e5",
+            "chain_head": "98ade2e27c54ba712378a8b3962b3cc834181af1682ef4645ffe2e53ed4614cc",
+            "wall_ms": 1792793781849
+          },
+          {
+            "seq": 445,
+            "sha256": "478e9c1e994d93e48a813f6b77971b67df05b1c8517a87d446b175833030f662",
+            "chain_head": "d207c63d40aa3c73c535b87531341e742cf761f0c0c688f313cc5ca81aad3266",
+            "wall_ms": 1792793783845
+          },
+          {
+            "seq": 446,
+            "sha256": "5cf1bad241c55ab0dabc60603a42e1c9c7d8e643848f798e1b38ce3a669deaed",
+            "chain_head": "40f1811a5001a8a12ad17cc696f1100dafca31ddebbb476ef0b7de3a0a13ed21",
+            "wall_ms": 1792793785851
+          },
+          {
+            "seq": 447,
+            "sha256": "59c112bafe34b9602ed398c25e2216b1a5f0a86a81eee8ed4e6987b971f93447",
+            "chain_head": "3671797e7de58f22a8917c1942f6db51fd0b5fe002de70b881c40124cf08bc9d",
+            "wall_ms": 1792793787836
+          },
+          {
+            "seq": 448,
+            "sha256": "f3677ece68fda51aefda8ff5c7b1bfdf086878e2cc0fd2e2e4048540b09c0988",
+            "chain_head": "a53678955311894e9d061e11d9b552912c756333d5e9f0bf784023fea8a64134",
+            "wall_ms": 1792793789845
+          },
+          {
+            "seq": 449,
+            "sha256": "a858600fd2ca0b1fd1e9155c6c19e78708e65036f0a7d9a44631c83c5b9a9703",
+            "chain_head": "e0d7a2b267c81278877fed34020a772c5f3a0a326c46eb3983c29a5b1cff82c0",
+            "wall_ms": 1792793791836
+          },
+          {
+            "seq": 450,
+            "sha256": "66e3d7492eb5cc78050e9261d0bbbc62c83a2f93a52617d6d1c0c94ef0883768",
+            "chain_head": "6fc3018ce50376619ba1a2a7bbfd26e7a78e6988833a670b7f356015b07a218c",
+            "wall_ms": 1792793793843
+          }
+        ]
+      },
+      "lock": {
+        "source": "live_checkpoint",
+        "seq": 459,
+        "t_ms": 1792793788788,
+        "hash": "b89d944536b6293156ee6fa87e4c34f93ab531bd7be62e3cf016c5d99a6c7a7f",
+        "prev": "2618c996cde277a34a2e7b4d2421affb01143ec62eac391ed11f1b00e520f3ee",
+        "frames_hash": "7df5274f9efd69fa7eac05a7b13c7f33671932127f84837d456cb302befff659",
+        "frames_hash_matches_evidence": true,
+        "in_receipt": true,
+        "trigger": "score_change",
+        "score_before": {
+          "away": 3,
+          "home": 0
+        },
+        "score_after": {
+          "away": 9,
+          "home": 0
+        },
+        "quarter": 4,
+        "clock_s": null,
+        "segment_seq": 448,
+        "segment_hash": "59c112bafe34b9602ed398c25e2216b1a5f0a86a81eee8ed4e6987b971f93447",
+        "chain_head": "3671797e7de58f22a8917c1942f6db51fd0b5fe002de70b881c40124cf08bc9d",
+        "delta": {
+          "away": 6,
+          "home": 0
+        },
+        "play": "touchdown",
+        "evidence": {
+          "trigger": "score_change",
+          "segment_seq": 448,
+          "segment_hash": "59c112bafe34b9602ed398c25e2216b1a5f0a86a81eee8ed4e6987b971f93447",
+          "chain_head": "3671797e7de58f22a8917c1942f6db51fd0b5fe002de70b881c40124cf08bc9d",
+          "score": {
+            "home": 0,
+            "away": 9,
+            "quarter": 4,
+            "clock_s": null,
+            "clock_red": false
+          },
+          "mono_ms": 897819,
+          "match_id": "local-20261023-170123",
+          "role": "away",
+          "prev_score": {
+            "home": 0,
+            "away": 3,
+            "quarter": 4
+          }
+        }
+      }
+    },
+    {
+      "id": "hl02-q4-a10-h0",
+      "file": "hl02-q4-a10-h0.mp4",
+      "sha256": "576e2b95c77d81c5715afa8e80761c4d4aa0486d3705cdf1f5eed2a149a9d14b",
+      "bytes": 6553593,
+      "vtt": "hl02-q4-a10-h0.vtt",
+      "duration_s": 12.0,
+      "lock_at_s": 8.0,
+      "overlay": "burned+sidecar",
+      "overlay_text": [
+        "AWAY 10 - HOME 0   Q4 --:--",
+        "lock #467 b72fa5714901  receipt 69480a406d16"
+      ],
+      "source": {
+        "file": "video.mp4",
+        "start_s": 903.74,
+        "end_s": 915.74,
+        "segments": [
+          {
+            "seq": 451,
+            "sha256": "2fdeae8fea308cb147dd6da5963f3980192b938627d9b81427f39c2f03b74b20",
+            "chain_head": "e45413cda8efc6267fe44e7ce14b92b8066be2ad50ccabdbb4ec4d8994e216c4",
+            "wall_ms": 1792793795840
+          },
+          {
+            "seq": 452,
+            "sha256": "4012e5729a2d7260507f574876c841d8740b42475820e13625cc770cad362a53",
+            "chain_head": "8f594fcc7c8f9918fffa72828b3e751f006eea08a6f7fdc83f179ab38194c1ef",
+            "wall_ms": 1792793797845
+          },
+          {
+            "seq": 453,
+            "sha256": "9cd5af45e5046041d76c86bd3705c46ddef2b512d94fee0e1d29f0e220e7877b",
+            "chain_head": "7f3874c9a85ca05afc05840e2afeb3d235d0ed8ce8b8b6561b9a8b57f993e7dc",
+            "wall_ms": 1792793799836
+          },
+          {
+            "seq": 454,
+            "sha256": "e2ac75f3f30916859b64670997005dea54e122785e15c00c21094b96d9edf384",
+            "chain_head": "660f7c2dea6cc5a552ee0aee9f5cb060db0072d6304886418597ce4f70f0e4e9",
+            "wall_ms": 1792793801844
+          },
+          {
+            "seq": 455,
+            "sha256": "1e62cf33ec09ccc43731f30540348c610e38e6146cc417ca9c1ba40c8bc434c2",
+            "chain_head": "38861fd3f07f93f4906e39c38bdcce069fb6977448f763119d34e8d5280bdeff",
+            "wall_ms": 1792793803843
+          },
+          {
+            "seq": 456,
+            "sha256": "19225039dff630515df8261cb938fd8f0818f6948dbf70fedf67c1c6d3051705",
+            "chain_head": "3c895666a53b8cf17746188d1831e42257b59f4969833f770a95c2a1b67a1088",
+            "wall_ms": 1792793805837
+          },
+          {
+            "seq": 457,
+            "sha256": "63a6a0a671dbb9b27cd50785b9ced2718377adeb3ce6ed5ba39ee2718a441b4b",
+            "chain_head": "fe926b45d3fe941bbb863a8b977d38967ba87c41504eb31addfcd76703acdf98",
+            "wall_ms": 1792793807846
+          }
+        ]
+      },
+      "lock": {
+        "source": "live_checkpoint",
+        "seq": 467,
+        "t_ms": 1792793803653,
+        "hash": "b72fa5714901f58bd2ecd74c073487b4811072e288e4cb34d5c90d506fe0889b",
+        "prev": "ac2cbf4757591ef5f3bd6a149f87ca5de1cffdfe3b9dfd8635336d57cba5d1b1",
+        "frames_hash": "7c239fb4fc46452847c65acc24ea2581f24b13c0f3cfad8af3c9ef15792ab18a",
+        "frames_hash_matches_evidence": true,
+        "in_receipt": true,
+        "trigger": "score_change",
+        "score_before": {
+          "away": 9,
+          "home": 0
+        },
+        "score_after": {
+          "away": 10,
+          "home": 0
+        },
+        "quarter": 4,
+        "clock_s": null,
+        "segment_seq": 455,
+        "segment_hash": "e2ac75f3f30916859b64670997005dea54e122785e15c00c21094b96d9edf384",
+        "chain_head": "660f7c2dea6cc5a552ee0aee9f5cb060db0072d6304886418597ce4f70f0e4e9",
+        "delta": {
+          "away": 1,
+          "home": 0
+        },
+        "play": "extra point",
+        "evidence": {
+          "trigger": "score_change",
+          "segment_seq": 455,
+          "segment_hash": "e2ac75f3f30916859b64670997005dea54e122785e15c00c21094b96d9edf384",
+          "chain_head": "660f7c2dea6cc5a552ee0aee9f5cb060db0072d6304886418597ce4f70f0e4e9",
+          "score": {
+            "home": 0,
+            "away": 10,
+            "quarter": 4,
+            "clock_s": null,
+            "clock_red": false
+          },
+          "mono_ms": 912684,
+          "match_id": "local-20261023-170123",
+          "role": "away",
+          "prev_score": {
+            "home": 0,
+            "away": 9,
+            "quarter": 4
+          }
+        }
+      }
+    }
+  ],
+  "skipped": []
+}
