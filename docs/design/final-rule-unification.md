@@ -586,7 +586,7 @@ Issue 94's shape, under this rule, with a synthetic per-frame read: end menu awa
 
 Both sides call `qor_receipt.final_rule.decide`. QorCap already imports `qor_receipt`. This is not `qor_receipt.referee_ai.referee.decide`, which turns integrity errors into a verdict (`referee.py:194`).
 
-Removing the clock gate changes which frames count as end screens. A pixel match that `_accept_final_screen` used to reject for the clock (`qorcap_reader.py:999-1010`) can now be an end screen, and a `final_screen` timeline row from that match now feeds the cutoff. The cutoff is re-derived here. It is not `_end_screen_earliest` left over after `_post_agreed` clears it.
+Removing the clock gate changes which frames count as end screens. A pixel match that `_accept_final_screen` used to reject for the clock (`qorcap_reader.py:999-1010`) can now be an end screen, and a `final_screen` timeline row from that match now feeds the cutoff. The cutoff is re-derived here, per episode. It is not the first end screen of the capture.
 
 ```text
 decide(frames, locks, evidence, options_presses_ms) -> Decision
@@ -599,17 +599,26 @@ decide(frames, locks, evidence, options_presses_ms) -> Decision
 
 End-screen timestamps are derived inside `decide`. They are every frame `decide` still labels an end menu: `ok` true, `pixel` `end_menu_6`, and the OPTIONS hold does not label the frame pause. A 6-item frame the hold labels pause, and a 6-item frame whose hold was not measured, are not end screens. `picture_since_ms` on a frame that remains an end menu is included. A caller-supplied list that omits a later readable frame is not the cutoff. The frame is.
 
-`Decision` carries `rule` = `final-rule/v1`, `cutoff_ms`, `evidence_counted`, and `posted_score`. `cutoff_ms` is not a receipt field.
+`Decision` carries `rule` = `final-rule/v1`, `cutoff_ms`, `episode_e0_ms`, `evidence_counted`, and `posted_score`. `cutoff_ms` is not a receipt field.
 
-The evidence cutoff does not grant or withhold `final_confirmed`. Its only consumer is the sidecar writer: `tail_final_check`, offline `finalize`, and `reread_final` copy `evidence_counted` onto `final.rule.json`. The publisher does not render that list. No confirm path reads it. A boundary bug in the list changes no verdict.
+The evidence cutoff does not grant or withhold `final_confirmed`. Its only consumer is the sidecar writer: `tail_final_check`, offline `finalize`, and `reread_final` copy `evidence_counted`, `cutoff_ms`, and `episode_e0_ms` onto `final.rule.json`. The publisher does not render that list. No confirm path reads it. A boundary bug in the list changes no verdict.
+
+Today the first end-screen time can outlive the picture it came from. `_end_screen_earliest` is the first pixel match (`qorcap_reader.py:1028-1029` and `:1368-1369`). A non-matching frame clears `_pixel_match_since` only (`:1042-1043`). The comment at `:919-920` keeps that earliest match until the next scorebug read, so a one-frame gap cannot move the cutoff forward. `_post_agreed` sets the pointer to null (`:1343-1344`). `end_screen_evidence_cutoff_ms` (`:1710-1733`) then takes the earliest of the menu frame, that pointer, and every `final_screen` row on the timeline. Clearing the pointer does not remove those rows. An early pause or flash stays the cutoff for the rest of the match. A one-step that needed input, a haptic, or a clip after that old time fails the filter at `:1703-1704` and stays unconfirmed. That is an extra PARTIAL.
+
+v1 keeps the one-frame gap inside an episode. It does not keep the whole-capture minimum.
+
+An episode opens at an end screen. It stays open across later end screens of the same absence, including a one-frame hole and an `ok: false` frame. The confirm streak can reset. `E0` does not move forward. The episode closes when an agreed lock has a running clock and `t_ms` strictly after an end screen in that episode. A running clock is raw `clock_s` > 0. `decide` reads that raw value, not a clock copied from an earlier row. A lock with `clock_s` 0 or null does not close the episode. A lock at the same timestamp as the end screen does not close it. End screens at or before the closing lock are the previous episode.
+
+`episode_e0_ms` is the earliest end screen of the episode that is still open, the one after the latest close. When the close has no end screen after it, `episode_e0_ms` is null and `cutoff_ms` is null. The cutoff does not fall back to the previous episode's first screen.
 
 Cutoff, computed by `decide`:
 
-* Let `E0` be the earliest derived end-screen timestamp. Let `S` be the latest lock's `t_ms`. When `locks` is empty there is no `S`, and `cutoff_ms` is `E0`.
-* When `S` is present, the cutoff is the earliest end screen strictly after `S`. When no end screen is strictly after `S`, the cutoff falls back to `E0`.
-* When any end screen exists, `cutoff_ms` is that integer. It does not come back as null. With no end screen, `cutoff_ms` is null. Today's `end_screen_evidence_cutoff_ms` (`qorcap_reader.py:1710-1733`) returns null whenever its inputs are missing, and the filter then skips (`:1703`), so late evidence counts. v1 uses the fallback instead of that skip.
-* A row is counted only when `t_ms < cutoff_ms`. `t_ms >= cutoff_ms` is not counted. The comparison is inclusive of the equal timestamp. The code already uses `>=` at `:1704`. The contract keeps that operator.
-* A row with `E0 <= t_ms <= S` is never counted, including when that timestamp is below `cutoff_ms`. That interval is the first end screen through the latest scorebug read, both ends included.
+* Let `E0` be `episode_e0_ms`. Let `S` be the latest lock's `t_ms`. When `locks` is empty there is no `S`, and `cutoff_ms` is `E0`.
+* When the open episode has an `E0` and `S` is present, the cutoff is the earliest end screen of that episode strictly after `S`. When none of that episode's screens are strictly after `S`, the cutoff falls back to that episode's `E0`, not to an earlier episode.
+* When the open episode has no end screen, `cutoff_ms` is null. Evidence after the closing lock is not dropped because an older screen exists. When the capture has no end screen at all, `cutoff_ms` is null and no evidence row is counted. Today's `end_screen_evidence_cutoff_ms` (`qorcap_reader.py:1710-1733`) returns null whenever its inputs are missing, and the filter then skips (`:1703`), so late evidence counts. v1 does not use that skip, and it does not fill the null with a previous episode's first screen.
+* When `cutoff_ms` is an integer, a row is counted only when `t_ms < cutoff_ms`. `t_ms >= cutoff_ms` is not counted. The comparison is inclusive of the equal timestamp. The code already uses `>=` at `:1704`. The contract keeps that operator.
+* A row with `E0 <= t_ms <= S` is never counted, when both exist, including when that timestamp is below `cutoff_ms`. That interval is the open episode's first end screen through the latest scorebug read, both ends included.
+* A closed episode adds its own band: its first end screen through its closing lock, both ends included. A row in that band does not count. A row before every episode counts when it is also below the open cutoff.
 
 `ReaderCore._end_menu`, `tail_final_check`, offline `finalize`, and `reread_final` all call it. `end_menu_fallback` stops being a second rule. The rejection string is an output of a failed gate, not a switch that selects a looser rule.
 
@@ -652,8 +661,8 @@ Plan only. This change does not edit these files.
 | `qor_receipt/review/engine.py` `_final_check` `:799-828` | A confirmed menu is `pass` when the claim equals the menu score, including a stall and a multi-play delta. A failed gate with a monotone lock is `partial` at that prefix. A note does not flip `pass` to `partial`. Score mismatch stays `fail` (`:807-809`). |
 | `qor_receipt/review/engine.py` `_result_from_reread` `:831-847` | Write `decide`'s boolean. The `:840` test `is not False` becomes that boolean. Missing is false. |
 | `qor_receipt/referee_ai/integrity.py` `check_final` `:189-202` | An adopted end menu more than one legal step past the last scorebug is not an error. `:201` is that error today, and `referee.py:184` and `:189` both append it. Leaving it in place would FAIL a multi-play menu and downgrade the verdict. `decide` does not adopt a menu below any lock. An unconfirmed backwards lock posts the monotone prefix, and that prefix is the `last_state` `check_final` sees, so the lower row is not a mismatch. A backward menu posted anyway still errors. |
-| `sidecar/qorcap_reader.py` `end_screen_evidence_cutoff_ms` `:1710-1733`, filter `:1703-1704` | Replaced by `decide`'s cutoff. Null no longer means "all evidence counts". Fallback is the earliest end screen. The test stays `t_ms >= cutoff_ms`. Evidence from the first end screen through the latest scorebug read is out. | 
-| `sidecar/qorcap_reader.py` `_post_agreed` `:1343-1344` | Still clears the running `_end_screen_earliest` pointer. Also clears the menu streak and the agreed score. `decide` re-derives the cutoff from `end_screens`, so a null pointer is not a null cutoff. | 
+| `sidecar/qorcap_reader.py` `end_screen_evidence_cutoff_ms` `:1710-1733`, filter `:1703-1704` | Replaced by `decide`'s cutoff. The minimum is no longer the first end screen of the whole timeline. A running-clock lock after a screen closes that episode. The cutoff does not fall back to an earlier episode. The test stays `t_ms >= cutoff_ms`. | 
+| `sidecar/qorcap_reader.py` `_post_agreed` `:1343-1344` | Still clears the running `_end_screen_earliest` pointer. Also clears the menu streak and the agreed score. Clearing the pointer does not remove `final_screen` rows, so it is not the episode rule. `decide` derives the episode from locks and end screens. | 
 | `qor_receipt/match_index/build.py`, `viewer_template.html` `paintFinal`, `publish.py` `_card` | Read `final.rule.json` and show `note` as in §4.5. Gold stays. |
 
 `post_final_tail` is unchanged.
@@ -1447,10 +1456,11 @@ A hash mismatch fails the test. The two pause cases also have pixel fixtures bes
         "method": "last_scorebug_read_unconfirmed",
         "review": "partial",
         "note": null,
-        "cutoff_ms": 5000,
-        "final_basis": "absent"
+        "cutoff_ms": null,
+        "final_basis": "absent",
+        "episode_e0_ms": null
       },
-      "illustrates": "A lock at 9000 is after the menu frames. decide reads later live play from that lock. Those frames are not fresh."
+      "illustrates": "A lock at 9000 is after the menu frames. decide reads later live play from that lock. Those frames are not fresh. The lock's clock is running, so it closes the end-screen episode. No end screen follows, and the cutoff does not fall back to 5000."
     },
     {
       "id": "score-went-down",
@@ -1811,7 +1821,7 @@ A hash mismatch fails the test. The two pause cases also have pixel fixtures bes
           "away": 10,
           "home": 7,
           "quarter": 4,
-          "clock_s": 11
+          "clock_s": 0
         }
       ],
       "frames": [
@@ -1869,7 +1879,8 @@ A hash mismatch fails the test. The two pause cases also have pixel fixtures bes
         "evidence_counts": [
           "before-first-screen"
         ]
-      }
+      },
+      "illustrates": "The later lock is 0:00, so it does not resume live play. The episode stays open. No end screen is after the lock, so the cutoff falls back to 2000, the first screen of this episode. The menu frames are not fresh."
     },
     {
       "id": "qorcap-98-touchdown-lock-same-ts",
@@ -2321,7 +2332,9 @@ A hash mismatch fails the test. The two pause cases also have pixel fixtures bes
           "away": 3,
           "home": 0,
           "t_ms": 12000
-        }
+        },
+        "cutoff_ms": null,
+        "episode_e0_ms": null
       }
     },
     {
@@ -2649,6 +2662,121 @@ A hash mismatch fails the test. The two pause cases also have pixel fixtures bes
         "note": null,
         "cutoff_ms": null
       }
+    },
+    {
+      "id": "early-pause-then-final-menu",
+      "synthetic": true,
+      "screen": "end_menu",
+      "options_hold_ms": null,
+      "illustrates": "A pause-like flash at 4000 is one end-screen frame, not a stable read. Live play resumes at 15000 with a running clock, which closes that episode. The real menu is at 22000. Evidence after the resume counts. Evidence from the flash through the resume lock does not. A cutoff stuck at 4000 would drop the later evidence and is the whole-capture bug.",
+      "locks": [
+        {
+          "t_ms": 1000,
+          "away": 6,
+          "home": 3,
+          "quarter": 2,
+          "clock_s": 120
+        },
+        {
+          "t_ms": 15000,
+          "away": 13,
+          "home": 6,
+          "quarter": 4,
+          "clock_s": 35
+        },
+        {
+          "t_ms": 18000,
+          "away": 13,
+          "home": 6,
+          "quarter": 4,
+          "clock_s": 0
+        }
+      ],
+      "frames": [
+        {
+          "t_ms": 4000,
+          "away": 6,
+          "home": 3,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 22000,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 22500,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 23000,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        }
+      ],
+      "evidence": [
+        {
+          "id": "before-pause",
+          "t_ms": 2000,
+          "kind": "input_activity"
+        },
+        {
+          "id": "at-pause",
+          "t_ms": 4000,
+          "kind": "input_activity"
+        },
+        {
+          "id": "between-pause-and-resume",
+          "t_ms": 8000,
+          "kind": "haptic"
+        },
+        {
+          "id": "at-resume",
+          "t_ms": 15000,
+          "kind": "input_activity"
+        },
+        {
+          "id": "after-resume-before-zero",
+          "t_ms": 16000,
+          "kind": "input_activity"
+        },
+        {
+          "id": "after-zero-before-menu",
+          "t_ms": 19000,
+          "kind": "haptic"
+        },
+        {
+          "id": "at-menu",
+          "t_ms": 22000,
+          "kind": "input_activity"
+        }
+      ],
+      "expect": {
+        "adopt_menu": true,
+        "final_confirmed": true,
+        "away": 13,
+        "home": 6,
+        "method": "end_menu_read",
+        "final_basis": "end_menu",
+        "review": "pass",
+        "note": null,
+        "downgrades_verdict": false,
+        "cutoff_ms": 22000,
+        "episode_e0_ms": 22000,
+        "evidence_counts": [
+          "before-pause",
+          "after-resume-before-zero",
+          "after-zero-before-menu"
+        ]
+      }
     }
   ]
 }
@@ -2663,11 +2791,11 @@ The stall case's three frames are the gate, at confidence 0.94 on invented times
 
 `qorcap-98-touchdown-lock-same-ts` is the qorcap#98 shape with synthetic scores away 13, home 6. The touchdown lock and the menu frame share `t_ms` 8000. Evidence is at 8000 and 8250. No end screen is strictly after 8000, so the cutoff falls back to 8000. Neither evidence row counts. The frame is not fresh. The case does not confirm. The posted score is the lock, 13–6, and `final_reread` is partial.
 
-`later-live-play` has a lock at `t_ms` 9000 after the menu frames. `decide` reads that from `locks`. There is no `later_live_play` field. The frames are not fresh. The posted score is 13–6. `later-contradicting-menu` puts the second score in `frames` (17–7 after 10–7). Neither menu is posted. The receipt score is the lock. `no-lock-contradicting-menus` has no lock and two menus that disagree: posted score null, neither menu adopted, `method` `last_scorebug_read_unconfirmed`, `final_basis` absent, `final_confirmed` false, `final_reread` fail.
+`later-live-play` has a lock at `t_ms` 9000 after the menu frames, with a running clock. `decide` reads that from `locks`. There is no `later_live_play` field. The frames are not fresh. The posted score is 13–6. That lock closes the end-screen episode. No end screen follows, and the cutoff does not fall back to 5000. `later-contradicting-menu` puts the second score in `frames` (17–7 after 10–7). Neither menu is posted. The receipt score is the lock. `no-lock-contradicting-menus` has no lock and two menus that disagree: posted score null, neither menu adopted, `method` `last_scorebug_read_unconfirmed`, `final_basis` absent, `final_confirmed` false, `final_reread` fail.
 
 `replay-lock-lower-after-menu` posts 14–7, the last row of the monotone prefix, and does not post the later 3–0 lock. `menu-below-an-earlier-lock` posts 21–0. `tie-menu-stays-unconfirmed` and `final-of-1-stays-unconfirmed` stay unconfirmed (§4.7). `null-clock-long-gap` confirms 6–3 from a null raw `clock_s` and a 19000 ms wall gap. The stall note is on the sidecar and `downgrades_verdict` is false. `referee-cannot-measure-hold` has `options_presses_ms` null and does not pass.
 
-`scorebug-return-resets-agreed-score` confirms 10–7 from the frames after the lock and drops the 3–0 run. `cutoff-dead-zone-and-inclusive-equal` keeps evidence before the first end screen and evidence strictly between the scorebug and the fresh menu, and drops every timestamp from the first end screen through the scorebug, plus every timestamp `>= cutoff_ms`. `cutoff-falls-back-to-earliest-end-screen` has no end screen after the lock, so `cutoff_ms` is 2000 and the menu frames before the lock do not confirm. `pause-options-short-hold` carries `pixel` `end_menu_6`, `picture_since_ms` 1000, and `options_presses_ms` `[800]`. The hold at the first frame is 4000 ms. `decide` labels those frames pause.
+`scorebug-return-resets-agreed-score` confirms 10–7 from the frames after the lock and drops the 3–0 run. `cutoff-dead-zone-and-inclusive-equal` keeps evidence before the first end screen and evidence strictly between the scorebug and the fresh menu, and drops every timestamp from the first end screen through the scorebug, plus every timestamp `>= cutoff_ms`. That lock is 0:00, so the early screen and the final menu are one episode. `cutoff-falls-back-to-earliest-end-screen` is also a 0:00 lock, with no end screen after it, so `cutoff_ms` stays 2000 and the menu frames before the lock do not confirm. `early-pause-then-final-menu` is a one-frame flash at 4000, then a running-clock lock at 15000, then a real menu at 22000. The flash's episode closes at 15000. `episode_e0_ms` is 22000. Evidence at 16000 and 19000 counts. Evidence from 4000 through 15000 does not. A cutoff stuck at 4000 would drop the later rows. `pause-options-short-hold` carries `pixel` `end_menu_6`, `picture_since_ms` 1000, and `options_presses_ms` `[800]`. The hold at the first frame is 4000 ms. `decide` labels those frames pause.
 
 ## 8. Schema
 

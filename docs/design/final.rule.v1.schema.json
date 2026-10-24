@@ -71,6 +71,10 @@
     "note": {"type": ["string", "null"]},
     "downgrades_verdict": {"const": false},
     "cutoff_ms": {"type": ["integer", "null"]},
+    "episode_e0_ms": {
+      "type": ["integer", "null"],
+      "description": "First end screen of the open episode. Null when a running-clock scorebug closed the previous episode and no new end screen has opened. Not the first end screen of the capture."
+    },
     "evidence_counted": {
       "type": "array",
       "description": "Audit list. The only consumer of the evidence cutoff. The publisher does not render it. It does not change final_confirmed.",
