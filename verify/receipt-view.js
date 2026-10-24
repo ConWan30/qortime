@@ -114,8 +114,8 @@ const PLAIN = {
   human_score_missing: "No human-likeness score.",
   alignment_not_above_chance: "Controller timing is not clearly above chance against the video.",
   alignment_missing: "No controller-to-video alignment.",
-  no_haptic_events: "No rumble events were recorded.",
-  haptic_low_confidence_only: "Rumble events were recorded, but none with high confidence.",
+  no_haptic_events: "No haptic events were recorded.",
+  haptic_low_confidence_only: "Haptic events were recorded, but none with high confidence.",
   inputs_sha256_missing: "No hash of the controller log.",
 };
 const DEVICE_NOTE = {
