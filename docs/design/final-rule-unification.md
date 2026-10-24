@@ -447,18 +447,33 @@ OPTIONS is the second half, for a picture the pixel test accepts. DualSense OPTI
 
 `_end_context` (`:970-975`) and `_accept_final_screen` (`:999-1010`) currently require a finished clock before a pixel match may be labeled `final_screen`. They stop being a precondition for adopting the menu. The docstring at `:833` says the detector is only used behind the Q4-low-clock gate so a halftime menu cannot end a game. That sentence goes. The geometry and the OPTIONS hold are the discriminator.
 
-Residual, accepted with the decision: a halftime screen that is pixel-identical to the six-item end menu, and was not opened by OPTIONS, passes this discriminator. v1 does not put a clock gate behind it.
+The discriminator runs inside `decide`, once per frame. A recording can show a pause, a halftime menu, and the end menu at different times. A single `screen` label for the whole call is not an input.
+
+Each frame carries `pixel` (`end_menu_6`, `pause_8`, `faded_field`, `replay`, or `other`) and `picture_since_ms` (the first frame of the current dark picture). `options_presses_ms` is the list of OPTIONS rising edges, or null when that list was not measured. OPTIONS is DualSense button bit 9 (`OPTIONS_BIT = 1 << 9`, `qorcap_reader.py:55-63`; the same bit is `BUTTON_BITS` name `OPTIONS` bit 9 in `qor_receipt/review/bundle.py:306-307`). A press time is wall milliseconds: `inputs.jsonl` header `wall_anchor_ms` plus `t_us // 1000` on a rising edge of field `b` (`bundle.py:316-329`). The picture was opened by OPTIONS when `picture_since_ms` is within `[-500, OPTIONS_MENU_LEAD_MS]` of a press (`OPTIONS_MENU_LEAD_MS = 4000`) and the last scorebug was still up at that press (`qorcap_reader.py:977-997`). The hold is `t_ms - picture_since_ms`. A hold under `OPTIONS_COINCIDENT_HOLD_MS` (12000) labels the frame `pause`.
+
+The referee re-read today does not pass those presses. `reread_final` (`media.py:179-191`) feeds frames to a fresh `ReaderCore` and does not call `note_options_from_inputs`. The bundle does contain `inputs.jsonl` (`bundle.py` `META_FILES`). v1 requires the re-read to load the same rising edges the client tail loads (`qorcap_match.py` `note_options_from_inputs` at the tail check). The tail window is 240 s at 2 Hz (`policy.py` `TAIL_MS`, `engine.py` `TAIL_HZ`). A tail can start after the dark picture is already up, so `picture_since_ms` can fall outside the decoded frames.
+
+When `options_presses_ms` is null, or a 6-item frame has no `picture_since_ms`, the referee cannot measure the hold. That frame is not an end menu. The final stays unconfirmed. Official review is `partial` when a monotone lock exists, and `fail` when it does not. It is not `pass`.
+
+Accepted risks, all of which need the recording to end on the picture. A later agreed scorebug read resets the streak and the agreed score, so none of these survive a scorebug that returns:
+
+* A halftime screen that is pixel-identical to the six-item end menu, and was not opened by OPTIONS, passes the geometry. v1 does not put a clock gate behind it.
+* Three forged end-menu frames over at least 400 ms at the very end of the recording, with confidence at least 0.90 and the same score, confirm. That is the case the clock-gate comment at `qorcap_reader.py:1518-1519` refused.
+* A 6-item Practice / Play Now pause held at least 12 s, with the recording stopped on that picture (`match-20261020-171032`), confirms. The short hold still refuses it. The long hold at the end of the file does not.
 
 ### 4.3 Stably read
 
-A menu is stably read when `decide` has 3 fresh menu frames. Fresh means `t_ms` strictly greater than the latest agreed scorebug read. A frame at that same timestamp is not fresh. With no scorebug read, every menu frame is fresh.
+A menu is stably read when `decide` has 3 fresh menu frames. Fresh means `t_ms` strictly greater than the latest agreed scorebug read. Latest means the maximum `t_ms` among locks, not the last row in list order. A frame at that same timestamp is not fresh. With no scorebug read, every menu frame is fresh.
 
-On those fresh frames, all of these hold:
+`decide` requires each of `frames` and `locks` to be listed in non-decreasing `t_ms`. A row with `t_ms` less than the previous row fails the decision closed: the menu is not adopted. A duplicate `t_ms` stays in the list and does not add a distinct instant or any span. The run needs 3 distinct, strictly increasing timestamps. Rows `5000, 5000, 5400` are two instants. Latest lock is the maximum `t_ms`. On a non-decreasing list that is the last lock. An `ok: false` frame resets the streak: the frames before it are dropped, and the frames after it must form a new run. A readable frame with confidence from 0.70 through 0.89 resets the streak the same way. The bad frame is not bridged. Two frames after the reset do not confirm. Three fresh frames after the reset can. A backwards timestamp is the case that fails the whole decision closed.
 
-* the run length is at least 3
-* `until_ms - t_ms` ≥ 400
+On the fresh, strictly increasing frames, all of these hold:
+
+* at least 3 distinct timestamps
+* the last timestamp minus the first is at least 400 ms
 * every frame has `conf` ≥ 0.90
 * every frame agrees on `(away, home)`
+* every frame's `pixel` is `end_menu_6` and the OPTIONS hold does not label it `pause`
 * the object carries `min_conf`, the minimum across the run
 
 `EndMenuAgreement` (`sidecar/qorcap_endmenu.py:231-261`) already requires 3 consecutive readable frames and a span of at least 400 ms, and it already clears the run when the score changes or a frame is unreadable. It does not know about the scorebug. `offer` stores `conf` from the frame that first completes the run (`:251-256`) and later frames update only `until_ms` and `frames` (`:259-260`). A readable frame under 0.90 clears the run, the same way an unreadable frame does.
@@ -469,29 +484,28 @@ The glyph floor stays what makes a frame readable: `MIN_SCORE = 0.70` and `MIN_M
 
 The referee fallback's `frames >= 2` (`media.py:207`, `:258-259`) is replaced by this 3-frame rule.
 
-135645 reported confidence 0.912. In today's reader that number is the completing frame, not a per-frame minimum. The stall fixture sets every frame to 0.912 so the stricter gate confirms. A 2 Hz tail spaces frames by 500 ms, so 3 frames span about 1000 ms and clear 400 ms. 485 frames clear the count.
+Issue 94 reported one confidence, 0.912, over 485 frames. That number is the completing frame in today's reader, not a per-frame minimum. The stall fixture is synthetic: three frames at confidence 0.94, with invented timestamps. It does not reuse 0.912. A 2 Hz tail spaces frames by 500 ms, so 3 frames span about 1000 ms and clear 400 ms.
 
 ### 4.4 Last menu, and what a failed gate produces
 
-The menu that confirms is a stable read strictly after the latest scorebug read, and it is the last such menu.
+`decide` derives the last menu and later live play from `frames` and `locks`. There is no caller-supplied `later` flag.
 
-* A later end-menu agreement with a different score is a contradicting menu. The final is unconfirmed at the last locked score.
-* An agreed scorebug read after menu frames have been offered is a scorebug return. It resets the streak and the agreed score, including when `clock_s` is 0. If no stable read follows that read, the final is unconfirmed at that lock.
+The candidate is the stable read in the fresh suffix after the latest lock (`max t_ms`). A second stable read in that suffix with a different score is a contradicting later menu. `decide` sees it in `frames`. The final is unconfirmed. Neither menu score is posted. An agreed scorebug read with `t_ms` after menu frames is later live play. It is a lock. It resets the streak and the agreed score, including when `clock_s` is 0. If no stable read follows that lock, the final is unconfirmed.
 
-Failed gates produce one result, on both sides:
+Failed gates produce these results, on both sides:
 
-| Field | Value |
-|---|---|
-| Score | the last locked live read (`away`, `home`, `quarter` from that row) |
-| `method` | `last_scorebug_read_unconfirmed` |
-| `final_basis` | absent |
-| `final_confirmed` | false |
-| Official `final_reread` | `partial` |
-| No locked read and no adopted menu | no score, `final_reread` `fail` ("referee could not read any score from the recorded tail", `engine.py:804`) |
+| Case | Posted score | `method` | `final_basis` | `final_confirmed` | `final_reread` |
+|---|---|---|---|---|---|
+| Gate failed, locks are monotone | last lock (`max t_ms`) | `last_scorebug_read_unconfirmed` | absent | false | `partial` |
+| A later lock is below an earlier lock | the last row of the monotone prefix, not the lower lock | `last_scorebug_read_unconfirmed` | absent | false | `partial` |
+| No lock, and no adopted menu | null | `last_scorebug_read_unconfirmed` | absent | false | `fail` |
+| No lock, and two menus that disagree | null. Neither menu is posted | `last_scorebug_read_unconfirmed` | absent | false | `fail` |
+
+The no-score fail detail stays "referee could not read any score from the recorded tail" (`engine.py:804`).
 
 `partial` on an official review check stays PARTIAL (`qor_receipt/receipt.py:242-243`). It does not become VERIFIED.
 
-Today's `_note_end_menu_disagreement` (`qorcap_reader.py:1576-1595`) keeps the posted menu score and only clears `final_confirmed`. v1 does not keep that score when a later menu contradicts it. The receipt score is the last lock. `select_offline_final` (`qorcap_match.py:2431-2445`) and `_disputed_final_result` (`:2457-2464`) follow the same result: last lock, `final_confirmed` false.
+Today's `_note_end_menu_disagreement` (`qorcap_reader.py:1576-1595`) keeps the posted menu score and only clears `final_confirmed`. v1 does not keep that score when a later menu contradicts it. The receipt score is the monotone prefix. `select_offline_final` (`qorcap_match.py:2431-2445`) and `_disputed_final_result` (`:2457-2464`) follow the same result: that prefix, `final_confirmed` false. A later lock below an earlier lock is not the prefix.
 
 `tail_final_check` stops at the first end-menu agreement (`qorcap_match.py:2520-2521`). `reread_final` does the same (`media.py:190-191`). Both loops run to the end of the decoded window, then `decide` sees the last menu. The comment at `qorcap_match.py:2477-2478` is the bug those breaks leave in place.
 
@@ -512,9 +526,18 @@ One legal scoring play is a delta in `{1, 2, 3, 6, 7, 8}` on one side and 0 on t
 
 More than one legal scoring play includes both sides changing, a second play on one side, and any other forward delta (`+4`, `+5`, `+9`, `+14`, a `+1` beside another change). The menu still confirms.
 
-A stall gap is a last lock whose `clock_s` is an integer greater than 0, with no later agreed scorebug row before the menu. The unread seconds are that `clock_s`. 135645 is 11. The wall gap is `menu.t_ms - lock.t_ms`. Unread seconds are not subtracted from the clock, and they are not treated as 0:00. qorcap#85 logs a stall and does not mint a score from it. v1 does not mint a score from the gap either. The menu mints the score. The gap is recorded.
+A stall gap is recorded from the raw `clock_s` on the latest monotone lock. `decide` does not copy a clock from an earlier row. `_scorebug_for_final` (`qorcap_reader.py:1426-1449`) does that copy today. Callers pass the lock as it was read. A null `clock_s` stays null.
 
-A tie on a gated end menu confirms. A menu total of 1 confirms. The old refusals (`qorcap_reader.py:1536-1538`, `media.py:262-265`) are not gates. A menu score below a locked score on either side still fails closed: scores do not go down. That case is unconfirmed at the last lock, `final_reread` partial.
+The note fires when either of these is true:
+
+* raw `clock_s` is an integer greater than 0. Unread seconds are that `clock_s`. Issue 94's lock is 11.
+* raw `clock_s` is null and `wall_gap_ms` is at least `STALL_WALL_GAP_MS` (10000). `wall_gap_ms` is the first frame of the adopted run minus the monotone lock's `t_ms`. Unread seconds are null. The note names the wall gap. Example: "End menu confirmed 6–3. Scorebug last locked at Q4 with no clock read (19000 ms unread on the wall clock)."
+
+`wall_gap_ms` is stored in both cases. Unread seconds are not subtracted from the clock, and they are not treated as 0:00. qorcap#85 logs a stall and does not mint a score from it. The menu mints the score. The gap is recorded. The note does not downgrade the verdict.
+
+The menu must be greater than or equal to every lock on both sides, not only the latest. A menu below any lock is unconfirmed. A later lock that is below an earlier lock is a backwards lock. It resets freshness, because latest is `max t_ms`, and it is not the posted score. The posted score is the last row of the monotone prefix. The sidecar records that lock as `backwards_lock`. `check_final` (`integrity.py:195-202`) compares the receipt score to `last_state`. The caller passes that monotone row as `last_state`. The lower lock stays on the sidecar and is not the posted score.
+
+A tie, and a menu with either side equal to 1, stay refused. See §4.7. That refusal is not a sign-off to delete them.
 
 The record goes in the bundle sidecar `final.rule.json`. It is not a `receipt.v0` field, not a `result.notes` entry, and not a `bundle.json` field. `schema/**` stays untouched. Absence of the file does not fail verification, the same way `device_attest.v0.json` is optional. The publisher reads the file when it is present.
 
@@ -523,12 +546,12 @@ Shape:
 ```json
 {
   "schema": "final-rule/v1",
+  "rule": "final-rule/v1",
   "final_confirmed": true,
   "score": {"away": 10, "home": 7},
   "method": "end_menu_read",
-  "screen": "end_menu",
-  "agreement": {"frames": 485, "span_ms": 121000, "min_conf": 0.912},
-  "last_locked": {"away": 10, "home": 7, "quarter": 4, "clock_s": 11, "t_ms": 800000},
+  "agreement": {"frames": 3, "span_ms": 1000, "min_conf": 0.94},
+  "last_locked": {"away": 10, "home": 7, "quarter": 4, "clock_s": 11, "clock_source": "raw", "t_ms": 800000},
   "gap": {"seconds_unread": 11, "wall_gap_ms": 100000},
   "disagreement": null,
   "note": "End menu confirmed 10–7. Scorebug last locked at Q4 0:11 (11 seconds unread).",
@@ -557,7 +580,7 @@ The public note is that `note` string, shown on the match page and on the matche
 
 The note does not downgrade the verdict. `final_reread` stays `pass`. A VERIFIED receipt stays VERIFIED. The score on the page stays the menu score.
 
-135645 under this rule: end menu away 10, home 7, every frame at least 0.912, 485 frames, span well over 400 ms, screen is the end menu, no later menu, no later live play. Last lock Q4 0:11, same score. Confirmed. `final_reread` pass. The sidecar note is the 11 unread seconds and that last lock. The client's current rejection does not stand. The referee's current pass stays a pass, with the note added.
+Issue 94's shape, under this rule, with a synthetic per-frame read: end menu away 10, home 7, every frame at 0.94, three timestamps strictly after the lock, span 1000 ms, pixels `end_menu_6`, no later menu in `frames`, no lock after those frames. Last raw lock Q4 0:11, same score. Confirmed. `final_reread` pass when a review is run. The sidecar note is the 11 unread seconds and that last lock. The client's current rejection does not stand. The referee's current pass stays a pass, with the note added. The 0.912 figure in sections 1–3 is the issue's single reported confidence. The vector does not copy it.
 
 ### 4.6 One function, and the clock leaves both callers
 
@@ -566,25 +589,27 @@ Both sides call `qor_receipt.final_rule.decide`. QorCap already imports `qor_rec
 Removing the clock gate changes which frames count as end screens. A pixel match that `_accept_final_screen` used to reject for the clock (`qorcap_reader.py:999-1010`) can now be an end screen, and a `final_screen` timeline row from that match now feeds the cutoff. The cutoff is re-derived here. It is not `_end_screen_earliest` left over after `_post_agreed` clears it.
 
 ```text
-decide(screen, frames, locks, end_screens, evidence, later) -> Decision
+decide(frames, locks, evidence, options_presses_ms) -> Decision
 ```
 
-* `screen`: `"end_menu"` only after §4.2. `"pause"`, `"halftime"`, `"replay"`, and `"other"` do not confirm.
-* `frames`: ordered end-menu reads `{t_ms, away, home, conf, ok}`. `decide` keeps a frame only when `t_ms` is strictly greater than the latest lock's `t_ms`. Each lock resets the streak and the agreed score. The confirming run is the fresh suffix after the latest lock.
-* `locks`: agreed scorebug rows, possibly empty. Used for that suffix, the last-lock score, the stall gap, and the disagreement note. `clock_s` is not a confirm precondition. `decide` does not require a Q4 row.
-* `end_screens`: every end-screen timestamp in milliseconds. That is each pixel-match start, each `final_screen` row, and each readable menu frame on an end-screen picture, including screens the clock gate used to drop.
+* `frames`: reads `{t_ms, away, home, conf, ok, pixel, picture_since_ms}`, listed in non-decreasing `t_ms`. A backwards step fails the decision closed. A duplicate timestamp does not add a distinct instant or any span. A frame counts toward the stable run only when `t_ms` is strictly greater than the latest lock, the timestamp is strictly greater than the previous counted frame, `ok` is true, `conf` ≥ 0.90, and §4.2 labels `pixel` as the end menu. The confirming run is the fresh suffix after the latest lock. A second stable score in that suffix is the contradicting later menu.
+* `locks`: agreed scorebug rows, possibly empty, each with raw `clock_s` (integer or null). Latest is `max t_ms`. Used for the fresh suffix, the monotone posted score, the stall gap, and the disagreement note. `clock_s` is not a confirm precondition. `decide` does not require a Q4 row and does not copy a clock onto a null.
 * `evidence`: clip, haptic, and input rows `{t_ms, kind}`. A scorebug row is a lock, not evidence.
-* `later`: a contradicting end-menu agreement after the fresh stable read. A scorebug return is not this flag. It is a lock, and it resets the run.
+* `options_presses_ms`: measured OPTIONS rising edges, or null when `inputs.jsonl` was not read. Null fails closed on a 6-item frame (§4.2).
 
-`Decision` carries `cutoff_ms` and the evidence rows that count. `cutoff_ms` is not a receipt field. The menu still confirms when the gates pass and no evidence counts. The cutoff does not grant or withhold `final_confirmed`.
+End-screen timestamps are derived inside `decide`. They are every frame `decide` still labels an end menu: `ok` true, `pixel` `end_menu_6`, and the OPTIONS hold does not label the frame pause. A 6-item frame the hold labels pause, and a 6-item frame whose hold was not measured, are not end screens. `picture_since_ms` on a frame that remains an end menu is included. A caller-supplied list that omits a later readable frame is not the cutoff. The frame is.
 
-Cutoff, computed by `decide` and by nothing else:
+`Decision` carries `rule` = `final-rule/v1`, `cutoff_ms`, `evidence_counted`, and `posted_score`. `cutoff_ms` is not a receipt field.
 
-* Let `E0` be the earliest `end_screens` timestamp. Let `S` be the latest lock's `t_ms`. When `locks` is empty there is no `S`, and `cutoff_ms` is `E0`.
+The evidence cutoff does not grant or withhold `final_confirmed`. Its only consumer is the sidecar writer: `tail_final_check`, offline `finalize`, and `reread_final` copy `evidence_counted` onto `final.rule.json`. The publisher does not render that list. No confirm path reads it. A boundary bug in the list changes no verdict.
+
+Cutoff, computed by `decide`:
+
+* Let `E0` be the earliest derived end-screen timestamp. Let `S` be the latest lock's `t_ms`. When `locks` is empty there is no `S`, and `cutoff_ms` is `E0`.
 * When `S` is present, the cutoff is the earliest end screen strictly after `S`. When no end screen is strictly after `S`, the cutoff falls back to `E0`.
 * When any end screen exists, `cutoff_ms` is that integer. It does not come back as null. With no end screen, `cutoff_ms` is null. Today's `end_screen_evidence_cutoff_ms` (`qorcap_reader.py:1710-1733`) returns null whenever its inputs are missing, and the filter then skips (`:1703`), so late evidence counts. v1 uses the fallback instead of that skip.
-* Evidence counts only when `t_ms < cutoff_ms`. `t_ms >= cutoff_ms` does not count. The comparison is inclusive of the equal timestamp. The code already uses `>=` at `:1704`. The contract keeps that operator.
-* Evidence with `E0 <= t_ms <= S` never counts, including when that timestamp is below `cutoff_ms`. That is the interval from the first end screen through the latest scorebug read, both ends included. A cleared `_end_screen_earliest` does not let a timestamp in that interval through.
+* A row is counted only when `t_ms < cutoff_ms`. `t_ms >= cutoff_ms` is not counted. The comparison is inclusive of the equal timestamp. The code already uses `>=` at `:1704`. The contract keeps that operator.
+* A row with `E0 <= t_ms <= S` is never counted, including when that timestamp is below `cutoff_ms`. That interval is the first end screen through the latest scorebug read, both ends included.
 
 `ReaderCore._end_menu`, `tail_final_check`, offline `finalize`, and `reread_final` all call it. `end_menu_fallback` stops being a second rule. The rejection string is an output of a failed gate, not a switch that selects a looser rule.
 
@@ -596,6 +621,15 @@ The referee re-read already refuses the seed (`reread_final`, `media.py:181`, "N
 
 Removing the seed and leaving the quarter block in `_end_menu` would still reject an unseeded 135645. Both the clock block and the prior-Q4 block leave the confirm path.
 
+### 4.7 Open decision: ties and a final of 1
+
+The owner has not signed off on removing these guards. They stay fail-closed.
+
+* A tied menu score (`away == home`) is not adopted (`qorcap_reader.py:1536-1538`).
+* A menu with either side equal to 1 is not adopted (`media.py:264-265`).
+
+The posted result is the unconfirmed monotone lock, `final_reread` `partial`, or `fail` when no lock exists. Deleting either guard is a separate decision. This design does not delete them.
+
 ## 5. Code changes
 
 Plan only. This change does not edit these files.
@@ -606,18 +640,18 @@ Plan only. This change does not edit these files.
 | `sidecar/qorcap_reader.py` `madden_final_screen` `:819-855` | Keep the geometry. Delete the `:833` sentence that the detector only runs behind the Q4-low-clock gate. |
 | `sidecar/qorcap_reader.py` `on_frame` `:1025-1036` | Keep the OPTIONS short-hold return that happens before `_end_menu`. |
 | `sidecar/qorcap_reader.py` `_end_context` `:970-975`, `_accept_final_screen` `:999-1010` | Stop using them as a precondition for `_end_menu`. They require quarter and clock today. |
-| `sidecar/qorcap_reader.py` `_end_menu` `:1511-1538` | Remove the quarter rejection (`:1515-1517`), the clock rejection (`:1529-1530`), the `end_menu_consistency` refusal (`:1532-1535`), and the tie refusal (`:1536-1538`). Call `decide`. |
+| `sidecar/qorcap_reader.py` `_end_menu` `:1511-1538` | Remove the quarter rejection (`:1515-1517`), the clock rejection (`:1529-1530`), and the `end_menu_consistency` refusal (`:1532-1535`). Keep the tie refusal (`:1536-1538`) and the referee's final-of-1 refusal (`media.py:264-265`) until §4.7 is signed off. Call `decide`. |
 | `sidecar/qorcap_endmenu.py` `EndMenuAgreement.offer` `:242-261` | Track `min_conf`. Every frame in the run has `conf` ≥ 0.90. A lower frame clears the run. `n` stays 3. `min_span_ms` stays 400. Frames at or before the latest scorebug read are not offered into the confirming run. |
 | `sidecar/qorcap_reader.py` `end_menu_consistency` `:1646-1657` | No longer a refusal. The delta feeds the sidecar note. `end_menu_delta_corroborated` (`:1660-1707`) is not required to confirm. |
-| `sidecar/qorcap_reader.py` `_note_end_menu_disagreement` `:1576-1595` | A later different menu fails the last-menu gate. Receipt score becomes the last lock, `final_confirmed` false. |
+| `sidecar/qorcap_reader.py` `_note_end_menu_disagreement` `:1576-1595` | A later different menu fails the last-menu gate. Neither menu score is kept. The receipt score is the monotone lock, `final_confirmed` false. |
 | `sidecar/qorcap_match.py` `tail_final_check` `:2495` | Stop `core.timeline = live`. Pass those rows to `decide` as locks. Do not break at the first `end_menu` (`:2520-2521`); scan the window. |
 | `sidecar/qorcap_match.py` `apply_final` `:2094-2096` | A missing `final_confirmed` is false. |
-| `sidecar/qorcap_match.py` `select_offline_final` `:2431-2445`, `_disputed_final_result` `:2457-2464`, `finalize` `:2887` | Same `decide`. A disputed menu signs the last lock unconfirmed. Offline finalize does not reintroduce a timeline clock seed. |
-| `qor_receipt/review/media.py` `reread_final` `:179-201` | Keep "no laptop timeline seed". Do not break at the first `end_menu` (`:190-191`). Delete the `end_menu_fallback` call. |
+| `sidecar/qorcap_match.py` `select_offline_final` `:2431-2445`, `_disputed_final_result` `:2457-2464`, `finalize` `:2887` | Same `decide`. A disputed menu signs the monotone prefix unconfirmed. A later lock that went down is not that score. Offline finalize does not reintroduce a timeline clock seed. |
+| `qor_receipt/review/media.py` `reread_final` `:179-201` | Keep "no laptop timeline seed". Do not break at the first `end_menu` (`:190-191`). Delete the `end_menu_fallback` call. Load OPTIONS rising edges from `inputs.jsonl` through `bundle.press_events`. If that file or the picture-start time is missing, a 6-item frame fails closed. |
 | `qor_receipt/review/media.py` `end_menu_fallback` `:236-298` | Remove. The reason switch at `:250` and the thresholds at `:205-207` are not the rule. `clock_s` is not read. A prior Q4 row is not required. |
-| `qor_receipt/review/engine.py` `_final_check` `:799-828` | A confirmed menu is `pass` when the claim equals the menu score, including a stall and a multi-play delta. A failed gate with a lock is `partial` at the last lock. A note does not flip `pass` to `partial`. Score mismatch stays `fail` (`:807-809`). |
+| `qor_receipt/review/engine.py` `_final_check` `:799-828` | A confirmed menu is `pass` when the claim equals the menu score, including a stall and a multi-play delta. A failed gate with a monotone lock is `partial` at that prefix. A note does not flip `pass` to `partial`. Score mismatch stays `fail` (`:807-809`). |
 | `qor_receipt/review/engine.py` `_result_from_reread` `:831-847` | Write `decide`'s boolean. The `:840` test `is not False` becomes that boolean. Missing is false. |
-| `qor_receipt/referee_ai/integrity.py` `check_final` `:189-202` | An adopted end menu more than one legal step past the last scorebug is not an error. `:201` is that error today, and `referee.py:184` and `:189` both append it. Leaving it in place would FAIL a multi-play menu and downgrade the verdict. `decide` does not adopt a menu that is below the last lock, so the signed score equals that lock and `check_final` sees a match. A backward menu posted anyway still errors. |
+| `qor_receipt/referee_ai/integrity.py` `check_final` `:189-202` | An adopted end menu more than one legal step past the last scorebug is not an error. `:201` is that error today, and `referee.py:184` and `:189` both append it. Leaving it in place would FAIL a multi-play menu and downgrade the verdict. `decide` does not adopt a menu below any lock. An unconfirmed backwards lock posts the monotone prefix, and that prefix is the `last_state` `check_final` sees, so the lower row is not a mismatch. A backward menu posted anyway still errors. |
 | `sidecar/qorcap_reader.py` `end_screen_evidence_cutoff_ms` `:1710-1733`, filter `:1703-1704` | Replaced by `decide`'s cutoff. Null no longer means "all evidence counts". Fallback is the earliest end screen. The test stays `t_ms >= cutoff_ms`. Evidence from the first end screen through the latest scorebug read is out. | 
 | `sidecar/qorcap_reader.py` `_post_agreed` `:1343-1344` | Still clears the running `_end_screen_earliest` pointer. Also clears the menu streak and the agreed score. `decide` re-derives the cutoff from `end_screens`, so a null pointer is not a null cutoff. | 
 | `qor_receipt/match_index/build.py`, `viewer_template.html` `paintFinal`, `publish.py` `_card` | Read `final.rule.json` and show `note` as in §4.5. Gold stays. |
@@ -626,21 +660,17 @@ Plan only. This change does not edit these files.
 
 ## 6. Published matches
 
-The QorTime site lists 3 published matches (`site/matches/index.html`, "3 published"; pages `170123`, `021003`, `125430`). Facts below are the published `match.json`, `receipt.json`, and the `const D` payload in each `index.html`. v1 is applied to that evidence. This doc does not re-read the video. Per-frame menu confidence is not stored on these pages, except the single `conf_permille` on 170123.
+The QorTime site lists 3 published matches (`site/matches/index.html`, "3 published"; pages `170123`, `021003`, `125430`). This design does not re-review them. A frozen receipt stays the page until a new official review is signed. Merging the rule does not upgrade any of them to a new status and does not rewrite the page.
 
-| Match | Current verdict and final | Under v1 | Change |
+Stored facts, and what v1 can and cannot conclude from them:
+
+| Match | What is stored | What v1 can conclude | Page after this design |
 |---|---|---|---|
-| `local-20261023-170123` (slug `170123`) | VERIFIED. Final away 10, home 0, `end_menu_read`, `final_confirmed` true, `final_reread` pass. End menu: 3 frames, span 838 ms (`1792793932982 − 1792793932144`), `conf_permille` 912, margin 229, template `real`, delta `exact_match`. `scorebug_last.clock_s` is null. | Same verdict, same final. Scores match, so there is no multi-play note. `clock_s` null means the page has no unread-seconds figure, so there is no stall note from the published payload. The stored confidence is one number, 0.912, on a run that already meets 3 frames and 838 ms. | no |
-| `local-20261017-021003` (slug `021003`) | SELF_ATTESTED. Final away 22, home 41, `end_menu_read`, `final_confirmed` true. Partials: `referee_key_not_pinned`, `referee_not_on_allowlist`, `referee_local_self_attested`, missing kickoff, halftime, and end challenges, `away:motion_signal_missing`. Page basis: the v0.3.10 receipt said 0–0, and the end-menu frame plus the v0.3.11 replay reads 22–41. | Same verdict, same final. Those partials sit outside this rule. | no |
-| `local-20261016-125430` (slug `125430`) | FAIL. Errors: `home:cp[0]:gap_too_long`, `home:cp[591]:gap_too_long`, `home:cp[591]:clock_skew`, `home:cp[592]:clock_skew`. Also the local-key and missing-challenge partials. Score away 7, home 14, `last_scorebug_read_unconfirmed`, `final_confirmed` false, `final` null. End basis: "scorebug disappeared after last read; end-of-game menu NOT read by the engine (bundle.final is null)". | Same verdict, same unconfirmed 7–14. v1 does not invent a menu. The FAIL is the checkpoint chain. | no |
+| `local-20261023-170123` | VERIFIED. Final away 10, home 0, `end_menu_read`, `final_confirmed` true, `final_reread` pass. One end-menu object: 3 frames, span 838 ms (`1792793932982 − 1792793932144`), one `conf_permille` 912, margin 229, template `real`, delta `exact_match`. `scorebug_last.clock_s` is null. Lock `t_ms` `1792793907322`, menu `t_ms` `1792793932144`, wall gap 24822 ms. No second menu object and no post-menu scorebug row are in the page payload. | The every-frame confidence gate is unverifiable: 912 is one stored number (§2.1, the stabilizing frame). The other two frames are not stored and could sit between the 0.70 glyph floor and 0.90. A whole-window scan for a later menu or a later scorebug is also unverifiable: the page does not contain that scan. A null raw clock and a 24822 ms gap would fire the stall note if a re-review ran. | Unchanged. The frozen VERIFIED 10–0 page stays. No stall note is added, because there is no re-review. |
+| `local-20261017-021003` | SELF_ATTESTED. Final away 22, home 41, `end_menu_read`, `final_confirmed` true. Partials: `referee_key_not_pinned`, `referee_not_on_allowlist`, `referee_local_self_attested`, missing kickoff, halftime, and end challenges, `away:motion_signal_missing`. The page says the v0.3.10 receipt read 0–0 and the end-menu frame plus the v0.3.11 replay reads 22–41. | Those partials are outside this rule. The final-score rule does not produce SELF_ATTESTED. | Unchanged. |
+| `local-20261016-125430` | FAIL. Errors: `home:cp[0]:gap_too_long`, `home:cp[591]:gap_too_long`, `home:cp[591]:clock_skew`, `home:cp[592]:clock_skew`, plus the local-key and missing-challenge partials. Score away 7, home 14, `last_scorebug_read_unconfirmed`, `final` null. End basis stored on the page: "scorebug disappeared after last read; end-of-game menu NOT read by the engine (bundle.final is null)". | The FAIL is the checkpoint chain. v1 does not invent a menu from a null `bundle.final`. | Unchanged. |
 
-Held out, verdict impact only. Not on the site.
-
-| Match | Current | Under v1 | Change |
-|---|---|---|---|
-| `match-20261024-135645` (qorcap#94, submission `f26ac3935d038288`) | Client `final.tail` rejected the menu: "scorebug clock not 0:00 before the end-of-game menu". Last lock Q4 0:11. Receipt unconfirmed. Referee end-menu fallback accepted 10–7 at 0.912 over 485 frames, `final_reread` pass. | Both sides confirm away 10, home 7, `final_confirmed` true, `final_reread` pass. Sidecar note: 11 seconds unread, last lock Q4 0:11, away 10, home 7. The note does not downgrade the pass. | yes. The client result moves from unconfirmed to confirmed. The referee pass stays a pass. The public note is new. |
-
-Other match ids cited in the reader and its tests (`091651`, `110028`, `143212`, `162055`, `171032`) are not published. They are not re-scored here.
+`match-20261024-135645` (qorcap#94, submission `f26ac3935d038288`) is a production submission. It is not on the site. The owner's held-out set is 170123, 021003, 125430, 084523, and 193534. The issue says the client tail rejected the menu because the clock was not 0:00, the last lock was Q4 0:11, and the referee fallback accepted 10–7 from one reported confidence of 0.912 over 485 frames. Per-frame confidences and the three frame timestamps are not in that report. The vector in §7 is labeled synthetic and uses 0.94. Under the rule, a stable end menu after that lock confirms away 10, home 7, with a stall note for 11 unread seconds, and the note does not downgrade a review that is actually run. This design does not re-review the submission.
 
 ## 7. Fixtures and tests (plan only)
 
@@ -651,34 +681,65 @@ This change adds no fixture file and no test. When `decide` is implemented, the 
 | QorTime | `tests/vectors/final_rule/v1.json` | `tests/test_final_rule.py`, calling `qor_receipt.final_rule.decide`, on the existing `pytest -q` job |
 | QorCap | `sidecar/fixtures/final_rule/v1.json` | `sidecar/test_final_rule.py`, importing that same function, on `python -m pytest sidecar` |
 
-A hash mismatch fails the test. The two pause cases also have pixel fixtures beside that JSON: `_menu(items=8)` and the OPTIONS short-hold on `_menu(items=6)` from `sidecar/test_final_screen_pause.py`. The 6-item picture alone must not be the pause case. `madden_final_screen` accepts it. In the JSON, `screen` is the discriminator output. `pause-options-short-hold` is `pause` because the hold is under 12 s.
+A hash mismatch fails the test. The two pause cases also have pixel fixtures beside that JSON: `_menu(items=8)` and the OPTIONS short-hold on `_menu(items=6)` from `sidecar/test_final_screen_pause.py`. The 6-item picture alone must not be the pause case. `madden_final_screen` accepts it. In the JSON, `screen` is expanded onto each frame as `pixel` before `decide`. `pause-options-short-hold` keeps `pixel` `end_menu_6` and lists the OPTIONS press. `decide` labels the frame pause because the hold is under 12 s. `options_hold_ms: null` with the presses key absent means OPTIONS was measured and not pressed. `options_presses_ms: null` means `inputs.jsonl` was not read, and `decide` fails that frame closed.
 
-`today` on the stall case is the drift at the commits in the header. `expect` is `final-rule/v1`. `margin` was not in issue 94. The stall frames use confidence 0.912 on every frame so the every-frame gate is what the fixture exercises. Review `pass` means the claim equals `decide`'s score and the check does not drop to `partial` because of the note.
+`today` on the stall case is the drift at the commits in the header. `expect` is `final-rule/v1`. The stall case is synthetic (`"synthetic": true`): issue 94 did not publish per-frame confidence or the three frame timestamps, so the vector uses 0.94 and invented times. It does not copy 170123's 10–0 or its stored 0.912. v1 vectors do not carry `LOCKS_084523` or any row from the owner's held-out set (170123, 021003, 125430, 084523, 193534). The `LOCKS_084523` citation in §1.1 is the current referee test, not a v1 input. A JSON `screen` key is expanded onto each frame as `pixel` before `decide`. A frame that already has `pixel` keeps it. `decide` does not take `screen`, `later`, `later_menu`, or `later_live_play`. Review `pass` means the claim equals `decide`'s score and the check does not drop to `partial` because of the note.
 
 ```json
 {
   "rule": "final-rule/v1",
   "agree_frames": 3,
   "agree_span_ms": 400,
-  "min_conf_each_frame": 0.90,
-  "legal_steps": [1, 2, 3, 6, 7, 8],
+  "min_conf_each_frame": 0.9,
+  "legal_steps": [
+    1,
+    2,
+    3,
+    6,
+    7,
+    8
+  ],
   "cases": [
     {
       "id": "135645-stall",
       "source": "match-20261024-135645 / qorcap#94",
+      "synthetic": true,
       "screen": "end_menu",
       "options_hold_ms": null,
       "locks": [
-        {"t_ms": 800000, "away": 10, "home": 7, "quarter": 4, "clock_s": 11, "clock_red": false}
+        {
+          "t_ms": 800000,
+          "away": 10,
+          "home": 7,
+          "quarter": 4,
+          "clock_s": 11,
+          "clock_red": false
+        }
       ],
       "frames": [
-        {"t_ms": 900000, "away": 10, "home": 7, "conf": 0.912, "ok": true},
-        {"t_ms": 900500, "away": 10, "home": 7, "conf": 0.912, "ok": true},
-        {"t_ms": 901000, "away": 10, "home": 7, "conf": 0.912, "ok": true}
+        {
+          "t_ms": 900000,
+          "away": 10,
+          "home": 7,
+          "conf": 0.94,
+          "ok": true
+        },
+        {
+          "t_ms": 900500,
+          "away": 10,
+          "home": 7,
+          "conf": 0.94,
+          "ok": true
+        },
+        {
+          "t_ms": 901000,
+          "away": 10,
+          "home": 7,
+          "conf": 0.94,
+          "ok": true
+        }
       ],
       "reported_frames": 485,
-      "later_menu": null,
-      "later_live_play": false,
       "today": {
         "qorcap_tail_seeded": "scorebug clock not 0:00 before the end-of-game menu",
         "qortime_referee_unseeded_fallback": "accepted 10-7, final_confirmed true, review pass"
@@ -692,7 +753,12 @@ A hash mismatch fails the test. The two pause cases also have pixel fixtures bes
         "review": "pass",
         "note": "End menu confirmed 10–7. Scorebug last locked at Q4 0:11 (11 seconds unread).",
         "seconds_unread": 11,
-        "last_locked": {"away": 10, "home": 7, "quarter": 4, "clock_s": 11},
+        "last_locked": {
+          "away": 10,
+          "home": 7,
+          "quarter": 4,
+          "clock_s": 11
+        },
         "downgrades_verdict": false
       }
     },
@@ -702,15 +768,37 @@ A hash mismatch fails the test. The two pause cases also have pixel fixtures bes
       "options_hold_ms": null,
       "pixel_fixture": "test_final_screen_pause._menu(items=8)",
       "locks": [
-        {"t_ms": 1000, "away": 7, "home": 0, "quarter": 2, "clock_s": 120}
+        {
+          "t_ms": 1000,
+          "away": 7,
+          "home": 0,
+          "quarter": 2,
+          "clock_s": 120
+        }
       ],
       "frames": [
-        {"t_ms": 5000, "away": 7, "home": 0, "conf": 0.99, "ok": true},
-        {"t_ms": 5500, "away": 7, "home": 0, "conf": 0.99, "ok": true},
-        {"t_ms": 6000, "away": 7, "home": 0, "conf": 0.99, "ok": true}
+        {
+          "t_ms": 5000,
+          "away": 7,
+          "home": 0,
+          "conf": 0.99,
+          "ok": true
+        },
+        {
+          "t_ms": 5500,
+          "away": 7,
+          "home": 0,
+          "conf": 0.99,
+          "ok": true
+        },
+        {
+          "t_ms": 6000,
+          "away": 7,
+          "home": 0,
+          "conf": 0.99,
+          "ok": true
+        }
       ],
-      "later_menu": null,
-      "later_live_play": false,
       "expect": {
         "adopt_menu": false,
         "final_confirmed": false,
@@ -723,19 +811,47 @@ A hash mismatch fails the test. The two pause cases also have pixel fixtures bes
     },
     {
       "id": "pause-options-short-hold",
-      "screen": "pause",
+      "screen": "end_menu",
       "options_hold_ms": 4000,
-      "pixel_fixture": "test_final_screen_pause._menu(items=6) after OPTIONS, hold under 12000 ms",
+      "pixel_fixture": "test_final_screen_pause._menu(items=6), pixel end_menu_6, picture_since_ms 1000, OPTIONS press at 800, hold 4000 ms",
       "locks": [
-        {"t_ms": 1000, "away": 14, "home": 7, "quarter": 4, "clock_s": 0}
+        {
+          "t_ms": 500,
+          "away": 14,
+          "home": 7,
+          "quarter": 4,
+          "clock_s": 40
+        }
       ],
       "frames": [
-        {"t_ms": 5000, "away": 14, "home": 7, "conf": 0.99, "ok": true},
-        {"t_ms": 5500, "away": 14, "home": 7, "conf": 0.99, "ok": true},
-        {"t_ms": 6000, "away": 14, "home": 7, "conf": 0.99, "ok": true}
+        {
+          "t_ms": 5000,
+          "away": 14,
+          "home": 7,
+          "conf": 0.99,
+          "ok": true,
+          "pixel": "end_menu_6",
+          "picture_since_ms": 1000
+        },
+        {
+          "t_ms": 5500,
+          "away": 14,
+          "home": 7,
+          "conf": 0.99,
+          "ok": true,
+          "pixel": "end_menu_6",
+          "picture_since_ms": 1000
+        },
+        {
+          "t_ms": 6000,
+          "away": 14,
+          "home": 7,
+          "conf": 0.99,
+          "ok": true,
+          "pixel": "end_menu_6",
+          "picture_since_ms": 1000
+        }
       ],
-      "later_menu": null,
-      "later_live_play": false,
       "expect": {
         "adopt_menu": false,
         "final_confirmed": false,
@@ -744,22 +860,48 @@ A hash mismatch fails the test. The two pause cases also have pixel fixtures bes
         "method": "last_scorebug_read_unconfirmed",
         "review": "partial",
         "note": null
-      }
+      },
+      "options_presses_ms": [
+        800
+      ],
+      "illustrates": "The picture is the six-item shape. The lock at 500 is still up at the OPTIONS press at 800. picture_since_ms is 1000, so the hold at 5000 ms is 4000 ms, under 12000. decide labels the frame pause."
     },
     {
       "id": "halftime-faded-field",
       "screen": "halftime",
       "options_hold_ms": null,
       "locks": [
-        {"t_ms": 1000, "away": 10, "home": 7, "quarter": 2, "clock_s": 0}
+        {
+          "t_ms": 1000,
+          "away": 10,
+          "home": 7,
+          "quarter": 2,
+          "clock_s": 0
+        }
       ],
       "frames": [
-        {"t_ms": 5000, "away": 10, "home": 7, "conf": 0.95, "ok": true},
-        {"t_ms": 5500, "away": 10, "home": 7, "conf": 0.95, "ok": true},
-        {"t_ms": 6000, "away": 10, "home": 7, "conf": 0.95, "ok": true}
+        {
+          "t_ms": 5000,
+          "away": 10,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5500,
+          "away": 10,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 6000,
+          "away": 10,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        }
       ],
-      "later_menu": null,
-      "later_live_play": false,
       "expect": {
         "adopt_menu": false,
         "final_confirmed": false,
@@ -775,15 +917,37 @@ A hash mismatch fails the test. The two pause cases also have pixel fixtures bes
       "screen": "replay",
       "options_hold_ms": null,
       "locks": [
-        {"t_ms": 1000, "away": 10, "home": 7, "quarter": 4, "clock_s": 40}
+        {
+          "t_ms": 1000,
+          "away": 10,
+          "home": 7,
+          "quarter": 4,
+          "clock_s": 40
+        }
       ],
       "frames": [
-        {"t_ms": 5000, "away": 10, "home": 7, "conf": 0.95, "ok": true},
-        {"t_ms": 5500, "away": 10, "home": 7, "conf": 0.95, "ok": true},
-        {"t_ms": 6000, "away": 10, "home": 7, "conf": 0.95, "ok": true}
+        {
+          "t_ms": 5000,
+          "away": 10,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5500,
+          "away": 10,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 6000,
+          "away": 10,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        }
       ],
-      "later_menu": null,
-      "later_live_play": false,
       "expect": {
         "adopt_menu": false,
         "final_confirmed": false,
@@ -799,20 +963,42 @@ A hash mismatch fails the test. The two pause cases also have pixel fixtures bes
       "screen": "end_menu",
       "options_hold_ms": null,
       "locks": [
-        {"t_ms": 1000, "away": 10, "home": 0, "quarter": 4, "clock_s": 0}
+        {
+          "t_ms": 1000,
+          "away": 6,
+          "home": 3,
+          "quarter": 4,
+          "clock_s": 0
+        }
       ],
       "frames": [
-        {"t_ms": 5000, "away": 10, "home": 0, "conf": 0.95, "ok": true},
-        {"t_ms": 5400, "away": 10, "home": 0, "conf": 0.95, "ok": true},
-        {"t_ms": 5800, "away": 10, "home": 0, "conf": 0.95, "ok": true}
+        {
+          "t_ms": 5000,
+          "away": 6,
+          "home": 3,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5400,
+          "away": 6,
+          "home": 3,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5800,
+          "away": 6,
+          "home": 3,
+          "conf": 0.95,
+          "ok": true
+        }
       ],
-      "later_menu": null,
-      "later_live_play": false,
       "expect": {
         "adopt_menu": true,
         "final_confirmed": true,
-        "away": 10,
-        "home": 0,
+        "away": 6,
+        "home": 3,
         "method": "end_menu_read",
         "review": "pass",
         "note": null,
@@ -824,15 +1010,37 @@ A hash mismatch fails the test. The two pause cases also have pixel fixtures bes
       "screen": "end_menu",
       "options_hold_ms": null,
       "locks": [
-        {"t_ms": 1000, "away": 7, "home": 0, "quarter": 4, "clock_s": 0}
+        {
+          "t_ms": 1000,
+          "away": 7,
+          "home": 0,
+          "quarter": 4,
+          "clock_s": 0
+        }
       ],
       "frames": [
-        {"t_ms": 5000, "away": 14, "home": 0, "conf": 0.95, "ok": true},
-        {"t_ms": 5400, "away": 14, "home": 0, "conf": 0.95, "ok": true},
-        {"t_ms": 5800, "away": 14, "home": 0, "conf": 0.95, "ok": true}
+        {
+          "t_ms": 5000,
+          "away": 14,
+          "home": 0,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5400,
+          "away": 14,
+          "home": 0,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5800,
+          "away": 14,
+          "home": 0,
+          "conf": 0.95,
+          "ok": true
+        }
       ],
-      "later_menu": null,
-      "later_live_play": false,
       "expect": {
         "adopt_menu": true,
         "final_confirmed": true,
@@ -849,15 +1057,37 @@ A hash mismatch fails the test. The two pause cases also have pixel fixtures bes
       "screen": "end_menu",
       "options_hold_ms": null,
       "locks": [
-        {"t_ms": 1000, "away": 7, "home": 0, "quarter": 4, "clock_s": 0}
+        {
+          "t_ms": 1000,
+          "away": 7,
+          "home": 0,
+          "quarter": 4,
+          "clock_s": 0
+        }
       ],
       "frames": [
-        {"t_ms": 5000, "away": 17, "home": 14, "conf": 0.95, "ok": true},
-        {"t_ms": 5400, "away": 17, "home": 14, "conf": 0.95, "ok": true},
-        {"t_ms": 5800, "away": 17, "home": 14, "conf": 0.95, "ok": true}
+        {
+          "t_ms": 5000,
+          "away": 17,
+          "home": 14,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5400,
+          "away": 17,
+          "home": 14,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5800,
+          "away": 17,
+          "home": 14,
+          "conf": 0.95,
+          "ok": true
+        }
       ],
-      "later_menu": null,
-      "later_live_play": false,
       "expect": {
         "adopt_menu": true,
         "final_confirmed": true,
@@ -865,7 +1095,13 @@ A hash mismatch fails the test. The two pause cases also have pixel fixtures bes
         "home": 14,
         "method": "end_menu_read",
         "review": "pass",
-        "disagreement": {"delta": [10, 14], "more_than_one_legal_play": true},
+        "disagreement": {
+          "delta": [
+            10,
+            14
+          ],
+          "more_than_one_legal_play": true
+        },
         "note": "End menu confirmed 17–14. Last locked read was 7–0, more than one scoring play apart.",
         "downgrades_verdict": false
       }
@@ -876,12 +1112,28 @@ A hash mismatch fails the test. The two pause cases also have pixel fixtures bes
       "options_hold_ms": null,
       "locks": [],
       "frames": [
-        {"t_ms": 5000, "away": 10, "home": 7, "conf": 0.95, "ok": true},
-        {"t_ms": 5400, "away": 10, "home": 7, "conf": 0.95, "ok": true},
-        {"t_ms": 5800, "away": 10, "home": 7, "conf": 0.95, "ok": true}
+        {
+          "t_ms": 5000,
+          "away": 10,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5400,
+          "away": 10,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5800,
+          "away": 10,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        }
       ],
-      "later_menu": null,
-      "later_live_play": false,
       "expect": {
         "adopt_menu": true,
         "final_confirmed": true,
@@ -898,15 +1150,37 @@ A hash mismatch fails the test. The two pause cases also have pixel fixtures bes
       "screen": "end_menu",
       "options_hold_ms": null,
       "locks": [
-        {"t_ms": 1000, "away": 10, "home": 7, "quarter": 4, "clock_s": 0}
+        {
+          "t_ms": 1000,
+          "away": 10,
+          "home": 7,
+          "quarter": 4,
+          "clock_s": 0
+        }
       ],
       "frames": [
-        {"t_ms": 5000, "away": 10, "home": 7, "conf": 0.95, "ok": true},
-        {"t_ms": 5400, "away": 10, "home": 7, "conf": 0.89, "ok": true},
-        {"t_ms": 5800, "away": 10, "home": 7, "conf": 0.95, "ok": true}
+        {
+          "t_ms": 5000,
+          "away": 10,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5400,
+          "away": 10,
+          "home": 7,
+          "conf": 0.89,
+          "ok": true
+        },
+        {
+          "t_ms": 5800,
+          "away": 10,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        }
       ],
-      "later_menu": null,
-      "later_live_play": false,
       "expect": {
         "adopt_menu": false,
         "final_confirmed": false,
@@ -922,14 +1196,30 @@ A hash mismatch fails the test. The two pause cases also have pixel fixtures bes
       "screen": "end_menu",
       "options_hold_ms": null,
       "locks": [
-        {"t_ms": 1000, "away": 10, "home": 7, "quarter": 4, "clock_s": 0}
+        {
+          "t_ms": 1000,
+          "away": 10,
+          "home": 7,
+          "quarter": 4,
+          "clock_s": 0
+        }
       ],
       "frames": [
-        {"t_ms": 5000, "away": 10, "home": 7, "conf": 0.95, "ok": true},
-        {"t_ms": 5600, "away": 10, "home": 7, "conf": 0.95, "ok": true}
+        {
+          "t_ms": 5000,
+          "away": 10,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5600,
+          "away": 10,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        }
       ],
-      "later_menu": null,
-      "later_live_play": false,
       "expect": {
         "adopt_menu": false,
         "final_confirmed": false,
@@ -945,15 +1235,37 @@ A hash mismatch fails the test. The two pause cases also have pixel fixtures bes
       "screen": "end_menu",
       "options_hold_ms": null,
       "locks": [
-        {"t_ms": 1000, "away": 10, "home": 7, "quarter": 4, "clock_s": 0}
+        {
+          "t_ms": 1000,
+          "away": 10,
+          "home": 7,
+          "quarter": 4,
+          "clock_s": 0
+        }
       ],
       "frames": [
-        {"t_ms": 5000, "away": 10, "home": 7, "conf": 0.95, "ok": true},
-        {"t_ms": 5100, "away": 10, "home": 7, "conf": 0.95, "ok": true},
-        {"t_ms": 5399, "away": 10, "home": 7, "conf": 0.95, "ok": true}
+        {
+          "t_ms": 5000,
+          "away": 10,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5100,
+          "away": 10,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5399,
+          "away": 10,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        }
       ],
-      "later_menu": null,
-      "later_live_play": false,
       "expect": {
         "adopt_menu": false,
         "final_confirmed": false,
@@ -969,15 +1281,37 @@ A hash mismatch fails the test. The two pause cases also have pixel fixtures bes
       "screen": "end_menu",
       "options_hold_ms": null,
       "locks": [
-        {"t_ms": 1000, "away": 10, "home": 7, "quarter": 4, "clock_s": 0}
+        {
+          "t_ms": 1000,
+          "away": 10,
+          "home": 7,
+          "quarter": 4,
+          "clock_s": 0
+        }
       ],
       "frames": [
-        {"t_ms": 5000, "away": 10, "home": 7, "conf": 0.95, "ok": true},
-        {"t_ms": 5400, "away": 10, "home": 10, "conf": 0.95, "ok": true},
-        {"t_ms": 5800, "away": 10, "home": 7, "conf": 0.95, "ok": true}
+        {
+          "t_ms": 5000,
+          "away": 10,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5400,
+          "away": 10,
+          "home": 10,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5800,
+          "away": 10,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        }
       ],
-      "later_menu": null,
-      "later_live_play": false,
       "expect": {
         "adopt_menu": false,
         "final_confirmed": false,
@@ -993,15 +1327,58 @@ A hash mismatch fails the test. The two pause cases also have pixel fixtures bes
       "screen": "end_menu",
       "options_hold_ms": null,
       "locks": [
-        {"t_ms": 1000, "away": 10, "home": 7, "quarter": 4, "clock_s": 0}
+        {
+          "t_ms": 1000,
+          "away": 10,
+          "home": 7,
+          "quarter": 4,
+          "clock_s": 0
+        }
       ],
       "frames": [
-        {"t_ms": 5000, "away": 10, "home": 7, "conf": 0.95, "ok": true},
-        {"t_ms": 5400, "away": 10, "home": 7, "conf": 0.95, "ok": true},
-        {"t_ms": 5800, "away": 10, "home": 7, "conf": 0.95, "ok": true}
+        {
+          "t_ms": 5000,
+          "away": 10,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5400,
+          "away": 10,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5800,
+          "away": 10,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 9000,
+          "away": 17,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 9400,
+          "away": 17,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 9800,
+          "away": 17,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        }
       ],
-      "later_menu": {"away": 17, "home": 7, "t_ms": 9000},
-      "later_live_play": false,
       "expect": {
         "adopt_menu": false,
         "final_confirmed": false,
@@ -1009,49 +1386,108 @@ A hash mismatch fails the test. The two pause cases also have pixel fixtures bes
         "home": 7,
         "method": "last_scorebug_read_unconfirmed",
         "review": "partial",
-        "note": null
-      }
+        "note": null,
+        "final_basis": "absent"
+      },
+      "illustrates": "The second score is in frames, after the first stable run. decide posts neither menu. The receipt score is the lock."
     },
     {
       "id": "later-live-play",
       "screen": "end_menu",
       "options_hold_ms": null,
       "locks": [
-        {"t_ms": 1000, "away": 10, "home": 7, "quarter": 4, "clock_s": 0},
-        {"t_ms": 9000, "away": 10, "home": 7, "quarter": 4, "clock_s": 45}
+        {
+          "t_ms": 1000,
+          "away": 13,
+          "home": 6,
+          "quarter": 4,
+          "clock_s": 0
+        },
+        {
+          "t_ms": 9000,
+          "away": 13,
+          "home": 6,
+          "quarter": 4,
+          "clock_s": 45
+        }
       ],
       "frames": [
-        {"t_ms": 5000, "away": 10, "home": 7, "conf": 0.95, "ok": true},
-        {"t_ms": 5400, "away": 10, "home": 7, "conf": 0.95, "ok": true},
-        {"t_ms": 5800, "away": 10, "home": 7, "conf": 0.95, "ok": true}
+        {
+          "t_ms": 5000,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5400,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5800,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        }
       ],
-      "end_screens": [5000],
-      "later_menu": null,
-      "later_live_play": false,
+      "end_screens": [
+        5000,
+        5400,
+        5800
+      ],
       "expect": {
         "adopt_menu": false,
         "final_confirmed": false,
-        "away": 10,
-        "home": 7,
+        "away": 13,
+        "home": 6,
         "method": "last_scorebug_read_unconfirmed",
         "review": "partial",
-        "note": null
-      }
+        "note": null,
+        "cutoff_ms": 5000,
+        "final_basis": "absent"
+      },
+      "illustrates": "A lock at 9000 is after the menu frames. decide reads later live play from that lock. Those frames are not fresh."
     },
     {
       "id": "score-went-down",
       "screen": "end_menu",
       "options_hold_ms": null,
       "locks": [
-        {"t_ms": 1000, "away": 14, "home": 7, "quarter": 4, "clock_s": 0}
+        {
+          "t_ms": 1000,
+          "away": 14,
+          "home": 7,
+          "quarter": 4,
+          "clock_s": 0
+        }
       ],
       "frames": [
-        {"t_ms": 5000, "away": 10, "home": 7, "conf": 0.95, "ok": true},
-        {"t_ms": 5400, "away": 10, "home": 7, "conf": 0.95, "ok": true},
-        {"t_ms": 5800, "away": 10, "home": 7, "conf": 0.95, "ok": true}
+        {
+          "t_ms": 5000,
+          "away": 10,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5400,
+          "away": 10,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5800,
+          "away": 10,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        }
       ],
-      "later_menu": null,
-      "later_live_play": false,
       "expect": {
         "adopt_menu": false,
         "final_confirmed": false,
@@ -1067,15 +1503,37 @@ A hash mismatch fails the test. The two pause cases also have pixel fixtures bes
       "screen": "end_menu",
       "options_hold_ms": null,
       "locks": [
-        {"t_ms": 1000, "away": 10, "home": 7, "quarter": 4, "clock_s": 0}
+        {
+          "t_ms": 1000,
+          "away": 10,
+          "home": 7,
+          "quarter": 4,
+          "clock_s": 0
+        }
       ],
       "frames": [
-        {"t_ms": 5000, "away": 10, "home": 7, "conf": 0.55, "ok": true},
-        {"t_ms": 5400, "away": 10, "home": 7, "conf": 0.55, "ok": true},
-        {"t_ms": 5800, "away": 10, "home": 7, "conf": 0.55, "ok": true}
+        {
+          "t_ms": 5000,
+          "away": 10,
+          "home": 7,
+          "conf": 0.55,
+          "ok": true
+        },
+        {
+          "t_ms": 5400,
+          "away": 10,
+          "home": 7,
+          "conf": 0.55,
+          "ok": true
+        },
+        {
+          "t_ms": 5800,
+          "away": 10,
+          "home": 7,
+          "conf": 0.55,
+          "ok": true
+        }
       ],
-      "later_menu": null,
-      "later_live_play": false,
       "expect": {
         "adopt_menu": false,
         "final_confirmed": false,
@@ -1092,8 +1550,6 @@ A hash mismatch fails the test. The two pause cases also have pixel fixtures bes
       "options_hold_ms": null,
       "locks": [],
       "frames": [],
-      "later_menu": null,
-      "later_live_play": false,
       "expect": {
         "adopt_menu": false,
         "final_confirmed": false,
@@ -1110,19 +1566,62 @@ A hash mismatch fails the test. The two pause cases also have pixel fixtures bes
       "screen": "end_menu",
       "options_hold_ms": null,
       "locks": [
-        {"t_ms": 10000, "away": 10, "home": 7, "quarter": 4, "clock_s": 0}
+        {
+          "t_ms": 10000,
+          "away": 10,
+          "home": 7,
+          "quarter": 4,
+          "clock_s": 0
+        }
       ],
       "frames": [
-        {"t_ms": 3000, "away": 3, "home": 0, "conf": 0.95, "ok": true},
-        {"t_ms": 3500, "away": 3, "home": 0, "conf": 0.95, "ok": true},
-        {"t_ms": 4000, "away": 3, "home": 0, "conf": 0.95, "ok": true},
-        {"t_ms": 20000, "away": 10, "home": 7, "conf": 0.95, "ok": true},
-        {"t_ms": 20500, "away": 10, "home": 7, "conf": 0.95, "ok": true},
-        {"t_ms": 21000, "away": 10, "home": 7, "conf": 0.95, "ok": true}
+        {
+          "t_ms": 3000,
+          "away": 3,
+          "home": 0,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 3500,
+          "away": 3,
+          "home": 0,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 4000,
+          "away": 3,
+          "home": 0,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 20000,
+          "away": 10,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 20500,
+          "away": 10,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 21000,
+          "away": 10,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        }
       ],
-      "end_screens": [2000, 20000],
-      "later_menu": null,
-      "later_live_play": false,
+      "end_screens": [
+        2000,
+        20000
+      ],
       "expect": {
         "adopt_menu": true,
         "final_confirmed": true,
@@ -1140,16 +1639,42 @@ A hash mismatch fails the test. The two pause cases also have pixel fixtures bes
       "screen": "end_menu",
       "options_hold_ms": null,
       "locks": [
-        {"t_ms": 5000, "away": 10, "home": 7, "quarter": 4, "clock_s": 0}
+        {
+          "t_ms": 5000,
+          "away": 10,
+          "home": 7,
+          "quarter": 4,
+          "clock_s": 0
+        }
       ],
       "frames": [
-        {"t_ms": 5000, "away": 10, "home": 7, "conf": 0.95, "ok": true},
-        {"t_ms": 5400, "away": 10, "home": 7, "conf": 0.95, "ok": true},
-        {"t_ms": 5800, "away": 10, "home": 7, "conf": 0.95, "ok": true}
+        {
+          "t_ms": 5000,
+          "away": 10,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5400,
+          "away": 10,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5800,
+          "away": 10,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        }
       ],
-      "end_screens": [5000],
-      "later_menu": null,
-      "later_live_play": false,
+      "end_screens": [
+        5000,
+        5400,
+        5800
+      ],
       "expect": {
         "adopt_menu": false,
         "final_confirmed": false,
@@ -1158,33 +1683,108 @@ A hash mismatch fails the test. The two pause cases also have pixel fixtures bes
         "method": "last_scorebug_read_unconfirmed",
         "review": "partial",
         "note": null,
-        "cutoff_ms": 5000
-      }
+        "cutoff_ms": 5400,
+        "evidence_counts": [
+          "between-lock-and-next-screen"
+        ],
+        "final_basis": "absent"
+      },
+      "evidence": [
+        {
+          "id": "at-lock-and-menu",
+          "t_ms": 5000,
+          "kind": "input_activity"
+        },
+        {
+          "id": "between-lock-and-next-screen",
+          "t_ms": 5200,
+          "kind": "input_activity"
+        },
+        {
+          "id": "at-cutoff",
+          "t_ms": 5400,
+          "kind": "input_activity"
+        }
+      ],
+      "illustrates": "Every readable menu frame is an end screen, including 5400 and 5800. The lock is at 5000, so the cutoff is 5400. The frame at 5000 is not fresh. Evidence at 5200 counts. Evidence at 5000 and at 5400 does not."
     },
     {
       "id": "cutoff-dead-zone-and-inclusive-equal",
       "screen": "end_menu",
       "options_hold_ms": null,
       "locks": [
-        {"t_ms": 10000, "away": 10, "home": 7, "quarter": 4, "clock_s": 0}
+        {
+          "t_ms": 10000,
+          "away": 10,
+          "home": 7,
+          "quarter": 4,
+          "clock_s": 0
+        }
       ],
       "frames": [
-        {"t_ms": 20000, "away": 10, "home": 7, "conf": 0.95, "ok": true},
-        {"t_ms": 20500, "away": 10, "home": 7, "conf": 0.95, "ok": true},
-        {"t_ms": 21000, "away": 10, "home": 7, "conf": 0.95, "ok": true}
+        {
+          "t_ms": 20000,
+          "away": 10,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 20500,
+          "away": 10,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 21000,
+          "away": 10,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        }
       ],
-      "end_screens": [2000, 20000],
+      "end_screens": [
+        2000,
+        20000
+      ],
       "evidence": [
-        {"id": "before-first-screen", "t_ms": 1500, "kind": "input_activity"},
-        {"id": "at-first-screen", "t_ms": 2000, "kind": "input_activity"},
-        {"id": "between-screen-and-scorebug", "t_ms": 5000, "kind": "haptic"},
-        {"id": "at-scorebug", "t_ms": 10000, "kind": "score_change_clip"},
-        {"id": "after-scorebug-before-menu", "t_ms": 12000, "kind": "input_activity"},
-        {"id": "at-fresh-cutoff", "t_ms": 20000, "kind": "input_activity"},
-        {"id": "after-cutoff", "t_ms": 21000, "kind": "haptic"}
+        {
+          "id": "before-first-screen",
+          "t_ms": 1500,
+          "kind": "input_activity"
+        },
+        {
+          "id": "at-first-screen",
+          "t_ms": 2000,
+          "kind": "input_activity"
+        },
+        {
+          "id": "between-screen-and-scorebug",
+          "t_ms": 5000,
+          "kind": "haptic"
+        },
+        {
+          "id": "at-scorebug",
+          "t_ms": 10000,
+          "kind": "score_change_clip"
+        },
+        {
+          "id": "after-scorebug-before-menu",
+          "t_ms": 12000,
+          "kind": "input_activity"
+        },
+        {
+          "id": "at-fresh-cutoff",
+          "t_ms": 20000,
+          "kind": "input_activity"
+        },
+        {
+          "id": "after-cutoff",
+          "t_ms": 21000,
+          "kind": "haptic"
+        }
       ],
-      "later_menu": null,
-      "later_live_play": false,
       "expect": {
         "adopt_menu": true,
         "final_confirmed": true,
@@ -1194,7 +1794,10 @@ A hash mismatch fails the test. The two pause cases also have pixel fixtures bes
         "review": "pass",
         "note": null,
         "cutoff_ms": 20000,
-        "evidence_counts": ["before-first-screen", "after-scorebug-before-menu"],
+        "evidence_counts": [
+          "before-first-screen",
+          "after-scorebug-before-menu"
+        ],
         "downgrades_verdict": false
       }
     },
@@ -1203,21 +1806,57 @@ A hash mismatch fails the test. The two pause cases also have pixel fixtures bes
       "screen": "end_menu",
       "options_hold_ms": null,
       "locks": [
-        {"t_ms": 10000, "away": 10, "home": 7, "quarter": 4, "clock_s": 11}
+        {
+          "t_ms": 10000,
+          "away": 10,
+          "home": 7,
+          "quarter": 4,
+          "clock_s": 11
+        }
       ],
       "frames": [
-        {"t_ms": 3000, "away": 10, "home": 7, "conf": 0.95, "ok": true},
-        {"t_ms": 3500, "away": 10, "home": 7, "conf": 0.95, "ok": true},
-        {"t_ms": 4000, "away": 10, "home": 7, "conf": 0.95, "ok": true}
+        {
+          "t_ms": 3000,
+          "away": 10,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 3500,
+          "away": 10,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 4000,
+          "away": 10,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        }
       ],
-      "end_screens": [2000],
+      "end_screens": [
+        2000
+      ],
       "evidence": [
-        {"id": "before-first-screen", "t_ms": 1500, "kind": "input_activity"},
-        {"id": "at-first-screen", "t_ms": 2000, "kind": "input_activity"},
-        {"id": "after-scorebug", "t_ms": 12000, "kind": "input_activity"}
+        {
+          "id": "before-first-screen",
+          "t_ms": 1500,
+          "kind": "input_activity"
+        },
+        {
+          "id": "at-first-screen",
+          "t_ms": 2000,
+          "kind": "input_activity"
+        },
+        {
+          "id": "after-scorebug",
+          "t_ms": 12000,
+          "kind": "input_activity"
+        }
       ],
-      "later_menu": null,
-      "later_live_play": false,
       "expect": {
         "adopt_menu": false,
         "final_confirmed": false,
@@ -1227,17 +1866,827 @@ A hash mismatch fails the test. The two pause cases also have pixel fixtures bes
         "review": "partial",
         "note": null,
         "cutoff_ms": 2000,
-        "evidence_counts": ["before-first-screen"]
+        "evidence_counts": [
+          "before-first-screen"
+        ]
+      }
+    },
+    {
+      "id": "qorcap-98-touchdown-lock-same-ts",
+      "source": "qorcap#98",
+      "synthetic": true,
+      "illustrates": "A touchdown lock is flushed at the same timestamp as a menu frame. Evidence is at that timestamp and 250 ms later. No end screen is strictly after the lock, so the cutoff falls back to 8000. Neither evidence row counts. The frame is not fresh. The case does not confirm.",
+      "screen": "end_menu",
+      "options_hold_ms": null,
+      "locks": [
+        {
+          "t_ms": 8000,
+          "away": 13,
+          "home": 6,
+          "quarter": 4,
+          "clock_s": 8
+        }
+      ],
+      "frames": [
+        {
+          "t_ms": 8000,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        }
+      ],
+      "end_screens": [
+        8000
+      ],
+      "evidence": [
+        {
+          "id": "at-T",
+          "t_ms": 8000,
+          "kind": "input_activity"
+        },
+        {
+          "id": "T-plus-250",
+          "t_ms": 8250,
+          "kind": "input_activity"
+        }
+      ],
+      "expect": {
+        "adopt_menu": false,
+        "final_confirmed": false,
+        "away": 13,
+        "home": 6,
+        "method": "last_scorebug_read_unconfirmed",
+        "final_basis": "absent",
+        "review": "partial",
+        "note": null,
+        "cutoff_ms": 8000,
+        "evidence_counts": [],
+        "posted_score": {
+          "away": 13,
+          "home": 6
+        }
+      }
+    },
+    {
+      "id": "duplicate-timestamps",
+      "screen": "end_menu",
+      "options_hold_ms": null,
+      "illustrates": "Rows 5000, 5000, 5400 are two instants. A duplicate adds no span and no frame.",
+      "locks": [
+        {
+          "t_ms": 1000,
+          "away": 9,
+          "home": 6,
+          "quarter": 4,
+          "clock_s": 0
+        }
+      ],
+      "frames": [
+        {
+          "t_ms": 5000,
+          "away": 9,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5000,
+          "away": 9,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5400,
+          "away": 9,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        }
+      ],
+      "expect": {
+        "adopt_menu": false,
+        "final_confirmed": false,
+        "away": 9,
+        "home": 6,
+        "method": "last_scorebug_read_unconfirmed",
+        "final_basis": "absent",
+        "review": "partial",
+        "note": null
+      }
+    },
+    {
+      "id": "backwards-timestamp",
+      "screen": "end_menu",
+      "options_hold_ms": null,
+      "illustrates": "Frames are listed 5000, 5800, 5400. Sorting them into 5000, 5400, 5800 would be a stable run. A backwards step fails the decision closed.",
+      "locks": [
+        {
+          "t_ms": 1000,
+          "away": 9,
+          "home": 6,
+          "quarter": 4,
+          "clock_s": 0
+        }
+      ],
+      "frames": [
+        {
+          "t_ms": 5000,
+          "away": 9,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5800,
+          "away": 9,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5400,
+          "away": 9,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        }
+      ],
+      "expect": {
+        "adopt_menu": false,
+        "final_confirmed": false,
+        "away": 9,
+        "home": 6,
+        "method": "last_scorebug_read_unconfirmed",
+        "final_basis": "absent",
+        "review": "partial",
+        "note": null
+      }
+    },
+    {
+      "id": "unreadable-frame-resets-run",
+      "screen": "end_menu",
+      "options_hold_ms": null,
+      "illustrates": "ok false resets the streak. The frame before it is dropped. Two frames after it do not confirm. Bridging across the unreadable frame would be three frames and must not confirm.",
+      "locks": [
+        {
+          "t_ms": 1000,
+          "away": 8,
+          "home": 5,
+          "quarter": 4,
+          "clock_s": 0
+        }
+      ],
+      "frames": [
+        {
+          "t_ms": 5000,
+          "away": 8,
+          "home": 5,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5400,
+          "away": 8,
+          "home": 5,
+          "conf": 0.95,
+          "ok": false
+        },
+        {
+          "t_ms": 5800,
+          "away": 8,
+          "home": 5,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 6200,
+          "away": 8,
+          "home": 5,
+          "conf": 0.95,
+          "ok": true
+        }
+      ],
+      "expect": {
+        "adopt_menu": false,
+        "final_confirmed": false,
+        "away": 8,
+        "home": 5,
+        "method": "last_scorebug_read_unconfirmed",
+        "final_basis": "absent",
+        "review": "partial",
+        "note": null
+      }
+    },
+    {
+      "id": "unreadable-then-new-run-confirms",
+      "screen": "end_menu",
+      "options_hold_ms": null,
+      "illustrates": "The same reset leaves a new run. Three fresh frames after ok false confirm. An unreadable frame does not fail the rest of the decision.",
+      "locks": [
+        {
+          "t_ms": 1000,
+          "away": 8,
+          "home": 5,
+          "quarter": 4,
+          "clock_s": 0
+        }
+      ],
+      "frames": [
+        {
+          "t_ms": 5000,
+          "away": 8,
+          "home": 5,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5400,
+          "away": 8,
+          "home": 5,
+          "conf": 0.95,
+          "ok": false
+        },
+        {
+          "t_ms": 6000,
+          "away": 8,
+          "home": 5,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 6400,
+          "away": 8,
+          "home": 5,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 6800,
+          "away": 8,
+          "home": 5,
+          "conf": 0.95,
+          "ok": true
+        }
+      ],
+      "expect": {
+        "adopt_menu": true,
+        "final_confirmed": true,
+        "away": 8,
+        "home": 5,
+        "method": "end_menu_read",
+        "final_basis": "end_menu",
+        "review": "pass",
+        "note": null,
+        "downgrades_verdict": false
+      }
+    },
+    {
+      "id": "conf-0-75-resets-run",
+      "screen": "end_menu",
+      "options_hold_ms": null,
+      "illustrates": "Confidence 0.75 is readable and below 0.90. It resets the streak. Skipping it and keeping the earlier frame would be three frames and must not confirm.",
+      "locks": [
+        {
+          "t_ms": 1000,
+          "away": 4,
+          "home": 3,
+          "quarter": 4,
+          "clock_s": 0
+        }
+      ],
+      "frames": [
+        {
+          "t_ms": 5000,
+          "away": 4,
+          "home": 3,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5400,
+          "away": 4,
+          "home": 3,
+          "conf": 0.75,
+          "ok": true
+        },
+        {
+          "t_ms": 5800,
+          "away": 4,
+          "home": 3,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 6200,
+          "away": 4,
+          "home": 3,
+          "conf": 0.95,
+          "ok": true
+        }
+      ],
+      "expect": {
+        "adopt_menu": false,
+        "final_confirmed": false,
+        "away": 4,
+        "home": 3,
+        "method": "last_scorebug_read_unconfirmed",
+        "final_basis": "absent",
+        "review": "partial",
+        "note": null
+      }
+    },
+    {
+      "id": "conf-0-75-then-new-run-confirms",
+      "screen": "end_menu",
+      "options_hold_ms": null,
+      "illustrates": "Three frames at 0.95 after the 0.75 frame are a new run and confirm.",
+      "locks": [
+        {
+          "t_ms": 1000,
+          "away": 4,
+          "home": 3,
+          "quarter": 4,
+          "clock_s": 0
+        }
+      ],
+      "frames": [
+        {
+          "t_ms": 5000,
+          "away": 4,
+          "home": 3,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5400,
+          "away": 4,
+          "home": 3,
+          "conf": 0.75,
+          "ok": true
+        },
+        {
+          "t_ms": 6000,
+          "away": 4,
+          "home": 3,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 6400,
+          "away": 4,
+          "home": 3,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 6800,
+          "away": 4,
+          "home": 3,
+          "conf": 0.95,
+          "ok": true
+        }
+      ],
+      "expect": {
+        "adopt_menu": true,
+        "final_confirmed": true,
+        "away": 4,
+        "home": 3,
+        "method": "end_menu_read",
+        "final_basis": "end_menu",
+        "review": "pass",
+        "note": null,
+        "downgrades_verdict": false
+      }
+    },
+    {
+      "id": "replay-lock-lower-after-menu",
+      "screen": "end_menu",
+      "options_hold_ms": null,
+      "illustrates": "A stale replay lock at 3-0 is after the menu and below the earlier 14-7 lock. It is not the posted score. The posted score is 14-7, the last row of the monotone prefix. The final stays unconfirmed because that later lock is the latest timestamp.",
+      "locks": [
+        {
+          "t_ms": 1000,
+          "away": 14,
+          "home": 7,
+          "quarter": 4,
+          "clock_s": 0
+        },
+        {
+          "t_ms": 12000,
+          "away": 3,
+          "home": 0,
+          "quarter": 4,
+          "clock_s": 30
+        }
+      ],
+      "frames": [
+        {
+          "t_ms": 5000,
+          "away": 14,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5400,
+          "away": 14,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5800,
+          "away": 14,
+          "home": 7,
+          "conf": 0.95,
+          "ok": true
+        }
+      ],
+      "expect": {
+        "adopt_menu": false,
+        "final_confirmed": false,
+        "away": 14,
+        "home": 7,
+        "method": "last_scorebug_read_unconfirmed",
+        "final_basis": "absent",
+        "review": "partial",
+        "note": null,
+        "posted_score": {
+          "away": 14,
+          "home": 7
+        },
+        "backwards_lock": {
+          "away": 3,
+          "home": 0,
+          "t_ms": 12000
+        }
+      }
+    },
+    {
+      "id": "menu-below-an-earlier-lock",
+      "screen": "end_menu",
+      "options_hold_ms": null,
+      "illustrates": "The menu equals the later lock and is below the earlier lock. Scores never go down checks every lock. The posted score is 21-0, not 14-0.",
+      "locks": [
+        {
+          "t_ms": 1000,
+          "away": 21,
+          "home": 0,
+          "quarter": 4,
+          "clock_s": 0
+        },
+        {
+          "t_ms": 2000,
+          "away": 14,
+          "home": 0,
+          "quarter": 4,
+          "clock_s": 0
+        }
+      ],
+      "frames": [
+        {
+          "t_ms": 5000,
+          "away": 14,
+          "home": 0,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5400,
+          "away": 14,
+          "home": 0,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5800,
+          "away": 14,
+          "home": 0,
+          "conf": 0.95,
+          "ok": true
+        }
+      ],
+      "expect": {
+        "adopt_menu": false,
+        "final_confirmed": false,
+        "away": 21,
+        "home": 0,
+        "method": "last_scorebug_read_unconfirmed",
+        "final_basis": "absent",
+        "review": "partial",
+        "note": null,
+        "posted_score": {
+          "away": 21,
+          "home": 0
+        },
+        "backwards_lock": {
+          "away": 14,
+          "home": 0,
+          "t_ms": 2000
+        }
+      }
+    },
+    {
+      "id": "tie-menu-stays-unconfirmed",
+      "screen": "end_menu",
+      "options_hold_ms": null,
+      "illustrates": "A tied menu stays refused. Open decision, §4.7. The owner has not signed off on removing the guard.",
+      "locks": [
+        {
+          "t_ms": 1000,
+          "away": 6,
+          "home": 3,
+          "quarter": 4,
+          "clock_s": 0
+        }
+      ],
+      "frames": [
+        {
+          "t_ms": 5000,
+          "away": 6,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5400,
+          "away": 6,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5800,
+          "away": 6,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        }
+      ],
+      "expect": {
+        "adopt_menu": false,
+        "final_confirmed": false,
+        "away": 6,
+        "home": 3,
+        "method": "last_scorebug_read_unconfirmed",
+        "final_basis": "absent",
+        "review": "partial",
+        "note": null
+      }
+    },
+    {
+      "id": "final-of-1-stays-unconfirmed",
+      "screen": "end_menu",
+      "options_hold_ms": null,
+      "illustrates": "A menu with either side equal to 1 stays refused. Open decision, §4.7.",
+      "locks": [
+        {
+          "t_ms": 1000,
+          "away": 0,
+          "home": 0,
+          "quarter": 4,
+          "clock_s": 0
+        }
+      ],
+      "frames": [
+        {
+          "t_ms": 5000,
+          "away": 1,
+          "home": 0,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5400,
+          "away": 1,
+          "home": 0,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5800,
+          "away": 1,
+          "home": 0,
+          "conf": 0.95,
+          "ok": true
+        }
+      ],
+      "expect": {
+        "adopt_menu": false,
+        "final_confirmed": false,
+        "away": 0,
+        "home": 0,
+        "method": "last_scorebug_read_unconfirmed",
+        "final_basis": "absent",
+        "review": "partial",
+        "note": null
+      }
+    },
+    {
+      "id": "null-clock-long-gap",
+      "synthetic": true,
+      "screen": "end_menu",
+      "options_hold_ms": null,
+      "illustrates": "decide reads the raw clock_s on the lock. Null stays null. A null clock and a wall gap of 19000 ms, at least 10000, fires the stall note. The note does not downgrade the verdict.",
+      "locks": [
+        {
+          "t_ms": 1000,
+          "away": 6,
+          "home": 3,
+          "quarter": 4,
+          "clock_s": null
+        }
+      ],
+      "frames": [
+        {
+          "t_ms": 20000,
+          "away": 6,
+          "home": 3,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 20500,
+          "away": 6,
+          "home": 3,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 21000,
+          "away": 6,
+          "home": 3,
+          "conf": 0.95,
+          "ok": true
+        }
+      ],
+      "expect": {
+        "adopt_menu": true,
+        "final_confirmed": true,
+        "away": 6,
+        "home": 3,
+        "method": "end_menu_read",
+        "final_basis": "end_menu",
+        "review": "pass",
+        "note": "End menu confirmed 6–3. Scorebug last locked at Q4 with no clock read (19000 ms unread on the wall clock).",
+        "seconds_unread": null,
+        "wall_gap_ms": 19000,
+        "downgrades_verdict": false
+      }
+    },
+    {
+      "id": "no-lock-contradicting-menus",
+      "screen": "end_menu",
+      "options_hold_ms": null,
+      "illustrates": "No lock, and two menus that disagree. Posted score is null. Neither menu is adopted. method is last_scorebug_read_unconfirmed. final_basis is absent. final_confirmed is false. final_reread is fail.",
+      "locks": [],
+      "frames": [
+        {
+          "t_ms": 5000,
+          "away": 9,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5400,
+          "away": 9,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5800,
+          "away": 9,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 9000,
+          "away": 16,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 9400,
+          "away": 16,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 9800,
+          "away": 16,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        }
+      ],
+      "expect": {
+        "adopt_menu": false,
+        "final_confirmed": false,
+        "away": null,
+        "home": null,
+        "method": "last_scorebug_read_unconfirmed",
+        "final_basis": "absent",
+        "review": "fail",
+        "note": null,
+        "cutoff_ms": 5000
+      }
+    },
+    {
+      "id": "referee-cannot-measure-hold",
+      "screen": "end_menu",
+      "options_presses_ms": null,
+      "illustrates": "options_presses_ms is null: inputs.jsonl was not read. The frames are six-item and have no picture_since_ms. decide does not pass. Official review is partial at the lock.",
+      "locks": [
+        {
+          "t_ms": 1000,
+          "away": 9,
+          "home": 6,
+          "quarter": 4,
+          "clock_s": 0
+        }
+      ],
+      "frames": [
+        {
+          "t_ms": 5000,
+          "away": 9,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true,
+          "pixel": "end_menu_6"
+        },
+        {
+          "t_ms": 5400,
+          "away": 9,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true,
+          "pixel": "end_menu_6"
+        },
+        {
+          "t_ms": 5800,
+          "away": 9,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true,
+          "pixel": "end_menu_6"
+        }
+      ],
+      "expect": {
+        "adopt_menu": false,
+        "final_confirmed": false,
+        "away": 9,
+        "home": 6,
+        "method": "last_scorebug_read_unconfirmed",
+        "final_basis": "absent",
+        "review": "partial",
+        "note": null,
+        "cutoff_ms": null
       }
     }
   ]
 }
+
 ```
 
-The stall case's three frames are the gate. `reported_frames: 485` records the issue's count. An implementation that checks only the first frame's confidence fails a sibling the runner adds by setting the middle frame to 0.89, which is the `conf-below-0-90-on-one-frame` case. A case that omits `end_screens` uses the `t_ms` of its `ok` frames when `screen` is `end_menu`, and an empty list otherwise. `scorebug-return-resets-agreed-score` confirms 10–7 from the frames after the lock and drops the 3–0 run. `menu-frame-equal-to-scorebug-not-fresh` has its first frame at the lock time, so only two frames are fresh. `cutoff-dead-zone-and-inclusive-equal` keeps evidence before the first end screen and evidence strictly between the scorebug and the fresh menu, and drops every timestamp from the first end screen through the scorebug, plus every timestamp `>= cutoff_ms`. `cutoff-falls-back-to-earliest-end-screen` has no end screen after the lock, so `cutoff_ms` is 2000 and the menu frames before the lock do not confirm.
+The stall case's three frames are the gate, at confidence 0.94 on invented timestamps. `reported_frames: 485` records the issue's count. The case is `"synthetic": true`. Issue 94 did not publish per-frame confidence or these timestamps. An implementation that checks only the first frame's confidence fails `conf-below-0-90-on-one-frame`.
+
+`duplicate-timestamps` lists `5000`, `5000`, `5400`. That is two instants, and it does not confirm. `backwards-timestamp` lists `5000`, `5800`, `5400`. Sorting those into `5000`, `5400`, `5800` would be a stable run. The decision fails closed and does not confirm. `unreadable-frame-resets-run` has one good frame, one `ok: false` frame, and two good frames. The unreadable frame resets the streak. Bridging across it would be three frames and must not confirm. `unreadable-then-new-run-confirms` has three fresh frames after `ok: false` and does confirm, so the unreadable frame does not abort the rest of the decision. `conf-0-75-resets-run` is the 0.70–0.89 band, and it resets the same way. `conf-0-75-then-new-run-confirms` shows the new run.
+
+`decide` derives end screens from every frame it still labels an end menu. A listed `end_screens` that drops a later readable frame is not the cutoff. `menu-frame-equal-to-scorebug-not-fresh` therefore has end screens at 5000, 5400, and 5800. The lock is at 5000, so the cutoff is 5400. The frame at 5000 is not fresh, and two fresh frames do not confirm. Evidence at 5000 is in the dead zone. Evidence at 5200 counts. Evidence at 5400 does not (`t_ms >= cutoff_ms`).
+
+`qorcap-98-touchdown-lock-same-ts` is the qorcap#98 shape with synthetic scores away 13, home 6. The touchdown lock and the menu frame share `t_ms` 8000. Evidence is at 8000 and 8250. No end screen is strictly after 8000, so the cutoff falls back to 8000. Neither evidence row counts. The frame is not fresh. The case does not confirm. The posted score is the lock, 13–6, and `final_reread` is partial.
+
+`later-live-play` has a lock at `t_ms` 9000 after the menu frames. `decide` reads that from `locks`. There is no `later_live_play` field. The frames are not fresh. The posted score is 13–6. `later-contradicting-menu` puts the second score in `frames` (17–7 after 10–7). Neither menu is posted. The receipt score is the lock. `no-lock-contradicting-menus` has no lock and two menus that disagree: posted score null, neither menu adopted, `method` `last_scorebug_read_unconfirmed`, `final_basis` absent, `final_confirmed` false, `final_reread` fail.
+
+`replay-lock-lower-after-menu` posts 14–7, the last row of the monotone prefix, and does not post the later 3–0 lock. `menu-below-an-earlier-lock` posts 21–0. `tie-menu-stays-unconfirmed` and `final-of-1-stays-unconfirmed` stay unconfirmed (§4.7). `null-clock-long-gap` confirms 6–3 from a null raw `clock_s` and a 19000 ms wall gap. The stall note is on the sidecar and `downgrades_verdict` is false. `referee-cannot-measure-hold` has `options_presses_ms` null and does not pass.
+
+`scorebug-return-resets-agreed-score` confirms 10–7 from the frames after the lock and drops the 3–0 run. `cutoff-dead-zone-and-inclusive-equal` keeps evidence before the first end screen and evidence strictly between the scorebug and the fresh menu, and drops every timestamp from the first end screen through the scorebug, plus every timestamp `>= cutoff_ms`. `cutoff-falls-back-to-earliest-end-screen` has no end screen after the lock, so `cutoff_ms` is 2000 and the menu frames before the lock do not confirm. `pause-options-short-hold` carries `pixel` `end_menu_6`, `picture_since_ms` 1000, and `options_presses_ms` `[800]`. The hold at the first frame is 4000 ms. `decide` labels those frames pause.
 
 ## 8. Schema
 
-`receipt.v0` stays frozen. `schema/**` is not part of this change. No new `result` field, no new `final_basis`, no new method string. `end_menu_read` and `last_scorebug_read_unconfirmed` are already in the contract.
+`receipt.v0` stays frozen. `schema/**` is not part of this change. Pages publishes `schema/**` (`.github/workflows/pages.yml`). No new `result` field, no new `final_basis`, no new method string. `end_menu_read` and `last_scorebug_read_unconfirmed` are already in the contract.
 
-`final.rule.json` is a sidecar, same class as `final.tail.json` and `device_attest.v0.json`. The public note is copied out of it when the match page is built. It is not hashed into the receipt.
+`final.rule.json` is a sidecar, same class as `final.tail.json` and `device_attest.v0.json`. Its schema file is [`docs/design/final.rule.v1.schema.json`](final.rule.v1.schema.json), outside `schema/**`. Every final the new code produces writes that sidecar with `"rule": "final-rule/v1"`, including an unconfirmed final. The public note is copied out of `note` when the match page is built. `evidence_counted` stays on the file and is not rendered. The sidecar is not hashed into the receipt. An old bundle with no sidecar still verifies. The page shows no v1 note for it.
+
+## 9. Rollout and compatibility
+
+QorTime merges `qor_receipt.final_rule` first. QorCap then re-vendors that package and pins the merge. The client does not ship a private copy of the function ahead of the referee.
+
+A receipt from a client at v0.3.32 or earlier keeps the status it was signed with. This rule change does not upgrade it to VERIFIED. VERIFIED requires a new official review signature.
+
+When that re-review is actually run, the referee re-read is authoritative:
+
+* The claim's numbers are compared to `decide`'s score. A difference is a `final_reread` fail, shown as a mismatch. The stored claim is not overwritten.
+* The claim's `method` can be `last_scorebug_read_unconfirmed` while the re-read confirms the same numbers. The check may pass on the numbers. The receipt is not rewritten to VERIFIED by the rule change itself. The new review signature is what would change the status, and this design does not issue one.
+* `check_final` no longer errors when an adopted end menu is more than one legal play past the last scorebug. That changes a future verification of a bundle signed under the old rule: an old integrity error of that one shape would not fire again. Other errors still fire. Published pages are not rebuilt by the merge.
+
+Two sidecars can exist. The page shows the referee's `final.rule.json` when the review wrote one. Otherwise it shows the client's file. When both exist and the scores differ, the page shows the referee score and a visible note of the client's score. It does not average them and it does not hide the difference.
+
+`rule` on the sidecar is how a reader tells a v1 final from an older one. An old bundle has no file and no stamp.

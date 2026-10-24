@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "final-rule/v1",
+  "title": "final.rule.json",
+  "description": "Sidecar written beside a QorTime final. Not a receipt.v0 field and not under schema/**. The publisher reads it. Absence does not fail verification.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "rule", "final_confirmed", "downgrades_verdict"],
+  "properties": {
+    "schema": {"const": "final-rule/v1"},
+    "rule": {"const": "final-rule/v1"},
+    "final_confirmed": {"type": "boolean"},
+    "score": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["away", "home"],
+      "properties": {
+        "away": {"type": ["integer", "null"], "minimum": 0},
+        "home": {"type": ["integer", "null"], "minimum": 0}
+      }
+    },
+    "method": {"type": "string"},
+    "agreement": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "frames": {"type": "integer", "minimum": 0},
+        "span_ms": {"type": "integer", "minimum": 0},
+        "min_conf": {"type": "number", "minimum": 0, "maximum": 1}
+      }
+    },
+    "last_locked": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "away": {"type": "integer"},
+        "home": {"type": "integer"},
+        "quarter": {"type": ["integer", "null"]},
+        "clock_s": {"type": ["integer", "null"]},
+        "clock_source": {"const": "raw"},
+        "t_ms": {"type": "integer"}
+      }
+    },
+    "posted_score": {
+      "type": ["object", "null"],
+      "description": "Score written on an unconfirmed final. The last row of the monotone lock prefix, never a later lock that went down.",
+      "additionalProperties": false,
+      "properties": {
+        "away": {"type": ["integer", "null"]},
+        "home": {"type": ["integer", "null"]}
+      }
+    },
+    "backwards_lock": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "away": {"type": "integer"},
+        "home": {"type": "integer"},
+        "t_ms": {"type": "integer"}
+      }
+    },
+    "gap": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "seconds_unread": {"type": ["integer", "null"], "minimum": 0},
+        "wall_gap_ms": {"type": ["integer", "null"], "minimum": 0}
+      }
+    },
+    "disagreement": {"type": ["object", "null"]},
+    "note": {"type": ["string", "null"]},
+    "downgrades_verdict": {"const": false},
+    "cutoff_ms": {"type": ["integer", "null"]},
+    "evidence_counted": {
+      "type": "array",
+      "description": "Audit list. The only consumer of the evidence cutoff. The publisher does not render it. It does not change final_confirmed.",
+      "items": {"type": "object"}
+    }
+  }
+}
