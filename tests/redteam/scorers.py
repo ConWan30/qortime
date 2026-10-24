@@ -418,8 +418,8 @@ def _module_holds_class(cls: type) -> bool:
     return obj is cls
 
 
-def _class_path(obj: Any) -> Path | None:
-    """Source file of ``type(obj)``.
+def _path_for_class(cls: type) -> Path | None:
+    """Source file of ``cls``.
 
     A function's code object wins over ``__module__``. A class with no code of
     its own may use the module file only when that module does not already hold
@@ -427,7 +427,6 @@ def _class_path(obj: Any) -> Path | None:
     ``__qualname__`` from ``OpticalFlowPanEstimator`` therefore does not select
     that class's file.
     """
-    cls = type(obj)
     code_paths: set[Path] = set()
     for fn in _own_functions(cls):
         path = _code_path(fn)
@@ -447,6 +446,11 @@ def _class_path(obj: Any) -> Path | None:
     if isinstance(holder, type) and holder is not cls:
         return None
     return probed
+
+
+def _class_path(obj: Any) -> Path | None:
+    """Source file of ``type(obj)``. See ``_path_for_class``."""
+    return _path_for_class(type(obj))
 
 
 def _outside_rel(path: Path, module_name: str) -> str:
@@ -516,8 +520,12 @@ def _recomputed_pan_sha(obj: Any) -> str | None:
     ``cls is OpticalFlowPanEstimator`` (the class object in that module). A
     property, a copied string, or a class that only copies ``__module__`` and
     ``__qualname__`` does not qualify. ``params`` must be the real ``PanParams``
-    type. The digest is ``estimator_sha256(params)`` from the module, not
-    ``obj.sha256``.
+    type, and each field must be an exact ``int`` or ``float`` (the same check
+    ``estimator_known`` uses). The digest is ``estimator_sha256(params)`` from the
+    module, not ``obj.sha256``. A rejected instance (extra attribute, replaced
+    ``_pair``, replaced ``_mask_cache``, an ``int`` subclass, or a ``bool``) does
+    not record a digest, including the allowlisted hash. The allowlist itself is
+    not required: non-default ``PanParams`` with exact field types still hash.
     """
     mod = sys.modules.get("qor_receipt.vision.pan_estimator")
     if mod is None or obj is None:
@@ -525,11 +533,21 @@ def _recomputed_pan_sha(obj: Any) -> str | None:
     cls = getattr(mod, "OpticalFlowPanEstimator", None)
     params_cls = getattr(mod, "PanParams", None)
     fn = getattr(mod, "estimator_sha256", None)
-    if not isinstance(cls, type) or not isinstance(params_cls, type) or not callable(fn):
+    instance_ok = getattr(mod, "_estimator_instance_ok", None)
+    fields_exact = getattr(mod, "_params_field_types_exact", None)
+    if (
+        not isinstance(cls, type)
+        or not isinstance(params_cls, type)
+        or not callable(fn)
+        or not callable(instance_ok)
+        or not callable(fields_exact)
+    ):
         return None
     if type(obj) is not cls or type(getattr(obj, "params", None)) is not params_cls:
         return None
     try:
+        if instance_ok(obj) is not True or fields_exact(obj.params) is not True:
+            return None
         digest = fn(obj.params)
     except Exception:
         return None
@@ -675,8 +693,54 @@ def _closure_material(cls: type) -> bytes:
     return b"\n".join(parts)
 
 
+def _class_body(cls: type) -> str:
+    """Class block of ``cls`` from the file its own code names, not ``inspect.getsource``."""
+    path = _path_for_class(cls)
+    if path is None:
+        return ""
+    try:
+        source = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return ""
+    qual = cls.__qualname__ if type(getattr(cls, "__qualname__", None)) is str else ""
+    linenos = [
+        fn.__code__.co_firstlineno
+        for fn in _own_functions(cls)
+        if getattr(fn, "__code__", None) is not None and type(getattr(fn.__code__, "co_firstlineno", None)) is int
+    ]
+    found: str | None = None
+    if source and linenos:
+        found = _enclosing_class_block(source, min(linenos))
+    if found is None and source and qual and _module_holds_class(cls):
+        found = _class_block(source, qual)
+    if found is None and source and qual:
+        leaf = qual.split(".")[-1]
+        module_obj = sys.modules.get(getattr(cls, "__module__", None))
+        holder = getattr(module_obj, leaf, None) if module_obj is not None else None
+        if not (isinstance(holder, type) and holder is not cls):
+            found = _class_block(source, qual)
+    return found or ""
+
+
+def _inherited_source(cls: type) -> bytes:
+    """Class block of each base, so same-named subclasses of different bases do not match.
+
+    The block is read from the file the base's own functions name. ``object`` is
+    skipped, so a class that inherits nothing keeps the same payload as before.
+    """
+    parts: list[bytes] = []
+    for base in cls.__mro__[1:]:
+        if base is object:
+            continue
+        qual = base.__qualname__ if type(getattr(base, "__qualname__", None)) is str else getattr(base, "__name__", "")
+        if type(qual) is not str:
+            qual = ""
+        parts.append(f"{qual}\n{_class_body(base)}".encode("utf-8", "replace"))
+    return b"\n".join(parts)
+
+
 def _class_source_tag(obj: Any) -> str:
-    """Bound class name plus a hash of that class's own source text.
+    """Bound class name plus a hash of that class's own source and its bases.
 
     The module name is published only when the module actually holds this class
     object. Otherwise the label is the file the code object (or the defining
@@ -732,6 +796,9 @@ def _class_source_tag(obj: Any) -> str:
     payload = (text or "").encode("utf-8")
     if closed:
         payload = payload + b"\n" + closed
+    inherited = _inherited_source(cls)
+    if inherited:
+        payload = payload + b"\ninherit\n" + inherited
     if not payload:
         return f"{label} unhashed"
     digest = hashlib.sha256(payload).hexdigest()
@@ -945,34 +1012,53 @@ def _pixel_bytes(item: Any) -> bytes | None:
     return _lp(header) + _lp(blob)
 
 
+def _typed_chunk(item: Any, body: bytes) -> bytes:
+    """Length-prefixed chunk with a type tag, so ``bytes`` and ``bytearray`` do not collide."""
+    tag = type(item).__name__.encode("ascii", "replace")
+    return _lp(tag + b":" + body)
+
+
 def _frame_material(frames: Sequence[Any]) -> bytes:
     chunks: list[bytes] = []
     for item in frames:
         if isinstance(item, (bytes, bytearray, memoryview)):
-            chunks.append(_lp(bytes(item)))
+            chunks.append(_typed_chunk(item, bytes(item)))
             continue
         pixels = _pixel_bytes(item)
         if pixels is not None:
-            chunks.append(_lp(pixels))
+            chunks.append(_typed_chunk(item, pixels))
             continue
         if isinstance(item, (tuple, list)) and len(item) == 2:
-            body = _pixel_bytes(item[1])
-            if body is None and isinstance(item[1], (bytes, bytearray, memoryview)):
-                body = _lp(bytes(item[1]))
+            inner = item[1]
+            body = _pixel_bytes(inner)
+            if body is None and isinstance(inner, (bytes, bytearray, memoryview)):
+                body = bytes(inner)
             if body is not None:
                 mono = str(item[0]).encode("utf-8", "replace")
-                chunks.append(_lp(_lp(mono) + body))
+                chunks.append(_typed_chunk(item, _lp(mono) + _typed_chunk(inner, body)))
                 continue
         path = item if isinstance(item, (str, Path)) else getattr(item, "path", None)
         if isinstance(path, (str, Path)) and Path(path).is_file():
             try:
-                chunks.append(_lp(Path(path).read_bytes()))
+                chunks.append(_typed_chunk(item, Path(path).read_bytes()))
                 continue
             except OSError:
-                chunks.append(_lp(b"unhashed"))
+                chunks.append(_typed_chunk(item, b"unhashed"))
                 continue
-        chunks.append(_lp(repr(item).encode("utf-8", "replace")))
+        chunks.append(_typed_chunk(item, repr(item).encode("utf-8", "replace")))
     return b"".join(chunks)
+
+
+def _callable_tag(value: Any) -> bytes:
+    """Stable label for an instance-level function, without hashing ``co_code``."""
+    func = getattr(value, "__func__", value)
+    code = getattr(func, "__code__", None)
+    if code is None:
+        return type(value).__name__.encode("ascii", "replace")
+    filename = getattr(code, "co_filename", "")
+    lineno = getattr(code, "co_firstlineno", 0)
+    name = getattr(code, "co_name", "")
+    return f"{name}:{lineno}:{filename}".encode("utf-8", "replace")
 
 
 def _instance_state(obj: Any, seen: set[int] | None = None, depth: int = 0) -> bytes:
@@ -996,6 +1082,7 @@ def _instance_state(obj: Any, seen: set[int] | None = None, depth: int = 0) -> b
             continue
         value = data[key]
         if callable(value):
+            parts.append(key.encode("utf-8", "replace") + b"=fn:" + _callable_tag(value))
             continue
         parts.append(key.encode("utf-8", "replace") + b"=" + _instance_state(value, seen, depth + 1))
     return b"\n".join(parts)
@@ -1010,10 +1097,12 @@ def frame_source_identity(frame_source: Any, frames: Sequence[Any]) -> str:
 def estimate_cache_key(scorer: Any, estimator: Any | None, frame_source: Any, frames: Sequence[Any]) -> tuple[str, str, str] | None:
     """Key by the full scorer identity, the frame-source identity, and instance state.
 
-    The identity covers the core class source, closure cells, and the scorer
-    settings. The frame half is the source path plus a hash of the frame bytes
-    (shape and dtype included, each chunk length-prefixed). Instance state is
-    the public attributes, so mutating one after the first estimate misses.
+    The identity covers the core class source, inherited base source, closure
+    cells, and the scorer settings. The frame half is the source path plus a hash
+    of the frame bytes (shape, dtype, and the chunk's type tag, each chunk
+    length-prefixed). Instance state is the public attributes, including
+    instance-level functions, so mutating one or replacing a method after the
+    first estimate misses.
     Returns None when the identity is ``unhashed``: two unresolvable cores must
     not share a stored result.
     """
