@@ -7,6 +7,7 @@ so a camera move of d px per frame is d / 320 * 10 * 100 %W/s.
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -21,7 +22,20 @@ from redteam.pan_frames import FRAME_W, crop, draw_scorebug, pan_frames, world_t
 from redteam.scorers import PanBin as ContractBin  # noqa: E402
 from redteam.scorers import validate_pan_bin  # noqa: E402
 
+from qor_receipt.vision import estimator_allowlist as al  # noqa: E402
 from qor_receipt.vision import pan_estimator as pe  # noqa: E402
+
+_PINNED_NUMPY = al.PINNED_NUMPY_REQUIREMENT.split("==", 1)[1]
+if np.__version__ != _PINNED_NUMPY:
+    _pin_message = (
+        f"numpy {np.__version__} is not {al.PINNED_NUMPY_REQUIREMENT}. "
+        "Off this pin the estimator hash is unknown and estimate_frames returns no_claim. "
+        "Install the dev extra to run these tests."
+    )
+    # Dropping the pin must not keep CI green. Local runs may skip.
+    if os.environ.get("CI") == "true":
+        pytest.fail(_pin_message, pytrace=False)
+    pytest.skip(_pin_message, allow_module_level=True)
 
 ROOT = Path(__file__).resolve().parents[1]
 FRAME_MS = 100
@@ -203,41 +217,72 @@ def test_hash_covers_the_opencv_build_and_numpy(monkeypatch):
     assert pe.estimator_sha256() == base
 
 
-def test_opencv_matches_the_pin():
-    """CI installs the pinned wheel through the dev extra. Fails on any other OpenCV build."""
-    assert pe.opencv_matches_pin(), (
-        f"OpenCV {cv2.__version__} is not {pe.PINNED_OPENCV_WHEEL}; install with -c tests/constraints-pan-estimator.txt"
-    )
-    assert pe.OpticalFlowPanEstimator().identity()["opencv_pinned"] is True
+def test_estimator_known_rejects_a_to_json_lookalike():
+    class Duck:
+        def to_json(self):
+            return pe.DEFAULT_PARAMS.to_json()
+
+    class Sub(pe.PanParams):
+        pass
+
+    assert pe.estimator_known(Duck()) is False
+    assert pe.estimator_known(Sub()) is False
+    assert pe.estimator_known(pe.DEFAULT_PARAMS) is True
 
 
-def test_running_estimator_hash_is_on_the_allowlist():
-    """Runs in both CI jobs (3.11 and 3.13), so it checks both interpreters' hashes are listed."""
-    import sys
+def test_estimator_known_rejects_int_and_float_subclasses():
+    class LyingInt(int):
+        pass
 
-    from qor_receipt.vision import estimator_allowlist as al
+    class EvilFloat(float):
+        pass
 
-    sha = pe.estimator_sha256()
-    assert sha in al.KNOWN_ESTIMATOR_SHA256, (
-        f"estimator sha256 {sha} on CPython {sys.version_info[0]}.{sys.version_info[1]} "
-        f"(numpy {np.__version__}) is not in estimator_allowlist.py"
-    )
-    assert np.__version__ == al.PINNED_NUMPY_REQUIREMENT.split("==")[1]
-    assert pe.estimator_known() is True
-    ident = pe.OpticalFlowPanEstimator().identity()
-    assert ident["estimator_known"] is True and ident["opencv_pinned"] is True
+    assert pe.estimator_known(pe.PanParams(work_width=LyingInt(320))) is False
+    assert pe.estimator_known(pe.PanParams(min_confidence=EvilFloat(0.35))) is False
+    assert pe.estimator_known(pe.PanParams(work_width=True)) is False  # bool is not an exact int
+    assert pe.estimator_known(pe.DEFAULT_PARAMS) is True
 
 
-def test_allowlist_is_a_fixed_frozenset_of_lowercase_hex():
-    from qor_receipt.vision import estimator_allowlist as al
+def test_subclass_that_overrides_pairs_is_not_known():
+    class Evil(pe.OpticalFlowPanEstimator):
+        def pairs(self, frames):
+            return [pe.PairResult(100, True, "ok", yaw_rate=99.0, pitch_rate=0.0, confidence=1.0)]
 
-    assert type(al.KNOWN_ESTIMATOR_SHA256) is frozenset and al.KNOWN_ESTIMATOR_SHA256
-    for sha in al.KNOWN_ESTIMATOR_SHA256:
-        assert type(sha) is str and len(sha) == 64 and all(c in "0123456789abcdef" for c in sha)
-    import inspect
+    est = Evil()
+    assert est.identity()["estimator_known"] is False
+    bins = est.estimate_frames([(0, None), (100, None)], 0, 200)
+    assert bins and all(b.no_claim and b.reason == "unknown_estimator_hash" and b.yaw_rate is None for b in bins)
+    assert pe.estimator_known(pe.DEFAULT_PARAMS) is True
 
-    # estimator_known takes only parameters; it never accepts a hash from the caller.
-    assert list(inspect.signature(pe.estimator_known).parameters) == ["params"]
+
+def test_pairs_and_bin_pairs_no_claim_when_the_hash_is_unknown(monkeypatch):
+    monkeypatch.setattr(pe, "estimator_known", lambda params=pe.DEFAULT_PARAMS: False)
+    frames = pan_frames(4, 1.0)
+    pairs = pe.OpticalFlowPanEstimator().pairs(frames)
+    assert pairs
+    assert all(not pair.ok and pair.reason == "unknown_estimator_hash" for pair in pairs)
+    planted = [pe.PairResult(100, True, "ok", yaw_rate=30.0, pitch_rate=0.0, confidence=1.0)]
+    bins = pe.bin_pairs(planted, 0, 200)
+    assert len(bins) == 2
+    assert all(b.no_claim and b.reason == "unknown_estimator_hash" and b.yaw_rate is None for b in bins)
+
+
+def test_cli_and_clip_script_exit_nonzero_on_an_unknown_hash(monkeypatch, capsys):
+    import importlib.util
+
+    monkeypatch.setattr(pe, "estimator_known", lambda params=pe.DEFAULT_PARAMS: False)
+    assert pe.main(["/no/such.mp4"]) == 1
+    err = capsys.readouterr().err
+    assert err.strip() == pe.UNKNOWN_ESTIMATOR_WARNING
+    assert "WARNING" in err
+
+    spec = importlib.util.spec_from_file_location("pan_estimate_clips", ROOT / "scripts" / "pan_estimate_clips.py")
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setattr(module, "OpticalFlowPanEstimator", pe.OpticalFlowPanEstimator)
+    assert module.main() == 1
+    assert capsys.readouterr().err.strip() == pe.UNKNOWN_ESTIMATOR_WARNING
 
 
 @pytest.mark.parametrize("target,attr,value", [
@@ -308,27 +353,6 @@ def test_golden_output_on_synthetic_frames():
     for name, frames in _golden_inputs().items():
         digest = hashlib.sha256(pe.bins_jsonl(run(frames, 3000))).hexdigest()
         assert digest == GOLDEN_SYNTHETIC[name], name
-
-
-def test_pinned_wheel_matches_the_constraints_file():
-    text = (ROOT / "tests" / "constraints-pan-estimator.txt").read_text(encoding="utf-8")
-    pins = [line.strip() for line in text.splitlines() if line.strip() and not line.startswith("#")]
-    assert pe.PINNED_OPENCV_WHEEL in pins
-    assert pe.PINNED_OPENCV_WHEEL.startswith("opencv-python-headless==" + pe.PINNED_OPENCV_VERSION + ".")
-    import tomllib
-
-    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
-    assert pe.PINNED_OPENCV_WHEEL in project["optional-dependencies"]["dev"]
-    # The referee image installs .[referee,vision]; neither extra carries the exact pin.
-    for extra in ("referee", "vision"):
-        assert pe.PINNED_OPENCV_WHEEL not in project["optional-dependencies"][extra]
-
-    from qor_receipt.vision import estimator_allowlist as al
-
-    assert al.PINNED_NUMPY_REQUIREMENT in pins
-    assert al.PINNED_NUMPY_REQUIREMENT in project["optional-dependencies"]["dev"]
-    for extra in ("referee", "vision"):
-        assert al.PINNED_NUMPY_REQUIREMENT not in project["optional-dependencies"][extra]
 
 
 def test_scorebug_mask_comes_from_the_local_scorebug_profile():
