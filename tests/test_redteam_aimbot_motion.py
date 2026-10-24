@@ -10,6 +10,8 @@ not submit a bundle.
 """
 from __future__ import annotations
 
+import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -268,9 +270,13 @@ def test_scorer_hash_covers_package_version_and_transitive_files(report):
     assert report.package_version == "0.1.0"
     assert "qor_receipt/review/motion.py" in motion.files
     assert "qor_receipt/review/media.py" in motion.files
-    assert "qor_receipt/receipt.py" in motion.files
+    assert "qor_receipt/review/policy.py" in motion.files
     assert "qor_receipt/__init__.py" in motion.files
     assert "tests/redteam/scorers.py" in motion.files
+    assert "qor_receipt/receipt.py" not in motion.files
+    assert "qor_receipt/trusted_referees.py" not in motion.files
+    assert "qor_receipt/receipt.py" not in report.harness_files
+    assert "qor_receipt/trusted_referees.py" not in report.harness_files
     assert "tests/redteam/aimbot_harness.py" in report.harness_files
     assert "tests/redteam/scorers.py" in report.harness_files
     assert pan.estimator_name == "example-no-claim"
@@ -541,6 +547,92 @@ def test_import_guard_blocks_urllib_request_and_network_tools():
         assert "site/" not in text
         assert "SoftwareKey" not in text
     assert audit_source(Path(__file__).read_text(encoding="utf-8"), filename="test") == []
+
+
+SYNTHETIC_RATE_CAVEAT = (
+    "**SYNTHETIC-DATA CAVEAT:** these rates come from synthetic data with only one benign sample "
+    "(n=1 control) and are NOT real-world or measured detection/false-alarm rates; "
+    "'0/1 false alarms' is not a false-alarm rate."
+)
+CLOCK_WINDOW_CAVEAT = (
+    "The 150 ms event window is valid only on synthetic data with a shared clock. "
+    "On real footage, a video-vs-log mismatch claim is allowed only for a bundle that carries a "
+    "frame_bind chain (qorcap #75, --frame-bind) that verifies; if that bundle's chain is missing, "
+    "stripped or broken, every mismatch claim is no-claim. This is checked per bundle, not switched "
+    "on by merging code, so older footage stays no-claim."
+)
+# trusted_referees stays here. The harness must not import qor_receipt.receipt, which is what loads it.
+_FORBIDDEN_MODULE_TOKENS = ("qor_receipt.referee", "referee_service", "trusted_referees")
+
+
+def _module_is_forbidden(name: str) -> bool:
+    """True when ``name`` is one of the isolated modules, a parent alias, or a submodule."""
+    parts = name.split(".")
+    for token in _FORBIDDEN_MODULE_TOKENS:
+        token_parts = token.split(".")
+        width = len(token_parts)
+        if any(parts[i:i + width] == token_parts for i in range(len(parts) - width + 1)):
+            return True
+    return False
+
+
+def test_synthetic_rate_caveat_stays_beside_the_headline_table():
+    text = DOC.read_text(encoding="utf-8")
+    assert SYNTHETIC_RATE_CAVEAT in text
+    assert CLOCK_WINDOW_CAVEAT in text
+    section = text.split("## Pluggable scorers", 1)[1].split("## Reproducing", 1)[0]
+    assert "Catch rate is flagged attacks" in section
+    assert "event-press-agreement" in section
+    assert SYNTHETIC_RATE_CAVEAT in section
+    assert CLOCK_WINDOW_CAVEAT in section
+    lines = section.splitlines()
+    caveat_at = next(i for i, line in enumerate(lines) if "SYNTHETIC-DATA CAVEAT" in line)
+    clock_at = next(i for i, line in enumerate(lines) if "frame_bind chain" in line)
+    table_at = next(i for i, line in enumerate(lines) if line.startswith("| scorer |"))
+    assert caveat_at < clock_at < table_at
+    assert table_at - caveat_at <= 6
+    assert "headline false-alarm rate" in lines[table_at]
+    assert "every mismatch claim is no-claim" in lines[clock_at]
+    assert "older footage stays no-claim" in lines[clock_at]
+    assert "closer than 719" not in section
+
+
+def test_harness_process_does_not_import_referee_modules():
+    """A fresh interpreter scores every variant. Referee modules must stay unloaded.
+
+    ``trusted_referees`` is still required to be absent. The harness reads the motion
+    floor from ``receipt.py`` as text and does not import ``qor_receipt.receipt``, so
+    the trust root never loads. Dropping it from this list would hide that import.
+    """
+    assert "trusted_referees" in _FORBIDDEN_MODULE_TOKENS
+    code = (
+        "import json, sys\n"
+        "sys.path.insert(0, 'tests')\n"
+        "from redteam.aimbot_harness import evaluate\n"
+        "report = evaluate()\n"
+        "assert len(report.variants) == 11\n"
+        "print(json.dumps(sorted(sys.modules)))\n"
+    )
+    proc = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
+    loaded = json.loads(proc.stdout)
+    leaked = [name for name in loaded if _module_is_forbidden(name)]
+    assert leaked == []
+    for name in (
+        "qor_receipt.referee",
+        "qor_receipt.referee_service",
+        "qor_receipt.trusted_referees",
+        "qor_receipt.receipt",
+    ):
+        assert name not in loaded
+    assert "qor_receipt.review.motion" in loaded
+    assert "qor_receipt.review.media" in loaded
 
 
 def test_report_prints_and_matches_the_committed_doc(capsys):

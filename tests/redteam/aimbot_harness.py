@@ -744,6 +744,10 @@ def render_report(report: Report | None = None) -> str:
         "",
         f"Each scorer sha256 is the hash of `qor-receipt=={report.package_version}`, the scorer and estimator version strings, and the sorted repo-relative path plus bytes of the scorer module and its transitive in-repo imports.",
         "",
+        "**SYNTHETIC-DATA CAVEAT:** these rates come from synthetic data with only one benign sample (n=1 control) and are NOT real-world or measured detection/false-alarm rates; '0/1 false alarms' is not a false-alarm rate.",
+        "",
+        "The 150 ms event window is valid only on synthetic data with a shared clock. On real footage, a video-vs-log mismatch claim is allowed only for a bundle that carries a frame_bind chain (qorcap #75, --frame-bind) that verifies; if that bundle's chain is missing, stripped or broken, every mismatch claim is no-claim. This is checked per bundle, not switched on by merging code, so older footage stays no-claim.",
+        "",
         _md_table(
             ["scorer", "version", "package", "estimator", "file set", "sha256", "headline catch rate", "headline false-alarm rate", "abstained"],
             scorer_rows,
