@@ -1,4 +1,4 @@
-"""SMOKE TEST ONLY: current reader vs zero-shot PP-OCRv6 vs fine-tuned PP-OCRv6 on the 3 public 170123 clips.
+"""SMOKE TEST ONLY: current reader vs zero-shot PP-OCRv6 vs fine-tuned PP-OCRv6 on 3 of the 9 tracked public clips (170123).
 
 Reads only ``site/matches/170123/clips/*.mp4`` (public, hash-locked in ``clips/manifest.json``; sha256 checked
 before use). Samples 4 fps like QorCap. The current reader is QorTime's vendored ``ScorebugReader`` on the
@@ -107,25 +107,43 @@ def main(argv=None) -> int:
             for k, sess in sessions.items():
                 logits = sess.run(None, {sess.get_inputs()[0].name: x})[0]
                 cs = models[k][1]
-                row[k] = {f: decode.greedy(logits[i:i + 1], cs, decode.allowed_mask(cs, FIELD_ALPHABET[f]))[0][0].upper()
-                          for i, f in enumerate(FIELD_NAMES)}
+                det = decode.greedy_detail(logits, cs)  # unmasked; out-of-alphabet top-1 => invalid, never coerced
+                row[k] = {f: decode.read_field(det[i], FIELD_ALPHABET[f], upper=True) for i, f in enumerate(FIELD_NAMES)}
             rows.append(row)
+    def txt(r, k, f):  # a valid read's text, else None (invalid/empty reads are abstentions)
+        return r[k][f]["text"] if r[k][f]["valid"] else None
+
     table = {}
     for f in READ_FIELDS:
         t = {"frames": len(rows), "current_read": sum(r["current"][f] is not None for r in rows)}
+        blank = [r for r in rows if r["current"][f] is None]
+        both = [r for r in rows if r["current"][f] is not None]
         for k in models:
-            both = [r for r in rows if r["current"][f] is not None]
-            t[f"{k}_agrees_when_current_read"] = sum(r[k][f] == r["current"][f] for r in both)
-            t[f"{k}_nonempty_when_current_blank"] = sum(bool(r[k][f]) for r in rows if r["current"][f] is None)
+            t[f"{k}_valid_agrees_when_current_read"] = sum(txt(r, k, f) == r["current"][f] for r in both)
+            t[f"{k}_nonempty_when_current_blank"] = sum(bool(r[k][f]["text"]) for r in blank)
+            t[f"{k}_valid_when_current_blank"] = sum(r[k][f]["valid"] for r in blank)
+            t[f"{k}_out_of_alphabet_when_current_blank"] = sum(r[k][f]["reason"] == "out_of_alphabet_top1" for r in blank)
+            confs = sorted(r[k][f]["min_conf"] for r in blank if r[k][f]["valid"])
+            if confs:
+                t[f"{k}_valid_when_current_blank_min_conf"] = {
+                    "min": confs[0], "p05": confs[int(0.05 * (len(confs) - 1))], "median": confs[len(confs) // 2],
+                    "n_below_0.9": sum(c < 0.9 for c in confs), "n_below_0.5": sum(c < 0.5 for c in confs)}
+            by_reason: dict[str, int] = {}
+            for r in blank:
+                if r[k][f]["valid"]:
+                    by_reason[r["reader_reason"] or "ok"] = by_reason.get(r["reader_reason"] or "ok", 0) + 1
+            t[f"{k}_valid_when_current_blank_by_reader_reason"] = by_reason
         if len(models) == 2:
-            t["zeroshot_eq_finetuned_all_frames"] = sum(r["zeroshot"][f] == r["finetuned"][f] for r in rows)
+            t["zeroshot_eq_finetuned_valid_all_frames"] = sum(txt(r, "zeroshot", f) == txt(r, "finetuned", f) for r in rows)
         table[f] = t
     for f in ("team_l", "team_r", "play_clock", "down_distance"):
         if len(models) == 2:
             table[f] = {"frames": len(rows), "current_read": "not read by current reader",
-                        "zeroshot_eq_finetuned_all_frames": sum(r["zeroshot"][f] == r["finetuned"][f] for r in rows)}
-    out = {"label": "SMOKE TEST ONLY - 3 public clips, one session, not accuracy evidence, not evidence of superiority",
-           "current_reader": reader_desc, "models": {k: {"path": str(p), "sha256": ortrun.sha256_file(p)} for k, (p, _) in models.items()},
+                        "zeroshot_valid": sum(r["zeroshot"][f]["valid"] for r in rows),
+                        "finetuned_valid": sum(r["finetuned"][f]["valid"] for r in rows),
+                        "zeroshot_eq_finetuned_valid_all_frames": sum(txt(r, "zeroshot", f) == txt(r, "finetuned", f) for r in rows)}
+    out = {"label": "SMOKE TEST ONLY - 3 of the 9 tracked public clips (170123 only), one session, not accuracy evidence, not evidence of superiority. Unmasked decode; invalid/empty reads count as abstentions. No abstention gate is applied (confidence is recorded, not thresholded).",
+           "current_reader": reader_desc, "ort_session": ortrun.session_settings(), "ort_runtime": ortrun.ort_identity(), "models": {k: {"path": str(p), "sha256": ortrun.sha256_file(p)} for k, (p, _) in models.items()},
            "clips": [{"id": c["id"], "sha256": c["sha256"]} for c in manifest["clips"]], "agreement": table, "rows": rows}
     txt = json.dumps(out, indent=2)
     if a.out:

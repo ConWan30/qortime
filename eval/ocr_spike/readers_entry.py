@@ -3,7 +3,10 @@
 Shape copied from PR #70 ``schema/contracts/qorcap-readers.v0.json`` at c04d319 (closed objects):
 ``{schema, qorcap_version, readers:[{id, version, files:[{kind: code|pack, path, sha256}]}],
 runtimes:[{id, version, sha256}]}``. The ONNX weight file is a ``pack``; onnxruntime is a ``runtime`` whose
-sha256 is the native module that ran. This is an example artefact only: nothing writes it into a bundle.
+sha256 is the native module that ran. The pinned ORT session settings (``ort_session.json``: CPUExecutionProvider,
+ORT_ENABLE_BASIC, 1/1 threads, sequential, deterministic compute) are listed as a ``code`` file so they are part
+of the reader identity; #70's closed schema has no other place for them. SPIKE ONLY, not for production bundles:
+nothing writes it into a bundle.
 
     python eval/ocr_spike/readers_entry.py --model scorebug_rec_int8.onnx [--qorcap-version 0.3.32]
 """
@@ -22,7 +25,7 @@ if __package__ in (None, ""):
 from ocr_spike import ortrun  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
-CODE_FILES = ("roi.py", "preprocess.py", "decode.py", "ortrun.py")
+CODE_FILES = ("roi.py", "preprocess.py", "decode.py", "ortrun.py", "ort_session.json")
 _ID = re.compile(r"^[A-Za-z0-9._+-]{1,80}$")
 _HEX = re.compile(r"^[0-9a-f]{64}$")
 

@@ -95,10 +95,19 @@ def main(argv=None) -> int:
     in_sha = rerun.input_sha256(u8, vw)
     models = resolve_models(Path(a.cache), overrides)
     golden = json.loads(GOLDEN.read_text()) if GOLDEN.exists() else {"models": {}}
+    sess_pin = ortrun.session_settings()
     report = {"onnxruntime": onnxruntime.__version__, "ort_runtime": ortrun.ort_identity(), "cpu": rerun.cpu_info(),
+              "ort_session": sess_pin,
               "probe_input_sha256": in_sha, "probe_input_matches": in_sha == meta.get("preprocessed_input_sha256"),
               "models": {}}
     failed = not report["probe_input_matches"]
+    if a.write_golden:
+        golden["ort_session"] = sess_pin
+    elif golden.get("ort_session", {}).get("sha256") != sess_pin["sha256"]:
+        report["ort_session_matches_golden"] = False  # golden hashes only hold under the pinned session settings
+        failed = True
+    else:
+        report["ort_session_matches_golden"] = True
     for name, m in models.items():
         r = {"desc": m["desc"]}
         if "skip" in m or "error" in m:

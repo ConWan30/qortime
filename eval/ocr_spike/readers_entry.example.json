@@ -19,12 +19,17 @@
         {
           "kind": "code",
           "path": "eval/ocr_spike/decode.py",
-          "sha256": "d906c8c4cff43050cb73fbda2bd7b13e6d1cd6fb4b359cd57f9bd742e6a281c6"
+          "sha256": "b71b6907bdb74f6d6a503d9e980f959469df9f9690ddc44ad02b4b1de494d1d3"
         },
         {
           "kind": "code",
           "path": "eval/ocr_spike/ortrun.py",
-          "sha256": "d8ab7ce7703b77fd7b37dbcdc6f910e97b8e0c4cf917900d0a2ba54b4e4f1435"
+          "sha256": "7f5e51efefcbbfb4b77aa877a68da5b5c9ad62085d1e47c8da47e104618e1bca"
+        },
+        {
+          "kind": "code",
+          "path": "eval/ocr_spike/ort_session.json",
+          "sha256": "e085ac0713b86a2b0aff72d9d4536ca43f4bc1bf8987ca999628f0aa4276169f"
         },
         {
           "kind": "code",

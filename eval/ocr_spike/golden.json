@@ -449,5 +449,21 @@
     }
   },
   "probe_input_sha256": "134c1597890384389af860b39b6e89e5f108a2c619678d4fb4bf60274b1764ce",
-  "note": "Made on the box listed per model. Equality elsewhere is what the CI matrix tests; a mismatch is a finding, not something to re-bless silently."
+  "note": "Made on the box listed per model. Equality elsewhere is what the CI matrix tests; a mismatch is a finding, not something to re-bless silently.",
+  "ort_session": {
+    "file": "eval/ocr_spike/ort_session.json",
+    "sha256": "e085ac0713b86a2b0aff72d9d4536ca43f4bc1bf8987ca999628f0aa4276169f",
+    "providers": [
+      "CPUExecutionProvider"
+    ],
+    "graph_optimization_level": "ORT_ENABLE_BASIC",
+    "execution_mode": "ORT_SEQUENTIAL",
+    "intra_op_num_threads": 1,
+    "inter_op_num_threads": 1,
+    "use_deterministic_compute": true,
+    "session_config": {
+      "session.intra_op.allow_spinning": "0"
+    },
+    "batch": 1
+  }
 }

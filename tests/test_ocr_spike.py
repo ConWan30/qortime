@@ -12,7 +12,6 @@ import json
 import os
 import sys
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -62,15 +61,35 @@ def test_preprocess_shape_and_padding():
     assert np.all(x[0, :, :, :96] == 1.0) and np.all(x[0, :, :, 96:] == 0.0)
 
 
-def test_ctc_greedy_collapse_and_alphabet():
+def test_ctc_greedy_is_unmasked_and_out_of_alphabet_is_invalid_not_coerced():
     cs = ["<blank>", "1", "2", ":", "A", " "]
     seq = [1, 1, 0, 1, 3, 2, 2, 0, 4]
-    logits = np.zeros((1, len(seq), len(cs)), np.float32)
+    logits = np.full((1, len(seq), len(cs)), 0.02, np.float32)
     for t, k in enumerate(seq):
-        logits[0, t, k] = 1.0
+        logits[0, t, k] = 0.9
+    logits[0, 8, 2] = 0.08  # 'A' wins its step; '2' is the best in-alphabet runner-up
     assert decode.greedy(logits, cs)[0][0] == "11:2A"
-    m = decode.allowed_mask(cs, "12:")
-    assert decode.greedy(logits, cs, m)[0][0] == "11:2"  # 'A' frame falls back to the best allowed class
+    d = decode.greedy_detail(logits, cs)[0]
+    r = decode.read_field(d, "12:")
+    # A masked decode would have returned "11:22"/"11:2"; the read must be invalid instead.
+    assert r["valid"] is False and r["reason"] == "out_of_alphabet_top1" and r["out_of_alphabet"] == ["A"]
+    assert r["text"] == "11:2A" and abs(r["min_conf"] - 0.9) < 1e-6 and abs(r["min_margin"] - 0.82) < 1e-5
+    ok = decode.read_field(decode.greedy_detail(logits[:, :8], cs)[0], "12:")
+    assert ok["valid"] is True and ok["text"] == "11:2"
+    empty = decode.read_field(decode.greedy_detail(np.eye(len(cs), dtype=np.float32)[[0, 0]][None], cs)[0], "12:")
+    assert empty["valid"] is False and empty["reason"] == "empty" and empty["min_conf"] is None
+    assert not hasattr(decode, "allowed_mask")
+
+
+def test_ort_session_pin_is_basic_cpu_single_thread():
+    from ocr_spike import ortrun
+
+    s = ortrun.session_settings()
+    assert s["providers"] == ["CPUExecutionProvider"] and s["graph_optimization_level"] == "ORT_ENABLE_BASIC"
+    assert s["intra_op_num_threads"] == 1 and s["inter_op_num_threads"] == 1
+    assert s["execution_mode"] == "ORT_SEQUENTIAL" and s["use_deterministic_compute"] is True
+    golden = json.loads((SPIKE / "golden.json").read_text())
+    assert golden["ort_session"]["sha256"] == s["sha256"], "golden hashes were made under other ORT settings"
 
 
 def test_label_sampler_and_degrade_are_seeded():
@@ -145,6 +164,8 @@ def test_readers_entry_shape_matches_pr70_rules(tmp_path):
     assert readers_entry.check_shape(doc) == []
     assert doc["readers"][0]["files"][-1] == {"kind": "pack", "path": "models/m.onnx", "sha256": hashlib.sha256(b"not a model").hexdigest()}
     assert doc["runtimes"][0]["id"] == "onnxruntime"
+    assert {"kind": "code", "path": "eval/ocr_spike/ort_session.json",
+            "sha256": hashlib.sha256((SPIKE / "ort_session.json").read_bytes()).hexdigest()} in doc["readers"][0]["files"]
 
 
 # ---------------------------------------------------------------- optional ONNX tests (need weights)
@@ -165,12 +186,16 @@ def _model(name: str) -> Path:
 
 
 @pytest.mark.parametrize("name", ["upstream_int8_dynamic", "scorebug_ft_int8"])
-def test_rerun_twice_single_thread_is_byte_identical(name):
-    from ocr_spike import rerun
-    from ocr_spike.probe import load_inputs
+def test_rerun_fresh_processes_single_thread_is_byte_identical(name, tmp_path):
+    from ocr_spike import rerun_check
 
     p = _model(name)
-    u8, vw, _ = load_inputs(SimpleNamespace(probe=str(SPIKE / "probe")))
-    a = rerun.infer(p, u8, vw, threads=1)
-    b = rerun.infer(p, u8, vw, threads=1)
-    assert a.tobytes() == b.tobytes()
+    d = SPIKE / ("scorebug_dict.txt" if name.startswith("scorebug") else "")
+    if name.startswith("upstream"):
+        d = Path(os.environ["OCR_SPIKE_CACHE"]) / "ppocrv6_dict.txt"
+        if not d.exists():
+            pytest.skip(f"{d} absent")
+    out = tmp_path / "r.json"
+    # 2 in-process runs + 2 fresh subprocesses; exits 1 on any byte difference
+    rc = rerun_check.main(["--model", str(p), "--dict", str(d), "--probe", str(SPIKE / "probe"), "--out", str(out)])
+    assert rc == 0, json.loads(out.read_text())["diffs"]

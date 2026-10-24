@@ -1,0 +1,12 @@
+{
+  "schema": "ocr-spike-ort-session/v0",
+  "note": "Part of the spike reader's identity (hashed into readers_entry as a code file). Golden hashes and any confidence threshold are only valid under exactly these settings. At ORT_ENABLE_BASIC the QDQ int8 model is NOT executed with int8 kernels: DequantizeLinear feeds fp32 MatMul and all convs are fp32 (MLAS sgemm/conv), so int8 here means int8-stored weights with simulated quantisation, and VNNI/AMX int8 paths never run. EXTENDED/ALL fuse to QLinearMatMul etc. and give different logits bytes.",
+  "providers": ["CPUExecutionProvider"],
+  "graph_optimization_level": "ORT_ENABLE_BASIC",
+  "execution_mode": "ORT_SEQUENTIAL",
+  "intra_op_num_threads": 1,
+  "inter_op_num_threads": 1,
+  "use_deterministic_compute": true,
+  "session_config": {"session.intra_op.allow_spinning": "0"},
+  "batch": 1
+}
