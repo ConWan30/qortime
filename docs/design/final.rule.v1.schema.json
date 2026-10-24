@@ -43,7 +43,7 @@
     },
     "posted_score": {
       "type": ["object", "null"],
-      "description": "Score written on an unconfirmed final. The last lock that is not below the running maximum. A dropped lock is not this score. A later kept lock is.",
+      "description": "Score written on an unconfirmed final. The terminal score of the longest componentwise non-decreasing chain of locks. When several longest chains share that score, it is this score. When their terminal scores differ, this is null and neither chain end is written.",
       "additionalProperties": false,
       "properties": {
         "away": {"type": ["integer", "null"]},
@@ -84,7 +84,7 @@
     },
     "episode_e0_ms": {
       "type": ["integer", "null"],
-      "description": "First end screen of the open episode, including a screen whose timestamp equals the closing lock. Null when every episode was closed, or when the capture has no end screen. Not the first end screen of the capture."
+      "description": "First end screen of the open episode, including a screen whose timestamp equals the closing lock. An integer when cutoff_reason is open_episode. Null when cutoff_reason is no_end_screen or closed_episodes_only. Not the first end screen of the capture."
     },
     "evidence_counted": {
       "type": "array",
@@ -99,8 +99,11 @@
         "required": ["cutoff_reason"]
       },
       "then": {
-        "properties": {"cutoff_ms": {"type": "integer"}},
-        "required": ["cutoff_ms"]
+        "properties": {
+          "cutoff_ms": {"type": "integer"},
+          "episode_e0_ms": {"type": "integer"}
+        },
+        "required": ["cutoff_ms", "episode_e0_ms"]
       }
     },
     {
@@ -109,8 +112,11 @@
         "required": ["cutoff_reason"]
       },
       "then": {
-        "properties": {"cutoff_ms": {"type": "null"}},
-        "required": ["cutoff_ms"]
+        "properties": {
+          "cutoff_ms": {"type": "null"},
+          "episode_e0_ms": {"type": "null"}
+        },
+        "required": ["cutoff_ms", "episode_e0_ms"]
       }
     }
   ]
