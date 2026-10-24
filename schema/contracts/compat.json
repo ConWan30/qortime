@@ -41,7 +41,7 @@
   },
   "recorder_versions": {
     "tail_timing_sound_from": "0.3.3",
-    "current": "0.3.32",
+    "current": "0.3.33",
     "known_bad_tail": ["0.3.0", "0.3.1", "0.3.2"]
   },
   "challenge_rules": {
