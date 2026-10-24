@@ -49,17 +49,21 @@ class OpticalFlowHarnessEstimator:
         frame-source path and a hash of the frame bytes) together with
         ``sample.duration_ms`` and the value ``cache_key`` returned. Bins cover
         ``[0, duration_ms)``, so a later call with the same frames and a longer
-        window must not reuse the shorter result.
+        window must not reuse the shorter result. When the identity is
+        ``unhashed``, nothing is stored.
         """
         frames = self._frames(sample)
         key = None
         if self.cache_key is not None:
             caller_key = self.cache_key(sample)
-            duration_ms = getattr(sample, "duration_ms", None)
-            key = (*estimate_cache_key(self, self, self.frame_source, frames), duration_ms, caller_key)
-            hit = self._cache.get(key)
-            if hit is not None:
-                return list(hit)
+            base = estimate_cache_key(self, self, self.frame_source, frames)
+            # An unhashed identity is not stored. Two unresolvable cores must not share bins.
+            if base is not None:
+                duration_ms = getattr(sample, "duration_ms", None)
+                key = (*base, duration_ms, caller_key)
+                hit = self._cache.get(key)
+                if hit is not None:
+                    return list(hit)
         bins = self._bins(frames, sample)
         if key is not None:
             self._cache.put(key, bins)

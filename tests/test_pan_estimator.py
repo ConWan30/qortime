@@ -338,31 +338,6 @@ def test_scorebug_mask_comes_from_the_local_scorebug_profile():
     assert pe.SCOREBUG_BAND in pe.DEFAULT_PARAMS.masks
 
 
-def test_estimator_is_not_imported_by_referee_or_verifier_code():
-    """Advisory only: the package, services/, and outside referee paths must not import it."""
-    from redteam.imports_guard import verdict_path_import_offenders
-
-    assert verdict_path_import_offenders(ROOT) == []
-
-
-def test_an_import_from_services_is_rejected(tmp_path: Path):
-    """A services/ module that imports the estimator is an offender, and so is an outside referee path."""
-    from redteam.imports_guard import verdict_path_import_offenders
-
-    service = tmp_path / "services" / "referee"
-    service.mkdir(parents=True)
-    (service / "plug.py").write_text("from qor_receipt.vision.pan_estimator import OpticalFlowPanEstimator\n", encoding="utf-8")
-    (service / "clean.py").write_text("import json\n", encoding="utf-8")
-    outside = tmp_path / "eval"
-    outside.mkdir()
-    (outside / "referee_side.py").write_text(
-        "import importlib\nimportlib.import_module('qor_receipt.vision.pan_estimator')\n",
-        encoding="utf-8",
-    )
-    offenders = verdict_path_import_offenders(tmp_path)
-    assert offenders == ["eval/referee_side.py", "services/referee/plug.py"]
-
-
 def test_plugs_into_the_redteam_harness_with_its_own_hash():
     """Plumbing only. The harness has no pixels, so a synthetic frame source stands in.
 

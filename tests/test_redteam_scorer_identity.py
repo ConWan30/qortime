@@ -69,13 +69,13 @@ def test_copied_sha_is_not_stored_as_estimator_sha256():
     assert stolen not in repr(ident)
 
 
-def test_newline_or_wrong_length_sha_is_unhashed():
+def test_newline_or_wrong_length_sha_is_not_stored():
     class Weird(NoClaimPanEstimator):
         sha256 = "x\nestimator=forged"
 
     ident = source_identity(PanAgreementScorer(Weird()), Weird())
-    assert ident.sha256 == "unhashed"
     assert ident.estimator_sha256 is None
+    assert ident.sha256 != "unhashed"
     assert "estimator=forged" not in repr(ident)
     assert all("\n" not in item for item in ident.files)
 
@@ -91,34 +91,47 @@ def test_newline_or_wrong_length_sha_is_unhashed():
     class Child(NoClaimPanEstimator):
         sha256 = AsStr(HEX64)
 
-    for cls in (Short, Upper, Child):
+    for cls, secret in ((Short, "ab" * 31), (Upper, "AB" * 32), (Child, HEX64)):
         bad = source_identity(PanAgreementScorer(cls()), cls())
-        assert bad.sha256 == "unhashed"
         assert bad.estimator_sha256 is None
+        assert bad.sha256 != "unhashed"
+        assert secret not in repr(bad)
 
 
-def test_computed_sha256_property_is_folded_in():
+def test_property_sha_is_not_trusted():
     class Computed(NoClaimPanEstimator):
         @property
         def sha256(self):
             return HEX64
 
-    ident = source_identity(PanAgreementScorer(Computed()), Computed())
-    assert ident.estimator_sha256 == HEX64
-    assert ident.sha256 != PanAgreementScorer(NoClaimPanEstimator()).identity().sha256
-    assert ident.sha256 != "unhashed"
-
-
-def test_hash_property_is_used_when_sha256_is_absent():
-    digest = "12" * 32
-
-    class Computed(NoClaimPanEstimator):
         @property
         def hash(self):
-            return digest
+            return "12" * 32
 
     ident = source_identity(PanAgreementScorer(Computed()), Computed())
-    assert ident.estimator_sha256 == digest
+    assert ident.estimator_sha256 is None
+    assert HEX64 not in repr(ident)
+    assert "12" * 32 not in repr(ident)
+
+
+def test_forged_module_and_qualname_do_not_take_the_real_identity():
+    from qor_receipt.vision.pan_estimator import OpticalFlowPanEstimator, estimator_sha256
+
+    class Fake(NoClaimPanEstimator):
+        @property
+        def sha256(self):
+            return estimator_sha256()
+
+    Fake.__module__ = OpticalFlowPanEstimator.__module__
+    Fake.__qualname__ = OpticalFlowPanEstimator.__qualname__
+    Fake.__name__ = OpticalFlowPanEstimator.__name__
+    fake = source_identity(PanAgreementScorer(Fake()), Fake())
+    real = OpticalFlowPanEstimator()
+    honest = source_identity(PanAgreementScorer(real), real)
+    assert fake.sha256 != honest.sha256
+    assert fake.estimator_sha256 is None
+    assert honest.estimator_sha256 == estimator_sha256()
+    assert OpticalFlowPanEstimator.__module__ not in fake.files or honest.sha256 != fake.sha256
 
 
 def _load_adapter(path: Path, module_name: str):
@@ -251,12 +264,14 @@ class _CachingHost:
 
     def estimate(self, sample):
         key = estimate_cache_key(self, self.core, self.produce, self.frames)
-        hit = self.cache.get(key)
-        if hit is not None:
-            return hit
+        if key is not None:
+            hit = self.cache.get(key)
+            if hit is not None:
+                return hit
         self._computes += 1
         value = (self.core.marker, self.frames)
-        self.cache.put(key, value)
+        if key is not None:
+            self.cache.put(key, value)
         return value
 
 
@@ -362,6 +377,25 @@ def test_mutating_an_estimator_attribute_misses_the_cache():
     host.core.yaw = 9
     assert estimate() == (9,)
     assert host._computes == 2
+
+
+def test_unhashed_identity_is_not_a_cache_key():
+    left = type("DynA", (), {"__module__": "not_loaded_dyn_a", "name": "n", "version": "v", "marker": "a"})
+    right = type("DynB", (), {"__module__": "not_loaded_dyn_b", "name": "n", "version": "v", "marker": "b"})
+    host_a = _CachingHost(left(), (b"frame",))
+    host_b = _CachingHost(right(), (b"frame",))
+    assert source_identity(host_a, host_a.core).sha256 == "unhashed"
+    assert source_identity(host_b, host_b.core).sha256 == "unhashed"
+    assert estimate_cache_key(host_a, host_a.core, host_a.produce, host_a.frames) is None
+    assert estimate_cache_key(host_b, host_b.core, host_b.produce, host_b.frames) is None
+    assert host_a.estimate(None) == ("a", (b"frame",))
+    assert host_b.estimate(None) == ("b", (b"frame",))
+    assert host_a._computes == host_b._computes == 1
+    shared = EstimateCache()
+    host_a.cache = shared
+    host_b.cache = shared
+    assert host_a.estimate(None) == ("a", (b"frame",))
+    assert host_b.estimate(None) == ("b", (b"frame",))
 
 
 def test_frame_source_identity_hashes_path_and_bytes():

@@ -1,13 +1,16 @@
-"""Import and process guard for the test-only red-team tree.
+"""Import and process tripwire for the test-only red-team tree.
 
-The static check does not open a socket. ``urllib.request`` and ``http.client``
-are covered because the root of a dotted name is what matters, not only the
-exact string ``urllib``. Subprocess is allowed for local tools; network clients
-are not. Dynamic imports (``importlib.import_module`` and ``builtins.__import__``)
-are checked the same way when the module name is a string literal.
+This is a tripwire, not a sandbox. The static check does not open a socket.
+``urllib.request`` and ``http.client`` are covered because the root of a dotted
+name is what matters, not only the exact string ``urllib``. Subprocess is
+allowed for local tools; network clients are not. Dynamic imports
+(``importlib.import_module`` and ``builtins.__import__``) are checked the same
+way when the module name is a string literal.
 
-``install_network_guard`` rejects those imports for the rest of the process, so
-a harness run cannot open them afterwards.
+``install_network_guard`` rejects those imports for the rest of the process and
+installs an audit hook for ``socket.*``, ``subprocess.Popen``, ``os.system``,
+``os.spawn*``, and ``ctypes.*``. A later call raises. The hook cannot be
+removed, and it does not confine the process.
 """
 from __future__ import annotations
 
@@ -193,16 +196,25 @@ class _NetworkFinder:
 _GUARD_INSTALLED = False
 
 
+def _audit_hook(event: str, args: tuple[object, ...]) -> None:
+    """Tripwire for a few process calls. Not a sandbox: other events still run."""
+    if event.startswith(("socket.", "ctypes.", "os.spawn", "os.posix_spawn")) or event in {"subprocess.Popen", "os.system"}:
+        raise RuntimeError(f"blocked audit event {event}")
+
+
 def install_network_guard() -> None:
     """Reject forbidden network imports for the rest of this process.
 
     Call this after the harness modules have been imported and before scoring.
     ``pathlib`` imports ``urllib.parse`` while those modules load; the guard then
     stops a later import of ``socket``, ``requests``, or ``urllib.request``.
+    The audit hook is the same kind of tripwire for ``socket.*``,
+    ``subprocess.Popen``, ``os.system``, ``os.spawn*``, and ``ctypes.*``.
     """
     global _GUARD_INSTALLED
     if _GUARD_INSTALLED:
         return
+    sys.addaudithook(_audit_hook)
     sys.meta_path.insert(0, _NetworkFinder())
     real_import = builtins.__import__
     real_import_module = importlib.import_module
@@ -399,7 +411,7 @@ def _dynamic_targets(node: ast.Call, aliases: dict[str, str], path: Path, root: 
     return targets
 
 
-def _tree_imports_banned(tree: ast.AST, path: Path, root: Path, *, redteam: bool) -> bool:
+def _tree_imports_banned(tree: ast.AST, path: Path, root: Path, *, redteam: bool, allow_vision: bool = False) -> bool:
     aliases = _import_aliases(tree)
     for node in ast.walk(tree):
         targets: list[str] = []
@@ -416,8 +428,11 @@ def _tree_imports_banned(tree: ast.AST, path: Path, root: Path, *, redteam: bool
             continue
         if "<unresolved-relative>" in targets or "<dynamic>" in targets:
             return True
-        if any(_banned_module(target, redteam=redteam) for target in targets):
-            return True
+        for target in targets:
+            if allow_vision and (target == _VISION or target.startswith(_VISION + ".")):
+                continue
+            if _banned_module(target, redteam=redteam):
+                return True
     return False
 
 
@@ -433,14 +448,21 @@ def _python_under(root: Path, *parts: str) -> list[Path]:
     return found
 
 
+# The estimator CLI's job is to import the vision package. Every other script is scanned.
+_ESTIMATOR_CLI = "scripts/pan_estimate_clips.py"
+
+
 def verdict_path_import_offenders(root: Path) -> list[str]:
     """Files on the verdict path that import the pan estimator, or that cannot be parsed.
 
     The scan covers ``qor_receipt/`` except the vision package, every Python file
-    under ``services/`` (vision imports and ``redteam`` imports), and any other
-    referee path outside ``qor_receipt/``. A file that is not UTF-8 or does not
-    parse is an offender. Published pages, the browser verifier, and the receipt
-    schema are not scanned.
+    under ``services/`` and ``scripts/`` (vision imports and ``redteam`` imports),
+    and any other referee path outside ``qor_receipt/``. A file that is not UTF-8
+    or does not parse is an offender. A non-literal ``import_module`` or
+    ``__import__`` is an offender. ``scripts/pan_estimate_clips.py`` may import
+    the vision package; a dynamic import or a ``redteam`` import there is still
+    an offender. Published pages, the browser verifier, and the receipt schema
+    are not scanned.
     """
     paths: list[tuple[Path, bool]] = []
     package = root / "qor_receipt"
@@ -450,6 +472,8 @@ def verdict_path_import_offenders(root: Path) -> list[str]:
                 continue
             paths.append((path, False))
     for path in _python_under(root, "services"):
+        paths.append((path, True))
+    for path in _python_under(root, "scripts"):
         paths.append((path, True))
     if root.is_dir():
         for path in root.rglob("*.py"):
@@ -477,6 +501,6 @@ def verdict_path_import_offenders(root: Path) -> list[str]:
         except SyntaxError:
             offenders.append(rel)
             continue
-        if _tree_imports_banned(tree, path, root, redteam=redteam):
+        if _tree_imports_banned(tree, path, root, redteam=redteam, allow_vision=rel == _ESTIMATOR_CLI):
             offenders.append(rel)
     return offenders

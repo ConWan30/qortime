@@ -12,11 +12,15 @@ Ported as written where possible. Changes:
 - A4: ``FrameBindStatus`` was removed (enums are no_claim), so A4 checks it is
   gone and that a module-level enum equal to "verified" is still no_claim.
 - D1 (harness cache) and E1-E3 (estimator identity) run against this repo.
-  The cache is per instance and keyed by ``estimate_cache_key``. A self-reported
-  sha256 is stored only when it is a property of 64 lowercase hex characters.
+  The cache is per instance and keyed by ``estimate_cache_key``. An estimator
+  sha256 is stored only when the class object is ``OpticalFlowPanEstimator`` and
+  the digest is recomputed from source. An ``unhashed`` identity is not cached.
+  D1 runs only when that estimator is on the allowlist.
   Their sys.path points at this repo's tests/ instead of QorProof's checkout.
 """
 import enum
+import sys
+from pathlib import Path
 
 import pytest
 
@@ -298,6 +302,52 @@ def test_mutated_core_attribute_is_not_served_from_the_cache():
     assert est.estimate(S())[0].yaw_rate == 1.0
     est.core.yaw = 9.0
     assert est.estimate(S())[0].yaw_rate == 9.0
+
+
+def test_unhashed_cores_do_not_share_cached_bins(tmp_path: Path):
+    """Two cores whose source files are gone must not serve each other's bins."""
+    import importlib.util
+
+    _harness_path()
+    from redteam.optical_flow import OpticalFlowHarnessEstimator
+
+    def load(yaw: int):
+        path = tmp_path / f"core_{yaw}.py"
+        path.write_text(
+            "class Core:\n"
+            "    name = 'core'\n"
+            "    version = 'v0'\n"
+            f"    yaw = {yaw}\n"
+            "    def estimate_frames(self, frames, start, end):\n"
+            "        out = []\n"
+            "        for t in range(start, end, 100):\n"
+            "            row = type('B', (), {})()\n"
+            "            row.mono_ms = t\n"
+            "            row.yaw_rate = self.yaw\n"
+            "            row.pitch_rate = 0.0\n"
+            "            row.confidence = 1.0\n"
+            "            row.no_claim = False\n"
+            "            out.append(row)\n"
+            "        return out\n",
+            encoding="utf-8",
+        )
+        name = f"unhashed_core_{yaw}"
+        spec = importlib.util.spec_from_file_location(name, path)
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
+        path.unlink()
+        module.__file__ = str(path)
+        return module.Core()
+
+    class S:
+        duration_ms = 1000
+
+    low = OpticalFlowHarnessEstimator(lambda s: [], cache_key=lambda s: "k", core=load(1))
+    high = OpticalFlowHarnessEstimator(lambda s: [], cache_key=lambda s: "k", core=load(9))
+    assert low.estimate(S())[0].yaw_rate == 1
+    assert high.estimate(S())[0].yaw_rate == 9
 
 
 def test_D1_harness_cache_shared_across_frame_sources():

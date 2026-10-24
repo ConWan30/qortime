@@ -2,15 +2,17 @@
 
 A scorer is a small object with ``name``, ``version``, ``score``, and ``identity``.
 ``identity().sha256`` covers the package version, the scorer and estimator version
-strings, the canonical JSON of runtime settings, a self-reported estimator sha256
-only when that value is 64 lowercase hex characters, the scorer module, every
-in-repo module that module reaches by import, the source of an injected estimator
-or ``core`` (outside the repo, recorded relative to the module root), and any
+strings, the canonical JSON of runtime settings, the scorer module, every in-repo
+module that module reaches by import, the source of an injected estimator or
+``core`` (outside the repo, recorded relative to the module root), and any
 declared non-Python data files. A re-run of the same tree prints the same hash.
 An edit to any of those files prints a different one. A file that cannot be read
-is recorded as ``unhashed`` and is not dropped. An invalid self-reported hash, or
-an implementation whose file cannot be resolved or read, makes the identity
-``unhashed`` so the bad value is never interpolated.
+is recorded as ``unhashed`` and is not dropped. An implementation whose file
+cannot be resolved or read makes the identity ``unhashed``. An estimator sha256
+is recorded only when the class object is ``OpticalFlowPanEstimator``, and then
+it is recomputed from that module's source. A copied attribute, property,
+``__module__``, or ``__qualname__`` is not trusted. An ``unhashed`` result is
+not cached.
 
 Two estimator plug-ins feed a scorer. Neither one is implemented here:
 
@@ -31,6 +33,7 @@ import hashlib
 import inspect
 import json
 import math
+import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -353,16 +356,39 @@ def hash_file_set(
     return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest(), tuple(rels)
 
 
-def _class_path(obj: Any) -> Path | None:
-    """Source file of ``type(obj)``, via ``getsourcefile`` then the module ``__file__``."""
-    cls = type(obj)
+def _own_functions(cls: type) -> list[Any]:
+    """Functions defined on ``cls`` itself, including properties."""
+    found: list[Any] = []
+    for value in cls.__dict__.values():
+        if isinstance(value, (staticmethod, classmethod)):
+            found.append(value.__func__)
+        elif isinstance(value, property):
+            found.extend(fn for fn in (value.fget, value.fset, value.fdel) if fn is not None)
+        elif inspect.isfunction(value):
+            found.append(value)
+    return found
+
+
+def _code_path(fn: Any) -> Path | None:
+    code = getattr(fn, "__code__", None)
+    filename = getattr(code, "co_filename", None)
+    if type(filename) is not str or not filename or filename.startswith("<"):
+        return None
+    try:
+        return Path(filename).resolve()
+    except OSError:
+        return None
+
+
+def _probed_path(cls: type) -> Path | None:
+    """File ``getsourcefile`` names. This follows ``__module__`` and can be spoofed."""
     src: str | None = None
     try:
         src = inspect.getsourcefile(cls)
     except (TypeError, OSError):
         src = None
     if not src:
-        module = inspect.getmodule(cls)
+        module = sys.modules.get(getattr(cls, "__module__", None))
         file_attr = getattr(module, "__file__", None) if module is not None else None
         src = file_attr if isinstance(file_attr, str) else None
     if not src:
@@ -371,6 +397,56 @@ def _class_path(obj: Any) -> Path | None:
         return Path(src).resolve()
     except OSError:
         return None
+
+
+def _module_holds_class(cls: type) -> bool:
+    """True when ``cls`` is the object stored on its module under ``__qualname__``."""
+    module_name = getattr(cls, "__module__", None)
+    qual = getattr(cls, "__qualname__", None)
+    if type(module_name) is not str or type(qual) is not str or not qual or "<locals>" in qual:
+        return False
+    module = sys.modules.get(module_name)
+    if module is None:
+        return False
+    obj: Any = module
+    for part in qual.split("."):
+        if not part.isidentifier():
+            return False
+        obj = getattr(obj, part, None)
+        if obj is None:
+            return False
+    return obj is cls
+
+
+def _class_path(obj: Any) -> Path | None:
+    """Source file of ``type(obj)``.
+
+    A function's code object wins over ``__module__``. A class with no code of
+    its own may use the module file only when that module does not already hold
+    a different class under the same leaf name. Copying ``__module__`` and
+    ``__qualname__`` from ``OpticalFlowPanEstimator`` therefore does not select
+    that class's file.
+    """
+    cls = type(obj)
+    code_paths: set[Path] = set()
+    for fn in _own_functions(cls):
+        path = _code_path(fn)
+        if path is not None:
+            code_paths.add(path)
+    if len(code_paths) > 1:
+        return None
+    if len(code_paths) == 1:
+        return next(iter(code_paths))
+    probed = _probed_path(cls)
+    if probed is None:
+        return None
+    qual = getattr(cls, "__qualname__", "")
+    leaf = qual.split(".")[-1] if type(qual) is str else ""
+    module = sys.modules.get(getattr(cls, "__module__", None))
+    holder = getattr(module, leaf, None) if module is not None and type(leaf) is str and leaf.isidentifier() else None
+    if isinstance(holder, type) and holder is not cls:
+        return None
+    return probed
 
 
 def _outside_rel(path: Path, module_name: str) -> str:
@@ -397,7 +473,6 @@ def _source_rel(path: Path, obj: Any) -> str:
         return _outside_rel(path, getattr(type(obj), "__module__", "") or "")
 
 
-_BAD_REPORT = object()
 _THRESHOLD_NAMES = (
     "min_confidence",
     "min_claimed_bins",
@@ -435,49 +510,42 @@ def _unhashed_identity(scorer: Any, estimator: Any | None, files: Sequence[str] 
     )
 
 
-def _attr_defined(estimator: Any, attr: str) -> bool:
-    if attr in getattr(estimator, "__dict__", {}):
-        return True
-    return any(attr in base.__dict__ for base in type(estimator).__mro__)
+def _recomputed_pan_sha(obj: Any) -> str | None:
+    """Sha of the real pan-estimator class, recomputed from source. Never an attribute.
 
-
-def _is_computed_report(estimator: Any, attr: str) -> bool:
-    """True when ``attr`` is a property, not a copied string on the instance or class."""
-    if attr in getattr(estimator, "__dict__", {}):
-        return False
-    for base in type(estimator).__mro__:
-        if attr in base.__dict__:
-            return isinstance(base.__dict__[attr], property)
-    return False
-
-
-def _reported_sha256(estimator: Any | None) -> Any:
-    """Computed 64-lowercase-hex digest, None when absent, ``_BAD_REPORT`` when invalid.
-
-    ``sha256`` wins over ``hash``. A value is included only when ``type(value) is str``
-    and it is exactly 64 lowercase hex characters, and only when it is a property on
-    the class. A plain copied string is not stored, so it cannot spoof
-    ``estimator_sha256``. Anything else (wrong type, wrong length, a newline) is
-    ``_BAD_REPORT`` and must not be interpolated.
+    ``cls is OpticalFlowPanEstimator`` (the class object in that module). A
+    property, a copied string, or a class that only copies ``__module__`` and
+    ``__qualname__`` does not qualify. ``params`` must be the real ``PanParams``
+    type. The digest is ``estimator_sha256(params)`` from the module, not
+    ``obj.sha256``.
     """
+    mod = sys.modules.get("qor_receipt.vision.pan_estimator")
+    if mod is None or obj is None:
+        return None
+    cls = getattr(mod, "OpticalFlowPanEstimator", None)
+    params_cls = getattr(mod, "PanParams", None)
+    fn = getattr(mod, "estimator_sha256", None)
+    if not isinstance(cls, type) or not isinstance(params_cls, type) or not callable(fn):
+        return None
+    if type(obj) is not cls or type(getattr(obj, "params", None)) is not params_cls:
+        return None
+    try:
+        digest = fn(obj.params)
+    except Exception:
+        return None
+    if type(digest) is not str or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
+        return None
+    return digest
+
+
+def _trusted_estimator_sha(estimator: Any | None) -> str | None:
+    """Recomputed pan-estimator sha, or None. Attributes on ``estimator`` are ignored."""
     if estimator is None:
         return None
-    for attr in ("sha256", "hash"):
-        if not _attr_defined(estimator, attr):
-            continue
-        try:
-            raw = getattr(estimator, attr)
-        except AttributeError:
-            continue
-        except Exception:
-            return _BAD_REPORT
-        if raw is None:
-            continue
-        if type(raw) is not str or len(raw) != 64 or any(c not in "0123456789abcdef" for c in raw):
-            return _BAD_REPORT
-        if _is_computed_report(estimator, attr):
-            return raw
-        return None
+    for obj in (estimator, getattr(estimator, "core", None)):
+        digest = _recomputed_pan_sha(obj)
+        if digest is not None:
+            return digest
     return None
 
 
@@ -499,6 +567,39 @@ def _class_block(source: str, qualname: str) -> str | None:
             continue
         start = index
         indent = len(line) - len(stripped)
+        break
+    if start is None:
+        return None
+    block = [lines[start]]
+    for line in lines[start + 1:]:
+        if line.strip() and (len(line) - len(line.lstrip())) <= indent:
+            break
+        block.append(line)
+    return "".join(block)
+
+
+def _enclosing_class_block(source: str, lineno: int) -> str | None:
+    """Class block that contains the 1-based ``lineno``, found by indentation."""
+    lines = source.splitlines(keepends=True)
+    if lineno < 1 or lineno > len(lines):
+        return None
+    start = None
+    indent = 0
+    target = lines[lineno - 1]
+    target_indent = len(target) - len(target.lstrip())
+    for index in range(lineno - 1, -1, -1):
+        raw = lines[index]
+        stripped = raw.lstrip()
+        if not stripped.startswith("class "):
+            continue
+        name = stripped[6:].split("(", 1)[0].split(":", 1)[0].strip()
+        if not name.isidentifier():
+            continue
+        this_indent = len(raw) - len(stripped)
+        if index < lineno - 1 and target.strip() and this_indent >= target_indent:
+            continue
+        start = index
+        indent = this_indent
         break
     if start is None:
         return None
@@ -575,21 +676,53 @@ def _closure_material(cls: type) -> bytes:
 
 
 def _class_source_tag(obj: Any) -> str:
-    """Module-qualified class name plus a hash of that class's source text."""
+    """Bound class name plus a hash of that class's own source text.
+
+    The module name is published only when the module actually holds this class
+    object. Otherwise the label is the file the code object (or the defining
+    file) names, so a copied ``__module__`` / ``__qualname__`` is not the label
+    of ``OpticalFlowPanEstimator``.
+    """
     cls = type(obj)
-    module = cls.__module__ if type(cls.__module__) is str else ""
-    qual = cls.__qualname__ if type(cls.__qualname__) is str else ""
+    path = _class_path(obj)
+    held = _module_holds_class(cls)
+    qual = cls.__qualname__ if type(getattr(cls, "__qualname__", None)) is str else ""
+    if held:
+        module = cls.__module__ if type(cls.__module__) is str else ""
+    else:
+        qual = cls.__name__ if type(getattr(cls, "__name__", None)) is str else qual.split(".")[-1]
+        module = ""
+        if path is not None:
+            try:
+                module = path.relative_to(REPO_ROOT).as_posix()
+            except ValueError:
+                module = path.name
     label = f"{module}.{qual}" if module else qual
     if not label or any(ch in label for ch in "\n\r"):
         label = "unhashed"
     text: str | None = None
-    path = _class_path(obj)
-    if path is not None and qual:
+    source: str | None = None
+    if path is not None:
         try:
-            text = _class_block(path.read_text(encoding="utf-8"), qual)
+            source = path.read_text(encoding="utf-8")
         except (OSError, UnicodeError):
-            text = None
-    if not text:
+            source = None
+    linenos = [
+        fn.__code__.co_firstlineno
+        for fn in _own_functions(cls)
+        if getattr(fn, "__code__", None) is not None and type(getattr(fn.__code__, "co_firstlineno", None)) is int
+    ]
+    if source and held and qual:
+        text = _class_block(source, qual)
+    elif source and linenos:
+        text = _enclosing_class_block(source, min(linenos))
+    elif source and qual and path is not None and not held:
+        leaf = qual.split(".")[-1]
+        module_obj = sys.modules.get(getattr(cls, "__module__", None))
+        holder = getattr(module_obj, leaf, None) if module_obj is not None else None
+        if not (isinstance(holder, type) and holder is not cls):
+            text = _class_block(source, qual)
+    if not text and held:
         try:
             found = inspect.getsource(cls)
         except (OSError, TypeError):
@@ -714,10 +847,8 @@ def source_identity(scorer: Any, estimator: Any | None = None) -> ScorerIdentity
     if missing:
         return _unhashed_identity(scorer, estimator, missing)
 
-    reported = _reported_sha256(estimator)
+    reported = _trusted_estimator_sha(estimator)
     labels = [_safe_label(_source_rel(path, obj)) for path, obj in resolved]
-    if reported is _BAD_REPORT:
-        return _unhashed_identity(scorer, estimator, labels)
     try:
         settings = _settings_json(scorer)
         data_extras, data_missing = _data_extras(scorer, estimator)
@@ -744,10 +875,9 @@ def source_identity(scorer: Any, estimator: Any | None = None) -> ScorerIdentity
     ]
     for tag in sorted({_class_source_tag(obj) for obj in _identity_objects(scorer, estimator)}):
         prefix.append(f"class={tag}")
-    # An estimator may carry its own sha256 (for example one that folds in the
-    # OpenCV build). It joins the prefix only when it is a property whose value
-    # is exactly 64 lowercase hex, so stubs hash as before. A copied string is
-    # not stored. Invalid values are not interpolated.
+    # The pan estimator's sha joins the prefix only when the class object is
+    # OpticalFlowPanEstimator and the digest was recomputed from source.
+    # Attributes are not read.
     if type(reported) is str:
         prefix.append(f"estimator_sha256={reported}")
     outside: list[tuple[str, bytes | None]] = []
@@ -877,19 +1007,21 @@ def frame_source_identity(frame_source: Any, frames: Sequence[Any]) -> str:
     return f"{_callable_path(frame_source)} {digest}"
 
 
-def estimate_cache_key(scorer: Any, estimator: Any | None, frame_source: Any, frames: Sequence[Any]) -> tuple[str, str, str]:
+def estimate_cache_key(scorer: Any, estimator: Any | None, frame_source: Any, frames: Sequence[Any]) -> tuple[str, str, str] | None:
     """Key by the full scorer identity, the frame-source identity, and instance state.
 
     The identity covers the core class source, closure cells, and the scorer
     settings. The frame half is the source path plus a hash of the frame bytes
-    (shape and dtype included). Instance state is the public attributes, so
-    mutating one after the first estimate misses. Two cores in one file, or two
-    frame sources that share a path, still get different keys.
+    (shape and dtype included, each chunk length-prefixed). Instance state is
+    the public attributes, so mutating one after the first estimate misses.
+    Returns None when the identity is ``unhashed``: two unresolvable cores must
+    not share a stored result.
     """
     ident = source_identity(scorer, estimator)
-    fingerprint = ident.sha256 if ident.sha256 != "unhashed" else "unhashed:" + "|".join(ident.files)
+    if ident.sha256 == "unhashed":
+        return None
     state = hashlib.sha256(_instance_state(scorer) + b"\n" + _instance_state(estimator)).hexdigest()
-    return fingerprint, frame_source_identity(frame_source, frames), state
+    return ident.sha256, frame_source_identity(frame_source, frames), state
 
 
 class EstimateCache:

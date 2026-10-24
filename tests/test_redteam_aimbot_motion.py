@@ -675,6 +675,10 @@ def test_verdict_import_scan_fails_closed_and_catches_evasions(tmp_path: Path):
         encoding="utf-8",
     )
     (service / "fromlist.py").write_text("__import__('qor_receipt', fromlist=['vision'])\n", encoding="utf-8")
+    (service / "variable.py").write_text(
+        "import importlib\nname = 'qor_receipt.vision.pan_estimator'\nimportlib.import_module(name)\n",
+        encoding="utf-8",
+    )
     (service / "redteam_mod.py").write_text("import redteam.optical_flow\n", encoding="utf-8")
     (service / "clean.py").write_text("import json\n", encoding="utf-8")
     package = tmp_path / "qor_receipt" / "referee"
@@ -689,6 +693,7 @@ def test_verdict_import_scan_fails_closed_and_catches_evasions(tmp_path: Path):
     assert "services/referee/alias.py" in offenders
     assert "services/referee/package_arg.py" in offenders
     assert "services/referee/fromlist.py" in offenders
+    assert "services/referee/variable.py" in offenders
     assert "services/referee/redteam_mod.py" in offenders
     assert "qor_receipt/referee/app.py" in offenders
     assert "services/referee/clean.py" not in offenders
@@ -698,7 +703,8 @@ def test_verdict_import_scan_fails_closed_and_catches_evasions(tmp_path: Path):
 def test_socket_and_requests_blocked_while_harness_runs():
     """The network guard is on while evaluate() scores, including dynamic imports."""
     code = (
-        "import json, sys\n"
+        "import json, sys, os, subprocess, ctypes\n"
+        "import socket as socket_mod\n"
         "sys.path.insert(0, 'tests')\n"
         "from redteam.aimbot_harness import evaluate\n"
         "from redteam.imports_guard import install_network_guard\n"
@@ -723,6 +729,19 @@ def test_socket_and_requests_blocked_while_harness_runs():
         "attempt('requests', lambda: __import__('requests'))\n"
         "attempt('importlib.import_module', lambda: importlib.import_module('socket'))\n"
         "attempt('builtins.__import__', lambda: builtins.__import__('http.client'))\n"
+        "def attempt_runtime(label, fn):\n"
+        "    try:\n"
+        "        fn()\n"
+        "    except RuntimeError as exc:\n"
+        "        if 'blocked audit event' not in str(exc):\n"
+        "            raise\n"
+        "        blocked.append(label)\n"
+        "    else:\n"
+        "        raise SystemExit('not blocked: ' + label)\n"
+        "attempt_runtime('os.system', lambda: os.system('true'))\n"
+        "attempt_runtime('subprocess.Popen', lambda: subprocess.Popen(['true']))\n"
+        "attempt_runtime('socket.socket', lambda: socket_mod.socket())\n"
+        "attempt_runtime('ctypes', lambda: ctypes.CDLL(None))\n"
         "print(json.dumps({'variants': len(report.variants), 'blocked': blocked}))\n"
     )
     proc = subprocess.run(
@@ -735,7 +754,16 @@ def test_socket_and_requests_blocked_while_harness_runs():
     assert proc.returncode == 0, proc.stderr
     payload = json.loads(proc.stdout)
     assert payload["variants"] == 11
-    assert payload["blocked"] == ["socket", "requests", "importlib.import_module", "builtins.__import__"]
+    assert payload["blocked"] == [
+        "socket",
+        "requests",
+        "importlib.import_module",
+        "builtins.__import__",
+        "os.system",
+        "subprocess.Popen",
+        "socket.socket",
+        "ctypes",
+    ]
 
 
 def test_report_prints_and_matches_the_committed_doc(capsys):
@@ -751,3 +779,5 @@ def test_report_prints_and_matches_the_committed_doc(capsys):
     assert "button_action" in text
     assert "log-tamper" in text
     assert "example-no-claim-events/v0" in text
+    assert "tripwire" in text
+    assert "sandbox" not in text
