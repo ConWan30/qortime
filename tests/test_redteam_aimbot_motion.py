@@ -1,15 +1,15 @@
-"""Red team for motion rule v3: row-count correlation misses stick-channel aimbots.
+"""Red team for motion rule v3 against passthrough adapters and log tamper.
 
-The assertions match today's rule. ``full-idle`` is partial. ``idle-right-stick``,
-``blended-assist``, and ``snap-flicks`` stay pass. That miss is the known gap.
-The marker keeps the gap visible in ``pytest -m known_gap`` without failing CI.
+The assertions match today's rule. An honestly sealed USB log whose screen shows
+injected aim, a skill-move burst, or a button macro stays ``pass``. An honestly
+sealed empty log against a moving screen is ``partial``. The marker keeps that
+gap visible in ``pytest -m known_gap`` without failing CI.
 
 The harness calls ``score_motion`` and the input-proof checks directly. It does
 not submit a bundle.
 """
 from __future__ import annotations
 
-import ast
 import sys
 from pathlib import Path
 
@@ -18,35 +18,57 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from redteam.aimbot_harness import (  # noqa: E402
+    EVENT_AT_MS,
     FLICK_MS,
+    HONEST_STICK_AIMBOTS,
     SECONDS,
-    VARIANTS,
+    SKILL_HOLD_MS,
     control_rows,
     evaluate,
     input_proof_errors,
     render_report,
     rewrite_rows,
     seal_input_log,
+    stick_aimbot_caught,
 )
+from redteam.imports_guard import audit_source  # noqa: E402
 from redteam.scorers import (  # noqa: E402
     BIN_MS,
+    BUTTON_ACTION,
+    EVENT_MATCH_WINDOW_MS,
+    STICK_ACTION,
+    STICK_DEADZONE,
+    EventPressAgreementScorer,
     MotionRuleV3Scorer,
+    NoClaimEventEstimator,
     NoClaimPanEstimator,
     PanAgreementScorer,
     PanBin,
     Score,
+    ScorerIdentity,
     VariantSample,
+    VideoEvent,
+    logged_press_matches,
     rates_for,
     validate_pan_bin,
+    validate_video_event,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
 DOC = ROOT / "docs" / "redteam" / "motion-rule-v3-aimbot.md"
 REDTEAM = Path(__file__).resolve().parent / "redteam"
-MISSED = ("idle-right-stick", "blended-assist", "snap-flicks")
+PROOF_NEEDLES = (
+    "SHA-256 mismatch",
+    "input_hash does not match",
+    "inputs_sha256 does not match",
+    "inputs_chain_head does not match",
+)
 
 pytestmark = pytest.mark.known_gap(
-    reason="motion rule v3 counts controller rows, so stick-channel aimbots stay pass; full-idle is partial",
+    reason=(
+        "motion rule v3 counts controller rows, so an honest log with an assisted "
+        "screen stays pass; an empty log against a moving screen is partial"
+    ),
 )
 
 
@@ -55,15 +77,20 @@ def report():
     return evaluate()
 
 
+def _by_name(report):
+    return {variant.sample.name: variant for variant in report.variants}
+
+
 def test_fixture_is_synthetic_and_long_enough_to_score():
     rows = control_rows()
     ins = [row for row in rows if row.get("type") == "in"]
     assert len(ins) > 100
     assert {row["rx"] for row in ins} != {128}
+    assert {row["b"] for row in ins} != {0}
     assert max(int(row["t_us"]) // 1000 for row in ins) // 1000 == SECONDS - 1
 
 
-def test_variants_keep_left_stick_buttons_and_row_times():
+def test_log_tamper_keeps_left_stick_buttons_and_row_times():
     base = [row for row in control_rows() if row.get("type") == "in"]
     for name in ("idle-right-stick", "blended-assist", "snap-flicks"):
         rewritten = [row for row in rewrite_rows(control_rows(), name) if row.get("type") == "in"]
@@ -82,99 +109,178 @@ def test_variants_keep_left_stick_buttons_and_row_times():
     assert FLICK_MS < 300
 
 
-def test_full_idle_drops_controller_rows():
+def test_full_idle_tamper_drops_controller_rows():
     rewritten = rewrite_rows(control_rows(), "full-idle")
     assert not any(row.get("type") == "in" for row in rewritten)
     assert any(row.get("type") == "header" for row in rewritten)
 
 
-def test_motion_rule_v3_misses_stick_channel_aimbots(report):
-    """Honest current result: only a fully idle log is partial."""
+def test_motion_rule_v3_misses_honest_stick_aimbots(report):
+    """Headline: three honest-seal stick aimbots stay pass, and input proof passes."""
     motion = report.scores["motion-rule-v3"]
+    by_name = _by_name(report)
     control = motion["control"]
     assert control.detail["motion_check"] == "pass"
-    assert control.detail["motion_permille"] >= 300
+    assert 300 <= control.detail["motion_permille"] < 1000
     assert control.flagged is False
     assert control.detail["rule"] == 3
     assert "motion-rule/v3" in control.detail["basis"]
     assert control.detail["bins"] >= 20
     assert control.detail["excluded_total"] == 0
+    assert by_name["control"].input_proof == "pass"
+    assert by_name["control"].sample.label == "benign"
 
-    idle_log = motion["full-idle"]
-    assert idle_log.detail["motion_check"] == "partial"
-    assert idle_log.detail["motion_permille"] == -1000
-    assert idle_log.flagged is True
-
-    for name in MISSED:
+    for name in HONEST_STICK_AIMBOTS:
         score = motion[name]
+        variant = by_name[name]
         assert score.detail["motion_check"] == "pass"
         assert score.flagged is False
-        assert score.detail["motion_permille"] == control.detail["motion_permille"]
+        assert 300 <= score.detail["motion_permille"] < 1000
+        assert variant.input_proof == "pass"
+        assert variant.input_proof_errors == ()
+        assert variant.sample.cohort == "honest-seal"
+        assert variant.sample.label == "attack"
+        assert variant.sample.rows == by_name["control"].sample.rows
+    assert stick_aimbot_caught(report) == 0
 
-    caught = [name for name in VARIANTS if motion[name].flagged]
-    assert caught == ["full-idle"]
+
+def test_honest_macros_have_on_screen_events_and_no_logged_press(report):
+    by_name = _by_name(report)
+    motion = report.scores["motion-rule-v3"]
+    expected = {
+        "honest-stick-action": STICK_ACTION,
+        "honest-button-macro": BUTTON_ACTION,
+    }
+    for name, kind in expected.items():
+        variant = by_name[name]
+        score = motion[name]
+        assert variant.sample.cohort == "honest-seal"
+        assert variant.input_proof == "pass"
+        assert variant.screen_events == 4
+        assert score.detail["motion_check"] == "pass"
+        assert score.flagged is False
+        assert 300 <= score.detail["motion_permille"] < 1000
+        assert variant.sample.rows == by_name["control"].sample.rows
+        assert len(variant.sample.events) == 4
+        for event in variant.sample.events:
+            assert event.event_kind == kind
+            assert event.no_claim is False
+            assert event.confidence == 0.9
+            assert event.mono_ms % 1000 == EVENT_AT_MS
+            assert logged_press_matches(
+                variant.sample.rows, event.mono_ms, kind, EVENT_MATCH_WINDOW_MS, STICK_DEADZONE,
+            ) is False
 
 
-def test_right_stick_runs_show_the_rewrite_was_applied(report):
+def test_honest_full_idle_is_partial_and_still_passes_input_proof(report):
+    variant = _by_name(report)["honest-full-idle"]
+    score = report.scores["motion-rule-v3"]["honest-full-idle"]
+    assert variant.sample.cohort == "honest-seal"
+    assert variant.input_rows == 0
+    assert variant.input_proof == "pass"
+    assert variant.input_proof_errors == ()
+    assert score.detail["motion_check"] == "partial"
+    assert score.detail["motion_permille"] == -1000
+    assert score.flagged is True
+
+
+def test_honest_skill_gesture_is_shorter_than_a_camera_hold(report):
     runs = {variant.sample.name: variant.right_stick_run_ms for variant in report.variants}
-    assert runs["control"] >= 300
-    assert runs["idle-right-stick"] == 0
-    assert runs["full-idle"] == 0
-    assert runs["snap-flicks"] < 300
-    assert runs["snap-flicks"] > 0
+    assert 0 < runs["control"] <= SKILL_HOLD_MS
+    assert runs["control"] < 300
+    assert runs["honest-passthrough-aim"] == runs["control"]
+    assert runs["tamper-idle-right-stick"] == 0
+    assert runs["tamper-full-idle"] == 0
+    assert runs["honest-full-idle"] == 0
+    assert 0 < runs["tamper-snap-flicks"] < 300
 
 
-def test_rewritten_log_fails_input_proof_before_a_live_precheck_would_score_motion(report):
-    by_name = {variant.sample.name: variant for variant in report.variants}
-    assert by_name["control"].input_proof == "pass"
-    assert by_name["control"].input_proof_errors == ()
+def test_log_tamper_fails_input_proof_and_is_labeled(report):
+    by_name = _by_name(report)
     sealed = seal_input_log(control_rows())
     assert input_proof_errors(sealed) == ()
-    for name in VARIANTS:
-        if name == "control":
-            continue
-        errors = by_name[name].input_proof_errors
-        assert by_name[name].input_proof == "fail"
-        text = "\n".join(errors)
-        assert "SHA-256 mismatch" in text
-        assert "input_hash does not match" in text
-        assert "inputs_sha256 does not match" in text
-        assert "inputs_chain_head does not match" in text
+    control_permille = report.scores["motion-rule-v3"]["control"].detail["motion_permille"]
+    for name in ("tamper-idle-right-stick", "tamper-blended-assist", "tamper-snap-flicks", "tamper-full-idle"):
+        variant = by_name[name]
+        assert variant.sample.cohort == "log-tamper"
+        assert variant.sample.label == "attack"
+        assert variant.input_proof == "fail"
+        text = "\n".join(variant.input_proof_errors)
+        for needle in PROOF_NEEDLES:
+            assert needle in text
+    for name in ("tamper-idle-right-stick", "tamper-blended-assist", "tamper-snap-flicks"):
+        score = report.scores["motion-rule-v3"][name]
+        assert score.flagged is False
+        assert score.detail["motion_permille"] == control_permille
+    deleted = report.scores["motion-rule-v3"]["tamper-full-idle"]
+    assert deleted.flagged is True
+    assert deleted.detail["motion_permille"] == -1000
+    assert "record count mismatch" in "\n".join(by_name["tamper-full-idle"].input_proof_errors)
 
 
-def test_catch_and_false_alarm_rates_for_each_scorer(report):
-    motion = report.rates["motion-rule-v3"]
-    assert motion.catch_rate == 0.25
+def test_headline_rates_separate_the_honest_seal_cohort_from_log_tamper(report):
+    motion = report.rates_headline["motion-rule-v3"]
+    assert motion.catch_rate == pytest.approx(1 / 6)
     assert motion.false_alarm_rate == 0.0
     assert motion.true_positives == 1
-    assert motion.false_negatives == 3
+    assert motion.false_negatives == 5
     assert motion.false_positives == 0
     assert motion.true_negatives == 1
-    assert motion.decided_attacks == 4
+    assert motion.attacks == 6
+    assert motion.benign == 1
+    assert motion.decided_attacks == 6
     assert motion.abstained == 0
     assert motion.version == "motion-rule/v3"
     assert len(motion.sha256) == 64
 
-    pan = report.rates["pan-agreement"]
-    assert pan.catch_rate is None
-    assert pan.false_alarm_rate is None
-    assert pan.true_positives == 0
-    assert pan.false_positives == 0
-    assert pan.decided_attacks == 0
-    assert pan.decided_benign == 0
-    assert pan.abstained == 5
-    assert pan.version == "pan-agreement/v0"
-    assert report.identities["pan-agreement"].estimator_name == "example-no-claim"
-    assert report.identities["pan-agreement"].estimator_version == "example-no-claim/v0"
-    assert pan.sha256 != motion.sha256
+    tamper = report.rates_tamper["motion-rule-v3"]
+    assert tamper.attacks == 4
+    assert tamper.benign == 0
+    assert tamper.true_positives == 1
+    assert tamper.false_negatives == 3
+    assert tamper.catch_rate == 0.25
+    assert tamper.false_alarm_rate is None
+    assert tamper.decided_benign == 0
+
+    for name in ("pan-agreement", "event-press-agreement"):
+        headline = report.rates_headline[name]
+        tampered = report.rates_tamper[name]
+        assert headline.catch_rate is None
+        assert headline.false_alarm_rate is None
+        assert headline.decided_attacks == 0
+        assert headline.abstained == 7
+        assert tampered.catch_rate is None
+        assert tampered.abstained == 4
+        assert headline.sha256 != motion.sha256
 
     again = evaluate()
-    assert again.rates["motion-rule-v3"].sha256 == motion.sha256
-    assert again.rates["pan-agreement"].sha256 == pan.sha256
+    assert again.rates_headline["motion-rule-v3"].sha256 == motion.sha256
+    assert again.rates_headline["pan-agreement"].sha256 == report.rates_headline["pan-agreement"].sha256
+    assert again.rates_headline["event-press-agreement"].sha256 == report.rates_headline["event-press-agreement"].sha256
     assert again.harness_sha256 == report.harness_sha256
 
 
-def test_no_claim_stub_marks_every_100ms_frame():
+def test_scorer_hash_covers_package_version_and_transitive_files(report):
+    motion = report.identities["motion-rule-v3"]
+    pan = report.identities["pan-agreement"]
+    events = report.identities["event-press-agreement"]
+    assert motion.package_version == "0.1.0"
+    assert report.package_version == "0.1.0"
+    assert "qor_receipt/review/motion.py" in motion.files
+    assert "qor_receipt/review/media.py" in motion.files
+    assert "qor_receipt/receipt.py" in motion.files
+    assert "qor_receipt/__init__.py" in motion.files
+    assert "tests/redteam/scorers.py" in motion.files
+    assert "tests/redteam/aimbot_harness.py" in report.harness_files
+    assert "tests/redteam/scorers.py" in report.harness_files
+    assert pan.estimator_name == "example-no-claim"
+    assert pan.estimator_version == "example-no-claim/v0"
+    assert events.estimator_name == "example-no-claim-events"
+    assert events.estimator_version == "example-no-claim-events/v0"
+    assert len({motion.sha256, pan.sha256, events.sha256, report.harness_sha256}) == 4
+
+
+def test_no_claim_stubs_mark_unreadable_frames_and_events():
     sample = report_sample()
     bins = NoClaimPanEstimator().estimate(sample)
     assert len(bins) == sample.duration_ms // BIN_MS
@@ -190,11 +296,25 @@ def test_no_claim_stub_marks_every_100ms_frame():
             "confidence": None,
             "no_claim": True,
         }
-    score = PanAgreementScorer(NoClaimPanEstimator()).score(sample)
-    assert score.flagged is None
-    assert score.decision == "abstain"
-    assert score.detail["no_claim"] == len(bins)
-    assert score.detail["claimed"] == 0
+    pan_score = PanAgreementScorer(NoClaimPanEstimator()).score(sample)
+    assert pan_score.flagged is None
+    assert pan_score.decision == "abstain"
+    assert pan_score.detail["claimed"] == 0
+
+    events = NoClaimEventEstimator().estimate(sample)
+    assert len(events) == sample.duration_ms // 1000
+    for event in events:
+        validate_video_event(event)
+        assert event.no_claim is True
+        assert event.to_dict() == {
+            "mono_ms": event.mono_ms,
+            "event_kind": None,
+            "confidence": None,
+            "no_claim": True,
+        }
+    event_score = EventPressAgreementScorer(NoClaimEventEstimator()).score(sample)
+    assert event_score.flagged is None
+    assert event_score.detail["reason"] == "too few claimed events"
 
 
 def report_sample() -> VariantSample:
@@ -230,7 +350,7 @@ def _claimed_bins(duration_ms: int, yaw: float) -> list[PanBin]:
     ]
 
 
-class _FixedEstimator:
+class _FixedPan:
     """Test double. Not a camera estimator."""
 
     name = "fixed-bins"
@@ -243,29 +363,117 @@ class _FixedEstimator:
         return list(self._bins)
 
 
+class _FixedEvents:
+    """Test double. Not a video-event estimator."""
+
+    name = "fixed-events"
+    version = "test-double/v0"
+
+    def __init__(self, events: list[VideoEvent]) -> None:
+        self._events = events
+
+    def estimate(self, sample: VariantSample) -> list[VideoEvent]:
+        return list(self._events)
+
+
+def _stick_events(duration_ms: int) -> list[VideoEvent]:
+    return [
+        VideoEvent(mono_ms=t, event_kind=STICK_ACTION, confidence=0.9, no_claim=False)
+        for t in range(500, duration_ms, 1000)
+    ]
+
+
 def test_pan_estimator_plugs_in_and_the_example_scorer_flags_idle_stick_against_yaw():
     duration = 2000
     bins = _claimed_bins(duration, yaw=40.0)
     idle = VariantSample("idle-right-stick", "attack", _idle_rows(duration), {0: 1, 1: 1}, (1,), duration)
     moving = VariantSample("control", "benign", _moving_rows(duration), {0: 1, 1: 1}, (1,), duration)
-    idle_score = PanAgreementScorer(_FixedEstimator(bins)).score(idle)
-    moving_score = PanAgreementScorer(_FixedEstimator(bins)).score(moving)
+    idle_score = PanAgreementScorer(_FixedPan(bins)).score(idle)
+    moving_score = PanAgreementScorer(_FixedPan(bins)).score(moving)
     assert idle_score.flagged is True
     assert moving_score.flagged is False
-    silent = [PanBin(mono_ms=t, yaw_rate=None, pitch_rate=None, confidence=None, no_claim=True) for t in range(0, duration, BIN_MS)]
-    assert PanAgreementScorer(_FixedEstimator(silent)).score(idle).flagged is None
-    swapped = PanAgreementScorer(_FixedEstimator(bins)).identity().sha256
+    silent = [
+        PanBin(mono_ms=t, yaw_rate=None, pitch_rate=None, confidence=None, no_claim=True)
+        for t in range(0, duration, BIN_MS)
+    ]
+    assert PanAgreementScorer(_FixedPan(silent)).score(idle).flagged is None
+    swapped = PanAgreementScorer(_FixedPan(bins)).identity().sha256
     stubbed = PanAgreementScorer(NoClaimPanEstimator()).identity().sha256
     assert swapped != stubbed
 
 
-def test_no_claim_rejects_a_bin_that_still_carries_a_rate():
+def test_event_estimator_plugs_in_and_flags_unmatched_presses():
+    duration = 4000
+    events = _stick_events(duration)
+    idle = VariantSample("honest-stick-action", "attack", _idle_rows(duration), {0: 1}, (1,), duration, events=tuple(events))
+    pressed = VariantSample("control", "benign", _moving_rows(duration), {0: 1}, (1,), duration, events=tuple(events))
+    idle_score = EventPressAgreementScorer(_FixedEvents(events)).score(idle)
+    pressed_score = EventPressAgreementScorer(_FixedEvents(events)).score(pressed)
+    assert idle_score.flagged is True
+    assert idle_score.detail["unmatched"] == 4
+    assert pressed_score.flagged is False
+    assert pressed_score.detail["unmatched"] == 0
+    buttons = [
+        VideoEvent(mono_ms=t, event_kind=BUTTON_ACTION, confidence=1.0, no_claim=False)
+        for t in (500, 1500, 2500, 3500)
+    ]
+    assert EventPressAgreementScorer(_FixedEvents(buttons)).score(idle).flagged is True
+    assert EventPressAgreementScorer(_FixedEvents(buttons)).score(pressed).flagged is False
+    unread = [VideoEvent(mono_ms=t, event_kind=None, confidence=None, no_claim=True) for t in range(0, duration, 1000)]
+    assert EventPressAgreementScorer(_FixedEvents(unread)).score(idle).flagged is None
+
+    class _FromSample:
+        name = "from-sample"
+        version = "test-double/v0"
+
+        def estimate(self, sample: VariantSample) -> list[VideoEvent]:
+            return list(sample.events)
+
+    custom = evaluate(scorers=[EventPressAgreementScorer(_FromSample())])
+    assert custom.scores["event-press-agreement"]["honest-stick-action"].flagged is True
+    assert custom.scores["event-press-agreement"]["honest-button-macro"].flagged is True
+    assert custom.scores["event-press-agreement"]["control"].flagged is None
+    assert custom.scores["motion-rule-v3"]["honest-stick-action"].flagged is False
+    assert custom.scores["motion-rule-v3"]["honest-button-macro"].flagged is False
+
+
+def test_pan_and_event_validation_rejects_non_finite_and_out_of_range_confidence():
     with pytest.raises(ValueError):
         validate_pan_bin(PanBin(mono_ms=0, yaw_rate=1.0, pitch_rate=None, confidence=None, no_claim=True))
     with pytest.raises(ValueError):
         validate_pan_bin(PanBin(mono_ms=50, yaw_rate=1.0, pitch_rate=0.0, confidence=1.0, no_claim=False))
+    for yaw, pitch, confidence in (
+        (float("nan"), 0.0, 1.0),
+        (0.0, float("inf"), 1.0),
+        (0.0, 0.0, float("nan")),
+        (0.0, 0.0, float("-inf")),
+        (0.0, 0.0, 1.1),
+        (0.0, 0.0, -0.01),
+        (True, 0.0, 1.0),
+    ):
+        with pytest.raises(ValueError):
+            validate_pan_bin(PanBin(mono_ms=0, yaw_rate=yaw, pitch_rate=pitch, confidence=confidence, no_claim=False))
+    validate_pan_bin(PanBin(mono_ms=0, yaw_rate=0.0, pitch_rate=0, confidence=0.0, no_claim=False))
+    validate_pan_bin(PanBin(mono_ms=100, yaw_rate=0.0, pitch_rate=0.0, confidence=1, no_claim=False))
+
     with pytest.raises(ValueError):
-        validate_pan_bin(PanBin(mono_ms=0, yaw_rate=1.0, pitch_rate=0.0, confidence=None, no_claim=False))
+        validate_video_event(VideoEvent(mono_ms=150, event_kind=STICK_ACTION, confidence=1.0, no_claim=True))
+    with pytest.raises(ValueError):
+        validate_video_event(VideoEvent(mono_ms=-1, event_kind=STICK_ACTION, confidence=1.0, no_claim=False))
+    with pytest.raises(ValueError):
+        validate_video_event(VideoEvent(mono_ms=150, event_kind="", confidence=1.0, no_claim=False))
+    for confidence in (float("nan"), float("inf"), 1.1, -0.01):
+        with pytest.raises(ValueError):
+            validate_video_event(VideoEvent(mono_ms=150, event_kind=BUTTON_ACTION, confidence=confidence, no_claim=False))
+    validate_video_event(VideoEvent(mono_ms=150, event_kind=STICK_ACTION, confidence=0.0, no_claim=False))
+    validate_video_event(VideoEvent(mono_ms=150, event_kind=BUTTON_ACTION, confidence=1, no_claim=False))
+    claimed = VideoEvent(mono_ms=150, event_kind=STICK_ACTION, confidence=0.5, no_claim=False)
+    assert claimed.to_dict() == {
+        "mono_ms": 150,
+        "event_kind": STICK_ACTION,
+        "confidence": 0.5,
+        "no_claim": False,
+    }
 
 
 def test_rate_math_counts_abstentions_as_undecided():
@@ -308,40 +516,31 @@ def test_extra_scorer_is_accepted_and_motion_rule_stays(report):
             return Score(False, {})
 
         def identity(self):
-            return MotionRuleV3Scorer().identity().__class__(
-                name=self.name, version=self.version, sha256="ab" * 32,
-            )
+            return ScorerIdentity(name=self.name, version=self.version, sha256="ab" * 32, package_version="0")
 
-    custom = evaluate(scorers=[AlwaysClear(), PanAgreementScorer(_FixedEstimator(bins))])
+    custom = evaluate(scorers=[AlwaysClear(), PanAgreementScorer(_FixedPan(bins))])
     assert list(custom.scores) == ["motion-rule-v3", "always-clear", "pan-agreement"]
-    assert custom.rates["always-clear"].catch_rate == 0.0
-    assert custom.rates["always-clear"].false_alarm_rate == 0.0
-    assert custom.rates["motion-rule-v3"].sha256 == report.rates["motion-rule-v3"].sha256
-    # The fixed estimator claims yaw on every bin. The synthetic attacks with an idle
-    # right stick are decided by the example policy; this only checks the plug-in ran.
+    assert custom.rates_headline["always-clear"].catch_rate == 0.0
+    assert custom.rates_headline["always-clear"].false_alarm_rate == 0.0
+    assert custom.rates_headline["motion-rule-v3"].sha256 == report.rates_headline["motion-rule-v3"].sha256
     assert custom.scores["pan-agreement"]["control"].flagged is not None
 
 
-def test_harness_imports_stay_inside_the_test_tree():
-    forbidden = {
-        "socket", "http", "urllib", "httpx", "requests",
-        "qor_receipt.referee", "qor_receipt.referee.app",
-        "qor_receipt.referee_service", "qor_receipt.referee_service.app",
-        "qor_receipt.trusted_referees",
-    }
+def test_import_guard_blocks_urllib_request_and_network_tools():
+    urllib_request = audit_source("from urllib.request import urlopen\n")
+    assert urllib_request and "urllib.request" in urllib_request[0]
+    http_client = audit_source("import http.client\n")
+    assert http_client and "http.client" in http_client[0]
+    curl = audit_source('import subprocess\nsubprocess.run(["curl", "https://example.invalid"])\n')
+    assert any("curl" in item and "subprocess.run" in item for item in curl)
+    ffmpeg = audit_source('import subprocess\nsubprocess.run(["ffmpeg", "-i", "clip.mp4"])\n')
+    assert ffmpeg == []
     for path in sorted(REDTEAM.glob("*.py")):
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        modules: set[str] = set()
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                modules.update(alias.name for alias in node.names)
-            elif isinstance(node, ast.ImportFrom) and node.module:
-                modules.add(node.module)
-        assert modules.isdisjoint(forbidden)
+        assert audit_source(path.read_text(encoding="utf-8"), filename=path.name) == []
         text = path.read_text(encoding="utf-8")
         assert "site/" not in text
         assert "SoftwareKey" not in text
-        assert "trusted_referees" not in text
+    assert audit_source(Path(__file__).read_text(encoding="utf-8"), filename="test") == []
 
 
 def test_report_prints_and_matches_the_committed_doc(capsys):
@@ -350,7 +549,10 @@ def test_report_prints_and_matches_the_committed_doc(capsys):
         print(text)
     assert DOC.is_file()
     assert DOC.read_text(encoding="utf-8") == text
-    assert "idle-right-stick" in text
-    assert "catch rate" in text
-    assert "false-alarm rate" in text
-    assert "example-no-claim/v0" in text
+    assert "0/3" in text
+    assert "honest-stick-action" in text
+    assert "honest-button-macro" in text
+    assert "stick_action" in text
+    assert "button_action" in text
+    assert "log-tamper" in text
+    assert "example-no-claim-events/v0" in text

@@ -1,39 +1,53 @@
 """Pluggable scorers for the aimbot red-team harness.
 
 A scorer is a small object with ``name``, ``version``, ``score``, and ``identity``.
-``identity().sha256`` covers the code that actually ran, so a re-run of the same
-tree prints the same hash and a later edit prints a different one.
+``identity().sha256`` covers the package version, the scorer module, and every
+in-repo module that module reaches by import. A re-run of the same tree prints
+the same hash. An edit to any of those files prints a different one.
 
-Motion rule v3 is one scorer. A future camera-pan estimator plugs in behind
-``CameraPanEstimator`` and is consumed by ``PanAgreementScorer``. The estimator's
-output is one record per 100 ms:
+Two estimator plug-ins feed a scorer. Neither one is implemented here:
 
-    {"mono_ms", "yaw_rate", "pitch_rate", "confidence", "no_claim"}
+* ``CameraPanEstimator`` returns one bin per 100 ms:
+  ``{mono_ms, yaw_rate, pitch_rate, confidence, no_claim}``.
+* ``VideoEventEstimator`` returns events:
+  ``{mono_ms, event_kind, confidence, no_claim}``.
 
-Unreadable frames set ``no_claim`` true and leave the three measurements null.
-``NoClaimPanEstimator`` is a stub of that shape. It does not look at pixels.
+Unreadable frames and unread events set ``no_claim`` and leave the measurements
+null. The stubs ``NoClaimPanEstimator`` and ``NoClaimEventEstimator`` do that
+and do not look at a picture. A scorer may compare either output with the
+logged rows. Motion rule v3 uses neither; it counts controller rows.
 """
 from __future__ import annotations
 
+import ast
 import hashlib
 import inspect
+import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
+import qor_receipt
 from qor_receipt.receipt import MOTION_MIN_PERMILLE
 from qor_receipt.review.media import input_energy_series
-from qor_receipt.review.motion import correlate_keyed, score_motion
+from qor_receipt.review.motion import score_motion
 from qor_receipt.review.policy import PARTIAL_CHECK, PASS
 
+PACKAGE_VERSION = qor_receipt.__version__
 BIN_MS = 100
+EVENT_MATCH_WINDOW_MS = 150
+STICK_DEADZONE = 8
+STICK_ACTION = "stick_action"
+BUTTON_ACTION = "button_action"
+EVENT_KINDS = frozenset({STICK_ACTION, BUTTON_ACTION})
 LABELS = ("attack", "benign")
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 @dataclass(frozen=True)
 class VariantSample:
-    """One rewritten log plus the synthetic on-screen motion series it is scored against."""
+    """One controller log plus the synthetic on-screen series it is scored against."""
 
     name: str
     label: str
@@ -41,6 +55,8 @@ class VariantSample:
     motion: dict[int, int]
     sample_segments: tuple[int, ...]
     duration_ms: int
+    cohort: str = "honest-seal"
+    events: tuple[VideoEvent, ...] = ()
 
     def __post_init__(self) -> None:
         if self.label not in LABELS:
@@ -81,19 +97,68 @@ class PanBin:
         }
 
 
-def validate_pan_bin(bin: PanBin) -> None:
+@dataclass(frozen=True)
+class VideoEvent:
+    """One video-derived event. ``no_claim`` marks an event the estimator could not read.
+
+    ``event_kind`` is game-agnostic. ``stick_action`` is a right-stick gesture
+    (in Madden, a skill move or hit stick). ``button_action`` is a button press
+    (in Madden, a user catch or any other button macro).
+    """
+
+    mono_ms: int
+    event_kind: str | None
+    confidence: float | None
+    no_claim: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "mono_ms": self.mono_ms,
+            "event_kind": self.event_kind,
+            "confidence": self.confidence,
+            "no_claim": self.no_claim,
+        }
+
+
+def _finite_number(name: str, value: Any) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+        raise ValueError(f"{name} must be a finite number")
+    return float(value)
+
+
+def _confidence(value: Any) -> float:
+    number = _finite_number("confidence", value)
+    if not 0.0 <= number <= 1.0:
+        raise ValueError("confidence must be between 0 and 1")
+    return number
+
+
+def validate_pan_bin(pan_bin: PanBin) -> None:
     """Reject a bin that does not match the estimator contract."""
-    if bin.mono_ms < 0 or bin.mono_ms % BIN_MS != 0:
+    if isinstance(pan_bin.mono_ms, bool) or not isinstance(pan_bin.mono_ms, int):
+        raise ValueError("mono_ms must be an integer")
+    if pan_bin.mono_ms < 0 or pan_bin.mono_ms % BIN_MS != 0:
         raise ValueError("mono_ms must be a non-negative multiple of 100")
-    if bin.no_claim:
-        if bin.yaw_rate is not None or bin.pitch_rate is not None or bin.confidence is not None:
+    if pan_bin.no_claim:
+        if pan_bin.yaw_rate is not None or pan_bin.pitch_rate is not None or pan_bin.confidence is not None:
             raise ValueError("no_claim bins carry no yaw_rate, pitch_rate, or confidence")
         return
-    for name, value in (("yaw_rate", bin.yaw_rate), ("pitch_rate", bin.pitch_rate), ("confidence", bin.confidence)):
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            raise ValueError(f"{name} must be a number when the frame is readable")
-    if not 0.0 <= float(bin.confidence) <= 1.0:
-        raise ValueError("confidence must be between 0 and 1")
+    _finite_number("yaw_rate", pan_bin.yaw_rate)
+    _finite_number("pitch_rate", pan_bin.pitch_rate)
+    _confidence(pan_bin.confidence)
+
+
+def validate_video_event(event: VideoEvent) -> None:
+    """Reject an event that does not match the estimator contract."""
+    if isinstance(event.mono_ms, bool) or not isinstance(event.mono_ms, int) or event.mono_ms < 0:
+        raise ValueError("mono_ms must be a non-negative integer")
+    if event.no_claim:
+        if event.event_kind is not None or event.confidence is not None:
+            raise ValueError("no_claim events carry no event_kind or confidence")
+        return
+    if not isinstance(event.event_kind, str) or not event.event_kind:
+        raise ValueError("event_kind must be a non-empty string when the event is claimed")
+    _confidence(event.confidence)
 
 
 @dataclass(frozen=True)
@@ -101,8 +166,10 @@ class ScorerIdentity:
     name: str
     version: str
     sha256: str
+    package_version: str
     estimator_name: str | None = None
     estimator_version: str | None = None
+    files: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -110,7 +177,7 @@ class RateResult:
     """Catch rate and false-alarm rate over the variants a scorer actually decided.
 
     An abstention is neither a catch nor a false alarm. Both rates are None when
-    that class has no decision (for example the no_claim stub).
+    that class has no decision (for example a no_claim stub).
     """
 
     scorer: str
@@ -129,8 +196,120 @@ class RateResult:
     false_alarm_rate: float | None
 
 
-def _sha256_text(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+def _resolve_module(name: str) -> Path | None:
+    """Map an in-repo module name to a source file. Stdlib and third-party names return None."""
+    parts = name.split(".")
+    if not parts or parts[0] not in {"qor_receipt", "redteam"}:
+        return None
+    if parts[0] == "redteam":
+        base = REPO_ROOT / "tests" / "redteam"
+        rest = parts[1:]
+    else:
+        base = REPO_ROOT / "qor_receipt"
+        rest = parts[1:]
+    if not rest:
+        init = base / "__init__.py"
+        return init if init.is_file() else None
+    file_py = base.joinpath(*rest).with_suffix(".py")
+    if file_py.is_file():
+        return file_py.resolve()
+    init = base.joinpath(*rest, "__init__.py")
+    if init.is_file():
+        return init.resolve()
+    return None
+
+
+def _import_from_module(path: Path, node: ast.ImportFrom) -> str | None:
+    if node.level == 0:
+        return node.module
+    rel = path.resolve().relative_to(REPO_ROOT)
+    parts = list(rel.with_suffix("").parts)
+    if parts[-1] == "__init__":
+        package = parts[:-1]
+    else:
+        package = parts[:-1]
+    drop = node.level - 1
+    if drop:
+        package = package[:-drop]
+    if node.module:
+        package.extend(node.module.split("."))
+    return ".".join(package) if package else None
+
+
+def _imported_names(path: Path) -> list[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    names: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names.extend(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            base = _import_from_module(path, node)
+            if not base:
+                continue
+            names.append(base)
+            names.extend(f"{base}.{alias.name}" for alias in node.names)
+    return names
+
+
+def transitive_files(start: Sequence[Path]) -> tuple[Path, ...]:
+    """Source files reachable from ``start`` by in-repo imports, sorted by repo-relative path."""
+    seen: set[Path] = set()
+    queue = [path.resolve() for path in start]
+    while queue:
+        path = queue.pop()
+        if path in seen or not path.is_file():
+            continue
+        try:
+            path.relative_to(REPO_ROOT)
+        except ValueError:
+            continue
+        seen.add(path)
+        for name in _imported_names(path):
+            resolved = _resolve_module(name)
+            if resolved is not None:
+                queue.append(resolved)
+    return tuple(sorted(seen, key=lambda item: item.relative_to(REPO_ROOT).as_posix()))
+
+
+def hash_file_set(start: Sequence[Path], prefix: Sequence[str]) -> tuple[str, tuple[str, ...]]:
+    """SHA-256 of ``prefix`` plus each reachable file's repo-relative path and bytes."""
+    files = transitive_files(start)
+    lines = list(prefix)
+    rels: list[str] = []
+    for path in files:
+        rel = path.relative_to(REPO_ROOT).as_posix()
+        rels.append(rel)
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        lines.append(f"{rel} {digest}")
+    return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest(), tuple(rels)
+
+
+def _class_file(obj: Any) -> Path:
+    return Path(inspect.getfile(type(obj))).resolve()
+
+
+def source_identity(scorer: Any, estimator: Any | None = None) -> ScorerIdentity:
+    """Identity of one scorer: package version, version strings, and the resolved file set."""
+    start = [_class_file(scorer)]
+    if estimator is not None:
+        start.append(_class_file(estimator))
+    prefix = [
+        f"qor-receipt=={PACKAGE_VERSION}",
+        f"scorer={scorer.name}",
+        f"version={scorer.version}",
+        f"estimator={getattr(estimator, 'name', '')}",
+        f"estimator_version={getattr(estimator, 'version', '')}",
+    ]
+    digest, rels = hash_file_set(start, prefix)
+    return ScorerIdentity(
+        name=scorer.name,
+        version=scorer.version,
+        sha256=digest,
+        package_version=PACKAGE_VERSION,
+        estimator_name=getattr(estimator, "name", None),
+        estimator_version=getattr(estimator, "version", None),
+        files=rels,
+    )
 
 
 def motion_check_state(permille: int | None) -> str:
@@ -161,30 +340,36 @@ class Scorer(Protocol):
         """Return a flag, a clear, or an abstention for one variant."""
 
     def identity(self) -> ScorerIdentity:
-        """Version plus a hash of the implementation that produced the score."""
+        """Package version plus a hash of the resolved implementation."""
 
 
 @runtime_checkable
 class CameraPanEstimator(Protocol):
-    """Plug-in point for a future camera-pan estimator.
-
-    ``estimate`` returns one bin per 100 ms of ``sample.duration_ms``. A frame
-    the estimator cannot read is ``no_claim=True`` with null rates. This
-    protocol does not define how yaw or pitch are computed.
-    """
+    """Plug-in for a future camera-pan estimator. This protocol does not compute yaw or pitch."""
 
     name: str
     version: str
 
     def estimate(self, sample: VariantSample) -> list[PanBin]:
-        """Per-100 ms bins covering the sample."""
+        """One bin per 100 ms. Unreadable frames are ``no_claim`` with null rates."""
+
+
+@runtime_checkable
+class VideoEventEstimator(Protocol):
+    """Plug-in for a future video-event estimator. This protocol does not detect events."""
+
+    name: str
+    version: str
+
+    def estimate(self, sample: VariantSample) -> list[VideoEvent]:
+        """Events the picture suggests. Unread events are ``no_claim``."""
 
 
 class MotionRuleV3Scorer:
     """Shipped motion rule: controller-row rate versus frame-difference energy.
 
-    The score comes from ``input_energy_series`` and ``score_motion``. Row
-    counts are the controller signal. Stick axes are not an input.
+    The score comes from ``input_energy_series`` and ``score_motion``. Row counts
+    are the controller signal. Stick axes and button bits are not an input.
     """
 
     name = "motion-rule-v3"
@@ -204,24 +389,11 @@ class MotionRuleV3Scorer:
         })
 
     def identity(self) -> ScorerIdentity:
-        motion_src = Path(inspect.getfile(score_motion)).read_text(encoding="utf-8")
-        blob = "\n".join([
-            self.version,
-            f"MOTION_MIN_PERMILLE={MOTION_MIN_PERMILLE}",
-            inspect.getsource(type(self)),
-            inspect.getsource(input_energy_series),
-            inspect.getsource(correlate_keyed),
-            motion_src,
-        ])
-        return ScorerIdentity(name=self.name, version=self.version, sha256=_sha256_text(blob))
+        return source_identity(self)
 
 
 class NoClaimPanEstimator:
-    """Stub estimator. Every frame is unreadable.
-
-    This exists so a camera-pan scorer has a plug-in to call. It does not
-    estimate yaw or pitch, and it does not read a picture.
-    """
+    """Stub pan estimator. Every frame is unreadable. It does not estimate yaw or pitch."""
 
     name = "example-no-claim"
     version = "example-no-claim/v0"
@@ -230,6 +402,19 @@ class NoClaimPanEstimator:
         return [
             PanBin(mono_ms=t, yaw_rate=None, pitch_rate=None, confidence=None, no_claim=True)
             for t in range(0, sample.duration_ms, BIN_MS)
+        ]
+
+
+class NoClaimEventEstimator:
+    """Stub event estimator. Every second is unreadable. It does not detect events."""
+
+    name = "example-no-claim-events"
+    version = "example-no-claim-events/v0"
+
+    def estimate(self, sample: VariantSample) -> list[VideoEvent]:
+        return [
+            VideoEvent(mono_ms=t, event_kind=None, confidence=None, no_claim=True)
+            for t in range(0, sample.duration_ms, 1000)
         ]
 
 
@@ -250,15 +435,38 @@ def right_stick_idle(rows: Sequence[Mapping[str, Any]], start_ms: int, end_ms: i
     return True
 
 
+def logged_press_matches(rows: Sequence[Mapping[str, Any]], mono_ms: int, event_kind: str,
+                         window_ms: int, deadzone: int) -> bool:
+    """True when the log has the press a claimed video event would require.
+
+    ``stick_action`` matches an off-center right stick. ``button_action`` matches
+    a non-zero button mask. The window is inclusive. Other kinds do not match.
+    """
+    lo, hi = mono_ms - window_ms, mono_ms + window_ms
+    for row in rows:
+        if row.get("type") != "in" or not isinstance(row.get("t_us"), int):
+            continue
+        t_ms = int(row["t_us"]) // 1000
+        if t_ms < lo or t_ms > hi:
+            continue
+        if event_kind == STICK_ACTION:
+            rx = abs(int(row.get("rx", 128)) - 128)
+            ry = abs(int(row.get("ry", 128)) - 128)
+            if rx > deadzone or ry > deadzone:
+                return True
+        elif event_kind == BUTTON_ACTION and int(row.get("b") or 0) != 0:
+            return True
+    return False
+
+
 class PanAgreementScorer:
     """Example scorer over a camera-pan estimator's 100 ms bins.
 
-    A claimed bin disagrees when the estimator reports a camera rate with
-    enough confidence and the logged right stick in that same 100 ms is idle.
-    The scorer flags the variant when those disagreements are at least
-    ``min_disagree_bins`` and at least half of the claimed bins. Fewer than
-    ``min_claimed_bins`` readable frames is an abstention, which is how the
-    ``no_claim`` stub scores every variant.
+    A claimed bin disagrees when the estimator reports a camera rate with enough
+    confidence and the logged right stick in that same 100 ms is idle. The scorer
+    flags the variant when those disagreements are at least ``min_disagree_bins``
+    and at least half of the claimed bins. Fewer than ``min_claimed_bins``
+    readable frames is an abstention, which is how the no_claim stub scores.
 
     The numbers below belong to this example. They are not ``MOTION_MIN_PERMILLE``
     and the verifier does not read them.
@@ -270,7 +478,7 @@ class PanAgreementScorer:
     min_confidence = 0.5
     rate_floor = 10.0
     min_disagree_bins = 10
-    stick_deadzone = 8
+    stick_deadzone = STICK_DEADZONE
 
     def __init__(self, estimator: CameraPanEstimator) -> None:
         self.estimator = estimator
@@ -280,22 +488,21 @@ class PanAgreementScorer:
         for pan_bin in bins:
             validate_pan_bin(pan_bin)
         claimed = [pan_bin for pan_bin in bins if not pan_bin.no_claim]
-        no_claim = len(bins) - len(claimed)
         detail: dict[str, Any] = {
             "estimator": self.estimator.name,
             "estimator_version": self.estimator.version,
             "bins": len(bins),
             "claimed": len(claimed),
-            "no_claim": no_claim,
+            "no_claim": len(bins) - len(claimed),
         }
         if len(claimed) < self.min_claimed_bins:
             detail["reason"] = "too few claimed bins"
             return Score(flagged=None, detail=detail)
         disagree = 0
         for pan_bin in claimed:
-            yaw, pitch, confidence = pan_bin.yaw_rate, pan_bin.pitch_rate, pan_bin.confidence
-            if yaw is None or pitch is None or confidence is None:
-                raise ValueError("claimed bin missing a measurement")
+            yaw = _finite_number("yaw_rate", pan_bin.yaw_rate)
+            pitch = _finite_number("pitch_rate", pan_bin.pitch_rate)
+            confidence = _confidence(pan_bin.confidence)
             moving = abs(yaw) >= self.rate_floor or abs(pitch) >= self.rate_floor
             if confidence < self.min_confidence or not moving:
                 continue
@@ -306,21 +513,60 @@ class PanAgreementScorer:
         return Score(flagged=flagged, detail=detail)
 
     def identity(self) -> ScorerIdentity:
-        blob = "\n".join([
-            self.version,
-            inspect.getsource(type(self)),
-            inspect.getsource(validate_pan_bin),
-            inspect.getsource(right_stick_idle),
-            self.estimator.version,
-            inspect.getsource(type(self.estimator)),
-        ])
-        return ScorerIdentity(
-            name=self.name,
-            version=self.version,
-            sha256=_sha256_text(blob),
-            estimator_name=self.estimator.name,
-            estimator_version=self.estimator.version,
-        )
+        return source_identity(self, self.estimator)
+
+
+class EventPressAgreementScorer:
+    """Example scorer over video events and the logged presses.
+
+    A claimed ``stick_action`` with no off-center right stick in the match window,
+    or a claimed ``button_action`` with no logged button in that window, is unmatched.
+    The scorer flags the variant when unmatched events are at least ``min_unmatched``
+    and at least half of the claimed events. Fewer than ``min_claimed`` claimed
+    events is an abstention, which is how the no_claim stub scores.
+
+    These numbers are example policy. The verifier does not read them.
+    """
+
+    name = "event-press-agreement"
+    version = "event-press-agreement/v0"
+    min_claimed = 3
+    min_confidence = 0.5
+    min_unmatched = 3
+    window_ms = EVENT_MATCH_WINDOW_MS
+    stick_deadzone = STICK_DEADZONE
+
+    def __init__(self, estimator: VideoEventEstimator) -> None:
+        self.estimator = estimator
+
+    def score(self, sample: VariantSample) -> Score:
+        events = self.estimator.estimate(sample)
+        for event in events:
+            validate_video_event(event)
+        claimed = [event for event in events if not event.no_claim]
+        detail: dict[str, Any] = {
+            "estimator": self.estimator.name,
+            "estimator_version": self.estimator.version,
+            "events": len(events),
+            "claimed": len(claimed),
+            "no_claim": len(events) - len(claimed),
+        }
+        if len(claimed) < self.min_claimed:
+            detail["reason"] = "too few claimed events"
+            return Score(flagged=None, detail=detail)
+        unmatched = 0
+        for event in claimed:
+            confidence = _confidence(event.confidence)
+            if confidence < self.min_confidence or event.event_kind not in EVENT_KINDS:
+                continue
+            if not logged_press_matches(sample.rows, event.mono_ms, str(event.event_kind), self.window_ms, self.stick_deadzone):
+                unmatched += 1
+        detail["unmatched"] = unmatched
+        flagged = unmatched >= self.min_unmatched and unmatched * 2 >= len(claimed)
+        return Score(flagged=flagged, detail=detail)
+
+    def identity(self) -> ScorerIdentity:
+        return source_identity(self, self.estimator)
 
 
 def rates_for(samples: Sequence[VariantSample], scores: Mapping[str, Score], identity: ScorerIdentity) -> RateResult:
@@ -361,5 +607,9 @@ def rates_for(samples: Sequence[VariantSample], scores: Mapping[str, Score], ide
 
 
 def default_scorers() -> list[Scorer]:
-    """Motion rule v3, plus the example pan scorer with the no_claim stub plugged in."""
-    return [MotionRuleV3Scorer(), PanAgreementScorer(NoClaimPanEstimator())]
+    """Motion rule v3, plus the example pan and event scorers with no_claim stubs."""
+    return [
+        MotionRuleV3Scorer(),
+        PanAgreementScorer(NoClaimPanEstimator()),
+        EventPressAgreementScorer(NoClaimEventEstimator()),
+    ]

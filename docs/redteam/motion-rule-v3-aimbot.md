@@ -1,69 +1,97 @@
-# Motion rule v3 red team: aimbot-style controller logs
+# Motion rule v3 red team: passthrough aim and log tamper
 
-Test-only harness under `tests/redteam/`. It scores rewritten controller logs by calling `input_energy_series`, `score_motion`, `check_inputs`, `check_checkpoints`, and `check_input_files` in process. It does not sign a receipt, does not hold a referee key, and does not open a network connection. Nothing in this directory is a submission.
+Test-only harness under `tests/redteam/`. It scores controller logs by calling `input_energy_series`, `score_motion`, `check_inputs`, `check_checkpoints`, and `check_input_files` in process. It does not sign a receipt, does not hold a referee key, and does not open a network connection. Nothing here is a submission.
 
-Harness `redteam-aimbot/v1` sha256 `1261f00ca80d24955aea782858a64857df9e8c6b4bb8586e84e8ecf05414150d`.
+Harness `redteam-aimbot/v2` for package `qor-receipt==0.1.0`. Harness sha256 `eddafd17630910abfe52e386ffdfa90438497168ede2704d4b0f9da1552cf233` over 25 files.
 
-## Fixture
+## Headline: honest USB log, assisted screen
 
-`tests/review_fixture.py` is the repo's controller-plus-video bundle. Every stick in that log is centered at 128, so the log cannot express a right-stick aimbot. This harness builds one deterministic synthetic base instead: 36 one-second bins of frame-difference energy, plus HID-like `inputs.jsonl` rows (`t_us`, `b`, `lx`, `ly`, `rx`, `ry`, `l2`, `r2`). The series is a formula. It is not a decoded capture and not a recording of a player.
+A passthrough adapter injects aim into the console. QorCap's USB log records the human and is sealed at capture, so chunk hashes and checkpoint `input_hash` match the logged rows. Input proof passes. The screen shows the injected aim. Motion rule v3 correlates row counts with frame-difference energy and does not read stick axes.
 
-Camera-pan seconds are 2–13 and 22–33. Those seconds contribute 40 controller rows and frame-difference energy 800. The other seconds contribute 3 rows and energy 20. Motion rule v3 correlates the row-count series with that energy. The floor is the shipped `MOTION_MIN_PERMILLE` (300). A score at or above the floor is `pass`. Anything else, including a flat series at −1000, is `partial`. A partial motion check does not become FAIL.
+Stick-aimbot result for motion rule v3: **0/3** flagged (`honest-passthrough-aim`, `honest-blended-aim`, `honest-snap-aim`). The expected result on this rule is 0/3.
 
-## Variants
+The captured game in view is Madden, where the right stick performs skill moves and hit-stick tackles rather than steering the camera. The two extra honest-seal rows use game-agnostic event kinds: `stick_action` (a right-stick gesture the log does not contain) and `button_action` (a button macro, such as a frame-perfect user catch, with no logged button).
 
-| variant | rewrite |
-| --- | --- |
-| control | unmodified synthetic log |
-| idle-right-stick | right stick centered; left stick, buttons, and row times kept |
-| blended-assist | right stick is 40% human plus 60% smooth target; row times kept |
-| full-idle | every controller row removed; camera series kept |
-| snap-flicks | right stick centered except a 200 ms jump on each pan second |
+| variant | ground truth | input rows | right-stick run (ms) | screen events | motion_permille | motion check | input proof |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| control | benign | 1559 | 191 | 0 | 682 | pass | pass |
+| honest-passthrough-aim | attack | 1559 | 191 | 0 | 680 | pass | pass |
+| honest-blended-aim | attack | 1559 | 191 | 0 | 661 | pass | pass |
+| honest-snap-aim | attack | 1559 | 191 | 0 | 681 | pass | pass |
+| honest-stick-action | attack | 1559 | 191 | 4 | 674 | pass | pass |
+| honest-button-macro | attack | 1559 | 191 | 4 | 671 | pass | pass |
+| honest-full-idle | attack | 0 | 0 | 0 | -1000 | partial | pass |
 
-`snap-flicks` keeps the human row times. The right stick leaves center only inside a 200 ms window on each pan second, which is under the 300 ms bound in the review request. `blended-assist` writes `0.4 * human + 0.6 * target` into the same rows. The target is a smooth sine.
+`honest-full-idle` is the row-count case the rule does catch: an honestly sealed empty log while the control screen still moves. Its check is `partial`, which is not a FAIL. The stick-aimbot and macro rows stay `pass`.
 
-## Motion rule v3 on each variant
+## Fixture parameters
 
-| variant | ground truth | input rows | right-stick run (ms) | motion_permille | motion check | input proof |
-| --- | --- | --- | --- | --- | --- | --- |
-| control | benign | 996 | 11975 | 1000 | pass | pass |
-| idle-right-stick | attack | 996 | 0 | 1000 | pass | fail |
-| blended-assist | attack | 996 | 19666 | 1000 | pass | fail |
-| full-idle | attack | 0 | 0 | -1000 | partial | fail |
-| snap-flicks | attack | 996 | 175 | 1000 | pass | fail |
+`tests/review_fixture.py` centers every stick, so this base is synthetic. It is 60 one-second bins, not a decoded capture and not a recording of a player. `mix(sec, salt)` is a 16-bit mix: start from `((sec + 1) * 2246822519 + salt * 3266489917)`, xor-shift by 16, multiply by `0x85EBCA6B`, xor-shift by 13, keep 16 bits.
 
-Input proof is the direct result of `check_inputs`, `check_checkpoints`, and `check_input_files`. Control is sealed, so the chunk hashes and checkpoint `input_hash` values match the rows. Each other variant keeps those seals and changes the rows. That is the rewrite a live precheck rejects before motion is scored. The permille column is `score_motion` on the rewritten rows anyway.
+Idle seconds 0–7, 46–53: 1–4 rows, frame-difference energy 4–28. Menu seconds 20–31, 54–59: 22–41 rows (button navigation) and energy 5–34, so the picture is quiet while the log is busy. Play seconds are the rest: latent `15 + mix(sec, 1) % 55`, rows `12 + latent // 2 + mix(sec, 6) % 9`, energy `180 + latent * 7 + mix(sec, 7) % 160 - mix(sec, 8) % 80` with a floor of 40. Play shares the latent across rows and energy. Menu and idle do not. The control permille is above the shipped floor of 300 and below 1000.
+
+Honest right-stick skill gestures last 200 ms starting at offset 400 on play seconds divisible by 5. Buttons are logged on menu rows (`k % 3 == 0`) and on play seconds divisible by 4 (`k % 8 == 0`). `honest-stick-action` places 4 `stick_action` events at offset 500 where the ±150 ms window has no off-center right stick, and adds 150 energy in those seconds. `honest-button-macro` does the same for `button_action` with no logged button and adds 140 energy.
+
+Honest aim screens, still on the human log: passthrough adds `30 + mix(sec, 9) % 50` energy on play seconds; blended replaces energy with `0.80 * human + 0.20 * max(0, 200 + 100 * sin(sec / 7))`; snap adds 130 energy on play seconds divisible by 4.
+
+## Log-tamper test
+
+These variants rewrite the human rows and leave the human chunk hashes and checkpoint `input_hash` values in place. Input proof fails. The permille column is `score_motion` on the rewritten rows anyway. Stick rewrites keep the row count, so they score like the control. Deleting the rows is the flat series.
+
+| variant | ground truth | input rows | right-stick run (ms) | screen events | motion_permille | motion check | input proof |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| tamper-idle-right-stick | attack | 1559 | 0 | 0 | 682 | pass | fail |
+| tamper-blended-assist | attack | 1559 | 11232 | 0 | 682 | pass | fail |
+| tamper-snap-flicks | attack | 1559 | 189 | 0 | 682 | pass | fail |
+| tamper-full-idle | attack | 0 | 0 | 0 | -1000 | partial | fail |
+
+## Variant index
+
+| variant | cohort | what the fixture does |
+| --- | --- | --- |
+| control | honest-seal | honest human log and the matching screen |
+| honest-passthrough-aim | honest-seal | log is the human USB capture; play seconds gain adapter aim the log does not contain |
+| honest-blended-aim | honest-seal | log is the human capture; screen energy is 80% human plus 20% of a smooth aim target |
+| honest-snap-aim | honest-seal | log is the human capture; some play seconds absorb a sub-300 ms aim jump |
+| honest-stick-action | honest-seal | on-screen stick_action bursts (Madden: skill move / hit stick) with no logged right-stick press |
+| honest-button-macro | honest-seal | on-screen button_action events (Madden: user catch or any button macro) with no logged button |
+| honest-full-idle | honest-seal | honest empty log, sealed on its own, while the control screen still moves |
+| tamper-idle-right-stick | log-tamper | rows rewritten so the right stick is centered; seals left on the human log |
+| tamper-blended-assist | log-tamper | right-stick values rewritten to 40% human plus 60% target; seals left in place |
+| tamper-snap-flicks | log-tamper | right stick rewritten to a sub-300 ms jump; seals left in place |
+| tamper-full-idle | log-tamper | controller rows deleted after sealing; seals still describe the human log |
 
 ## Pluggable scorers
 
-A scorer implements `name`, `version`, `score(sample) -> Score`, and `identity()`. `Score.flagged` is true, false, or null (abstain). `identity().sha256` is recorded below so a re-run of the same tree matches and an edit to the scorer does not.
+A scorer implements `name`, `version`, `score(sample) -> Score`, and `identity()`. `Score.flagged` is true, false, or null (abstain). A scorer may compare 100 ms pan bins with the right stick, or video events with logged presses. Both outputs are plug-ins. This report uses stubs that mark every frame and every second `no_claim`.
 
-Catch rate is flagged attacks divided by decided attacks. False-alarm rate is flagged benign divided by decided benign. An abstention is neither a catch nor a false alarm. A rate is `n/a` when that class has no decision. Ground truth for this fixture: `control` is benign, and the other four variants are attacks.
+Pan bins are `{mono_ms, yaw_rate, pitch_rate, confidence, no_claim}`. Events are `{mono_ms, event_kind, confidence, no_claim}`. `no_claim` leaves the measurements null. Non-finite rates and confidence, and confidence outside 0..1, are rejected.
 
-`motion-rule-v3` calls the shipped rule. It flags a variant when the motion check is `partial`. `pan-agreement/v0` is an example decision over 100 ms camera bins. It is not a camera estimator. The estimator plug-in is `CameraPanEstimator.estimate(sample) -> list[PanBin]`. Each bin is `{mono_ms, yaw_rate, pitch_rate, confidence, no_claim}`. Unreadable frames set `no_claim` true and leave yaw, pitch, and confidence null. The estimator plugged into this report is `example-no-claim/v0`, a stub that marks every frame `no_claim`.
+Catch rate is flagged attacks divided by decided attacks. False-alarm rate is flagged benign divided by decided benign. An abstention is neither. The rates below are the honest-seal cohort, which is the traffic input proof would let through. Log-tamper rates are in the JSON block.
 
-| scorer | version | estimator | sha256 | catch rate | false-alarm rate | abstained |
-| --- | --- | --- | --- | --- | --- | --- |
-| motion-rule-v3 | motion-rule/v3 | — | a6bc018e86e44be84c5ec6408a26ea2cbf91b7bc9a9c063370f32bf3b5f02915 | 1/4 (0.25) | 0/1 (0.00) | 0/5 |
-| pan-agreement | pan-agreement/v0 | example-no-claim/v0 | 6f5fd5d82ed637532c45ffcc373e664e918aa027d388d9c271c6c3dc1b0d924b | n/a (0/4 decided) | n/a (0/1 decided) | 5/5 |
+Each scorer sha256 is the hash of `qor-receipt==0.1.0`, the scorer and estimator version strings, and the sorted repo-relative path plus bytes of the scorer module and its transitive in-repo imports.
 
-| variant | motion-rule-v3 | pan-agreement |
-| --- | --- | --- |
-| control | clear | abstain |
-| idle-right-stick | clear | abstain |
-| blended-assist | clear | abstain |
-| full-idle | flag | abstain |
-| snap-flicks | clear | abstain |
+| scorer | version | package | estimator | file set | sha256 | headline catch rate | headline false-alarm rate | abstained |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| motion-rule-v3 | motion-rule/v3 | 0.1.0 | — | 24 files | 1bc0c4f7bf12798ceeab5d59ef8f04ff3633795113f5cf2523a379eb40bc349b | 1/6 (0.17) | 0/1 (0.00) | 0/7 |
+| pan-agreement | pan-agreement/v0 | 0.1.0 | example-no-claim/v0 | 24 files | 8b79baaaec5b07275bf2fdd88d72cf0f0a04f0a523b58946bcc6b58f4fa5c2e5 | n/a (0/6 decided) | n/a (0/1 decided) | 7/7 |
+| event-press-agreement | event-press-agreement/v0 | 0.1.0 | example-no-claim-events/v0 | 24 files | e9eea631f81ac8d0fb7fce9a692db5b74f3e54595bd372955132b6a2b1a9e869 | n/a (0/6 decided) | n/a (0/1 decided) | 7/7 |
 
-`flag` on `motion-rule-v3` is the `partial` check. `clear` is `pass`. `abstain` means the scorer declined to decide. The stub declines because it never claims a frame, so its catch rate and false-alarm rate are `n/a`.
+| variant | cohort | motion-rule-v3 | pan-agreement | event-press-agreement |
+| --- | --- | --- | --- | --- |
+| control | honest-seal | clear | abstain | abstain |
+| honest-passthrough-aim | honest-seal | clear | abstain | abstain |
+| honest-blended-aim | honest-seal | clear | abstain | abstain |
+| honest-snap-aim | honest-seal | clear | abstain | abstain |
+| honest-stick-action | honest-seal | clear | abstain | abstain |
+| honest-button-macro | honest-seal | clear | abstain | abstain |
+| honest-full-idle | honest-seal | flag | abstain | abstain |
+| tamper-idle-right-stick | log-tamper | clear | abstain | abstain |
+| tamper-blended-assist | log-tamper | clear | abstain | abstain |
+| tamper-snap-flicks | log-tamper | clear | abstain | abstain |
+| tamper-full-idle | log-tamper | flag | abstain | abstain |
 
-## What motion rule v3 catches
-
-`full-idle` is `partial` (−1000). The on-screen series still moves and the controller series is flat, which is the row-count failure the rule is built to report.
-
-## What motion rule v3 misses
-
-`idle-right-stick`, `blended-assist`, and `snap-flicks` stay `pass`, with the same permille as `control`. Their row counts are the control row counts. The rule counts rows, so a right-stick rewrite is invisible to it. Those three are the known gap this harness records. The assertions in `tests/test_redteam_aimbot_motion.py` expect that miss, which keeps CI green while the gap is still open.
+`flag` on `motion-rule-v3` is the `partial` check. `clear` is `pass`. `abstain` means the scorer declined. The stubs decline because they never claim a frame or an event.
 
 ## Reproducing
 
@@ -71,15 +99,13 @@ Catch rate is flagged attacks divided by decided attacks. False-alarm rate is fl
 pytest -m known_gap -s tests/test_redteam_aimbot_motion.py
 ```
 
-The motion-rule hash covers `MotionRuleV3Scorer`, `input_energy_series`, `correlate_keyed`, the text of `qor_receipt/review/motion.py`, and the integer `MOTION_MIN_PERMILLE`. The pan-agreement hash covers `PanAgreementScorer` and the estimator class plugged into it. The harness hash covers `tests/redteam/aimbot_harness.py`.
-
-Another estimator plugs in beside the shipped rule. Put `tests` on `PYTHONPATH` first (the pytest module does this itself):
+Put `tests` on `PYTHONPATH` before importing the harness yourself (the pytest module does this):
 
 ```python
 from redteam.aimbot_harness import evaluate
-from redteam.scorers import PanAgreementScorer
+from redteam.scorers import EventPressAgreementScorer, PanAgreementScorer
 
-report = evaluate(scorers=[PanAgreementScorer(MyEstimator())])
+report = evaluate(scorers=[PanAgreementScorer(MyPanEstimator()), EventPressAgreementScorer(MyEventEstimator())])
 ```
 
 `evaluate` keeps `motion-rule-v3` in the list when the caller does not pass it.
@@ -87,81 +113,342 @@ report = evaluate(scorers=[PanAgreementScorer(MyEstimator())])
 ```json
 {
   "harness": {
-    "sha256": "1261f00ca80d24955aea782858a64857df9e8c6b4bb8586e84e8ecf05414150d",
-    "version": "redteam-aimbot/v1"
+    "files": [
+      "qor_receipt/__init__.py",
+      "qor_receipt/_vendor/qoresence/sync/digit_integrity.py",
+      "qor_receipt/_vendor/qoresence/truth/signing.py",
+      "qor_receipt/_vendor/qoresence/vision/local_scorebug/agreement.py",
+      "qor_receipt/_vendor/qoresence/vision/local_scorebug/glyphs.py",
+      "qor_receipt/_vendor/qoresence/vision/local_scorebug/profile.py",
+      "qor_receipt/_vendor/qoresence/vision/local_scorebug/reader.py",
+      "qor_receipt/agent/pause_detect.py",
+      "qor_receipt/challenge.py",
+      "qor_receipt/checkpoints.py",
+      "qor_receipt/delegation.py",
+      "qor_receipt/final_detect.py",
+      "qor_receipt/jcs.py",
+      "qor_receipt/keys.py",
+      "qor_receipt/receipt.py",
+      "qor_receipt/review/bundle.py",
+      "qor_receipt/review/corroboration.py",
+      "qor_receipt/review/device_attest.py",
+      "qor_receipt/review/media.py",
+      "qor_receipt/review/motion.py",
+      "qor_receipt/review/policy.py",
+      "qor_receipt/review/score_timeline.py",
+      "qor_receipt/trusted_referees.py",
+      "tests/redteam/aimbot_harness.py",
+      "tests/redteam/scorers.py"
+    ],
+    "package_version": "0.1.0",
+    "sha256": "eddafd17630910abfe52e386ffdfa90438497168ede2704d4b0f9da1552cf233",
+    "version": "redteam-aimbot/v2"
+  },
+  "headline_stick_aimbots": {
+    "flagged_by_motion_rule_v3": 0,
+    "names": [
+      "honest-passthrough-aim",
+      "honest-blended-aim",
+      "honest-snap-aim"
+    ],
+    "of": 3
   },
   "scorers": [
     {
-      "abstained": 0,
-      "catch_rate": 0.25,
-      "decided_attacks": 4,
-      "decided_benign": 1,
       "estimator": null,
       "estimator_version": null,
-      "false_alarm_rate": 0.0,
-      "false_positives": 0,
+      "files": [
+        "qor_receipt/__init__.py",
+        "qor_receipt/_vendor/qoresence/sync/digit_integrity.py",
+        "qor_receipt/_vendor/qoresence/truth/signing.py",
+        "qor_receipt/_vendor/qoresence/vision/local_scorebug/agreement.py",
+        "qor_receipt/_vendor/qoresence/vision/local_scorebug/glyphs.py",
+        "qor_receipt/_vendor/qoresence/vision/local_scorebug/profile.py",
+        "qor_receipt/_vendor/qoresence/vision/local_scorebug/reader.py",
+        "qor_receipt/agent/pause_detect.py",
+        "qor_receipt/challenge.py",
+        "qor_receipt/checkpoints.py",
+        "qor_receipt/delegation.py",
+        "qor_receipt/final_detect.py",
+        "qor_receipt/jcs.py",
+        "qor_receipt/keys.py",
+        "qor_receipt/receipt.py",
+        "qor_receipt/review/bundle.py",
+        "qor_receipt/review/corroboration.py",
+        "qor_receipt/review/device_attest.py",
+        "qor_receipt/review/media.py",
+        "qor_receipt/review/motion.py",
+        "qor_receipt/review/policy.py",
+        "qor_receipt/review/score_timeline.py",
+        "qor_receipt/trusted_referees.py",
+        "tests/redteam/scorers.py"
+      ],
+      "headline_abstained": 0,
+      "headline_catch_rate": 0.16666666666666666,
+      "headline_decided_attacks": 6,
+      "headline_false_alarm_rate": 0.0,
+      "headline_false_positives": 0,
+      "headline_true_positives": 1,
+      "log_tamper_catch_rate": 0.25,
+      "log_tamper_decided_attacks": 4,
+      "log_tamper_true_positives": 1,
       "name": "motion-rule-v3",
-      "sha256": "a6bc018e86e44be84c5ec6408a26ea2cbf91b7bc9a9c063370f32bf3b5f02915",
-      "true_positives": 1,
+      "package_version": "0.1.0",
+      "sha256": "1bc0c4f7bf12798ceeab5d59ef8f04ff3633795113f5cf2523a379eb40bc349b",
       "version": "motion-rule/v3"
     },
     {
-      "abstained": 5,
-      "catch_rate": null,
-      "decided_attacks": 0,
-      "decided_benign": 0,
       "estimator": "example-no-claim",
       "estimator_version": "example-no-claim/v0",
-      "false_alarm_rate": null,
-      "false_positives": 0,
+      "files": [
+        "qor_receipt/__init__.py",
+        "qor_receipt/_vendor/qoresence/sync/digit_integrity.py",
+        "qor_receipt/_vendor/qoresence/truth/signing.py",
+        "qor_receipt/_vendor/qoresence/vision/local_scorebug/agreement.py",
+        "qor_receipt/_vendor/qoresence/vision/local_scorebug/glyphs.py",
+        "qor_receipt/_vendor/qoresence/vision/local_scorebug/profile.py",
+        "qor_receipt/_vendor/qoresence/vision/local_scorebug/reader.py",
+        "qor_receipt/agent/pause_detect.py",
+        "qor_receipt/challenge.py",
+        "qor_receipt/checkpoints.py",
+        "qor_receipt/delegation.py",
+        "qor_receipt/final_detect.py",
+        "qor_receipt/jcs.py",
+        "qor_receipt/keys.py",
+        "qor_receipt/receipt.py",
+        "qor_receipt/review/bundle.py",
+        "qor_receipt/review/corroboration.py",
+        "qor_receipt/review/device_attest.py",
+        "qor_receipt/review/media.py",
+        "qor_receipt/review/motion.py",
+        "qor_receipt/review/policy.py",
+        "qor_receipt/review/score_timeline.py",
+        "qor_receipt/trusted_referees.py",
+        "tests/redteam/scorers.py"
+      ],
+      "headline_abstained": 7,
+      "headline_catch_rate": null,
+      "headline_decided_attacks": 0,
+      "headline_false_alarm_rate": null,
+      "headline_false_positives": 0,
+      "headline_true_positives": 0,
+      "log_tamper_catch_rate": null,
+      "log_tamper_decided_attacks": 0,
+      "log_tamper_true_positives": 0,
       "name": "pan-agreement",
-      "sha256": "6f5fd5d82ed637532c45ffcc373e664e918aa027d388d9c271c6c3dc1b0d924b",
-      "true_positives": 0,
+      "package_version": "0.1.0",
+      "sha256": "8b79baaaec5b07275bf2fdd88d72cf0f0a04f0a523b58946bcc6b58f4fa5c2e5",
       "version": "pan-agreement/v0"
+    },
+    {
+      "estimator": "example-no-claim-events",
+      "estimator_version": "example-no-claim-events/v0",
+      "files": [
+        "qor_receipt/__init__.py",
+        "qor_receipt/_vendor/qoresence/sync/digit_integrity.py",
+        "qor_receipt/_vendor/qoresence/truth/signing.py",
+        "qor_receipt/_vendor/qoresence/vision/local_scorebug/agreement.py",
+        "qor_receipt/_vendor/qoresence/vision/local_scorebug/glyphs.py",
+        "qor_receipt/_vendor/qoresence/vision/local_scorebug/profile.py",
+        "qor_receipt/_vendor/qoresence/vision/local_scorebug/reader.py",
+        "qor_receipt/agent/pause_detect.py",
+        "qor_receipt/challenge.py",
+        "qor_receipt/checkpoints.py",
+        "qor_receipt/delegation.py",
+        "qor_receipt/final_detect.py",
+        "qor_receipt/jcs.py",
+        "qor_receipt/keys.py",
+        "qor_receipt/receipt.py",
+        "qor_receipt/review/bundle.py",
+        "qor_receipt/review/corroboration.py",
+        "qor_receipt/review/device_attest.py",
+        "qor_receipt/review/media.py",
+        "qor_receipt/review/motion.py",
+        "qor_receipt/review/policy.py",
+        "qor_receipt/review/score_timeline.py",
+        "qor_receipt/trusted_referees.py",
+        "tests/redteam/scorers.py"
+      ],
+      "headline_abstained": 7,
+      "headline_catch_rate": null,
+      "headline_decided_attacks": 0,
+      "headline_false_alarm_rate": null,
+      "headline_false_positives": 0,
+      "headline_true_positives": 0,
+      "log_tamper_catch_rate": null,
+      "log_tamper_decided_attacks": 0,
+      "log_tamper_true_positives": 0,
+      "name": "event-press-agreement",
+      "package_version": "0.1.0",
+      "sha256": "e9eea631f81ac8d0fb7fce9a692db5b74f3e54595bd372955132b6a2b1a9e869",
+      "version": "event-press-agreement/v0"
     }
   ],
   "variants": [
     {
+      "cohort": "honest-seal",
       "decisions": {
+        "event-press-agreement": "abstain",
         "motion-rule-v3": "clear",
         "pan-agreement": "abstain"
       },
       "input_proof": "pass",
-      "input_rows": 996,
+      "input_rows": 1559,
       "label": "benign",
       "motion_check": "pass",
-      "motion_permille": 1000,
+      "motion_permille": 682,
       "name": "control",
-      "right_stick_run_ms": 11975
+      "right_stick_run_ms": 191,
+      "screen_events": 0
     },
     {
+      "cohort": "honest-seal",
       "decisions": {
+        "event-press-agreement": "abstain",
+        "motion-rule-v3": "clear",
+        "pan-agreement": "abstain"
+      },
+      "input_proof": "pass",
+      "input_rows": 1559,
+      "label": "attack",
+      "motion_check": "pass",
+      "motion_permille": 680,
+      "name": "honest-passthrough-aim",
+      "right_stick_run_ms": 191,
+      "screen_events": 0
+    },
+    {
+      "cohort": "honest-seal",
+      "decisions": {
+        "event-press-agreement": "abstain",
+        "motion-rule-v3": "clear",
+        "pan-agreement": "abstain"
+      },
+      "input_proof": "pass",
+      "input_rows": 1559,
+      "label": "attack",
+      "motion_check": "pass",
+      "motion_permille": 661,
+      "name": "honest-blended-aim",
+      "right_stick_run_ms": 191,
+      "screen_events": 0
+    },
+    {
+      "cohort": "honest-seal",
+      "decisions": {
+        "event-press-agreement": "abstain",
+        "motion-rule-v3": "clear",
+        "pan-agreement": "abstain"
+      },
+      "input_proof": "pass",
+      "input_rows": 1559,
+      "label": "attack",
+      "motion_check": "pass",
+      "motion_permille": 681,
+      "name": "honest-snap-aim",
+      "right_stick_run_ms": 191,
+      "screen_events": 0
+    },
+    {
+      "cohort": "honest-seal",
+      "decisions": {
+        "event-press-agreement": "abstain",
+        "motion-rule-v3": "clear",
+        "pan-agreement": "abstain"
+      },
+      "input_proof": "pass",
+      "input_rows": 1559,
+      "label": "attack",
+      "motion_check": "pass",
+      "motion_permille": 674,
+      "name": "honest-stick-action",
+      "right_stick_run_ms": 191,
+      "screen_events": 4
+    },
+    {
+      "cohort": "honest-seal",
+      "decisions": {
+        "event-press-agreement": "abstain",
+        "motion-rule-v3": "clear",
+        "pan-agreement": "abstain"
+      },
+      "input_proof": "pass",
+      "input_rows": 1559,
+      "label": "attack",
+      "motion_check": "pass",
+      "motion_permille": 671,
+      "name": "honest-button-macro",
+      "right_stick_run_ms": 191,
+      "screen_events": 4
+    },
+    {
+      "cohort": "honest-seal",
+      "decisions": {
+        "event-press-agreement": "abstain",
+        "motion-rule-v3": "flag",
+        "pan-agreement": "abstain"
+      },
+      "input_proof": "pass",
+      "input_rows": 0,
+      "label": "attack",
+      "motion_check": "partial",
+      "motion_permille": -1000,
+      "name": "honest-full-idle",
+      "right_stick_run_ms": 0,
+      "screen_events": 0
+    },
+    {
+      "cohort": "log-tamper",
+      "decisions": {
+        "event-press-agreement": "abstain",
         "motion-rule-v3": "clear",
         "pan-agreement": "abstain"
       },
       "input_proof": "fail",
-      "input_rows": 996,
+      "input_rows": 1559,
       "label": "attack",
       "motion_check": "pass",
-      "motion_permille": 1000,
-      "name": "idle-right-stick",
-      "right_stick_run_ms": 0
+      "motion_permille": 682,
+      "name": "tamper-idle-right-stick",
+      "right_stick_run_ms": 0,
+      "screen_events": 0
     },
     {
+      "cohort": "log-tamper",
       "decisions": {
+        "event-press-agreement": "abstain",
         "motion-rule-v3": "clear",
         "pan-agreement": "abstain"
       },
       "input_proof": "fail",
-      "input_rows": 996,
+      "input_rows": 1559,
       "label": "attack",
       "motion_check": "pass",
-      "motion_permille": 1000,
-      "name": "blended-assist",
-      "right_stick_run_ms": 19666
+      "motion_permille": 682,
+      "name": "tamper-blended-assist",
+      "right_stick_run_ms": 11232,
+      "screen_events": 0
     },
     {
+      "cohort": "log-tamper",
       "decisions": {
+        "event-press-agreement": "abstain",
+        "motion-rule-v3": "clear",
+        "pan-agreement": "abstain"
+      },
+      "input_proof": "fail",
+      "input_rows": 1559,
+      "label": "attack",
+      "motion_check": "pass",
+      "motion_permille": 682,
+      "name": "tamper-snap-flicks",
+      "right_stick_run_ms": 189,
+      "screen_events": 0
+    },
+    {
+      "cohort": "log-tamper",
+      "decisions": {
+        "event-press-agreement": "abstain",
         "motion-rule-v3": "flag",
         "pan-agreement": "abstain"
       },
@@ -170,21 +457,9 @@ report = evaluate(scorers=[PanAgreementScorer(MyEstimator())])
       "label": "attack",
       "motion_check": "partial",
       "motion_permille": -1000,
-      "name": "full-idle",
-      "right_stick_run_ms": 0
-    },
-    {
-      "decisions": {
-        "motion-rule-v3": "clear",
-        "pan-agreement": "abstain"
-      },
-      "input_proof": "fail",
-      "input_rows": 996,
-      "label": "attack",
-      "motion_check": "pass",
-      "motion_permille": 1000,
-      "name": "snap-flicks",
-      "right_stick_run_ms": 175
+      "name": "tamper-full-idle",
+      "right_stick_run_ms": 0,
+      "screen_events": 0
     }
   ]
 }
