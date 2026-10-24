@@ -122,7 +122,10 @@ def test_public_page_puts_a_challenge_refusal_at_the_top(tmp_path):
     assert phrase in failed["statusText"]
     assert "Receipt FAIL" in failed["statusText"]
     assert "fail" in failed["className"]
-    assert failed["title"] == "PARTIAL · some checks not covered"
+    assert failed["title"] == (
+        "FAIL · Challenge failed at kickoff (home): wrong button pattern. "
+        "The referee refused to sign because challenges failed.")
+    assert "PARTIAL" not in failed["title"]
     assert phrase in failed["banner"] and "pattern_mismatch" in failed["bannerHtml"]
     assert "referee refused to sign because challenges failed" in failed["banner"]
     assert "PARTIAL" in (tmp_path / "fail" / "index.html").read_text(encoding="utf-8")
@@ -152,7 +155,8 @@ def test_public_page_puts_a_challenge_refusal_at_the_top(tmp_path):
         "status": "PARTIAL", "label": "PARTIAL · some checks not covered", "errors": [], "partial": [],
         "checks": [{"name": "input_integrity", "state": "fail"}]})
     assert "review_check_failed:input_integrity" in other["statusHtml"]
-    assert other["title"] == "PARTIAL · some checks not covered"
+    assert other["title"] == "FAIL · The referee refused to sign because input integrity failed."
+    assert "PARTIAL" not in other["title"]
     assert "input integrity" in other["banner"] and "referee refused to sign" in other["banner"]
     assert "challenges failed" not in other["banner"]
 
@@ -166,6 +170,22 @@ def test_public_page_puts_a_challenge_refusal_at_the_top(tmp_path):
     assert "checkpoint time more than 3 s from its countersign" in card["errsText"]
     assert "wrong button pattern" in card["errsText"]
     assert reason in card["errsHtml"]
+
+
+def test_refused_page_keeps_a_partial_label_off_the_tooltip(tmp_path):
+    """A refused receipt can still be labelled PARTIAL. The tooltip says FAIL, not that label."""
+    reason = "home:kickoff:challenge_failed:pattern_mismatch"
+    shown = _render_page(tmp_path, {
+        "status": "PARTIAL", "label": "PARTIAL · some checks not covered", "errors": [],
+        "partial": ["review_partial:motion"], "reason": reason,
+        "checks": [{"name": "challenges", "state": "fail"}]})
+    assert "Receipt FAIL" in shown["statusText"]
+    assert "wrong button pattern" in shown["statusText"]
+    assert shown["title"] == (
+        "FAIL · Challenge failed at kickoff (home): wrong button pattern. "
+        "The referee refused to sign because challenges failed.")
+    assert shown["title"] != "PARTIAL · some checks not covered"
+    assert "PARTIAL" not in shown["title"]
 
 
 def test_fail_receipt_needs_allow_fail_and_is_never_gold(tmp_path):

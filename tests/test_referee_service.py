@@ -184,19 +184,41 @@ def test_scorebug_only_final_is_partial(tmp_path):
     assert v["status"] == "PARTIAL" and "review_partial:final_reread" in v["partial"]
 
 
-def _flip_kickoff_pattern(sub) -> None:
+def _flip_pattern_press(sub, phase: str, t_us: int) -> None:
     """Change the first pattern button after OPTIONS so the referee re-run is a pattern mismatch."""
-    kick = next(c for c in sub.bundle.receipt["challenges"] if c["phase"] == "kickoff")
-    want = kick["pattern"][1]
+    challenge = next(c for c in sub.bundle.receipt["challenges"] if c["phase"] == phase)
+    want = challenge["pattern"][1]
     wrong = "CROSS" if want != "CROSS" else "CIRCLE"
     bit = {"CROSS": 0, "CIRCLE": 1}[wrong]
     hit = False
     for row in sub.bundle.inputs:
-        if row.get("type") == "in" and row.get("t_us") == 7_500_000 and row.get("b"):
+        if row.get("type") == "in" and row.get("t_us") == t_us and row.get("b"):
             row["b"] = 1 << bit
             hit = True
             break
-    assert hit, "kickoff pattern press missing from the controller log"
+    assert hit, f"{phase} pattern press missing from the controller log"
+
+
+def _flip_kickoff_pattern(sub) -> None:
+    _flip_pattern_press(sub, "kickoff", 7_500_000)
+
+
+def _extend_chunks_to_deadlines(sub) -> None:
+    """Chunk rows in the fixture stop with the video. Later challenge windows need times too."""
+    from qor_receipt.review.bundle import wall_anchor
+
+    anchor = wall_anchor(sub.bundle) or 0
+    need = max(int(c["deadline_ms"]) for c in sub.bundle.receipt["challenges"]) - anchor
+    times = [
+        c["t_us"] // 1000 for c in sub.bundle.input_chunks
+        if isinstance(c.get("t_us"), int) and not isinstance(c.get("t_us"), bool)
+    ]
+    cursor = max(times) if times else 0
+    seq = 1 + max((int(c.get("seq") or 0) for c in sub.bundle.input_chunks), default=-1)
+    while cursor < need:
+        cursor += 2_000
+        sub.bundle.input_chunks.append({"type": "chunk", "seq": seq, "seg": 0, "n": 0, "t_us": cursor * 1000})
+        seq += 1
 
 
 def _stamp_chunk_times(sub) -> None:
@@ -287,6 +309,27 @@ def _assert_verifiers_agree(receipt: dict, referee_pub: str, allowlist_path: str
         assert present in bag, (name, verdict)
         assert absent not in bag, (name, verdict)
         assert verdict["status"] != "VERIFIED"
+
+
+def test_two_blocking_challenge_errors_fill_post_sign_errors(tmp_path):
+    """post_sign_errors is the whole blocking list, not the joined headline and not the first error."""
+    e = Env(tmp_path, tail_ms=8_000, k=1)
+    sub = e.submit()
+    _flip_pattern_press(sub, "kickoff", 7_500_000)
+    _flip_pattern_press(sub, "halftime", 19_500_000)
+    _connected_pad(sub)
+    _extend_chunks_to_deadlines(sub)
+    e.upload_all(sub)
+    out = e.ref.review(sub)
+    expected = [
+        "home:kickoff:challenge_failed:pattern_mismatch",
+        "home:halftime:challenge_failed:pattern_mismatch",
+    ]
+    assert out["state"] == "refused"
+    assert out["review"]["checks"]["challenges"]["state"] == "fail"
+    assert out["review"].get("post_sign_errors") == expected
+    assert out.get("reason") == "; ".join(expected)
+    assert out["review"].get("reason") == out["reason"]
 
 
 def test_pattern_mismatch_is_fail_with_a_top_level_reason(tmp_path):

@@ -418,12 +418,13 @@ function failedChecks(){return CHECKS.filter(c=>c&&c.state==="fail")}
 function failedNames(){return failedChecks().map(c=>String(c.name||"check").replace(/_/g," "))}
 function statusLine(){const SHORT={FAIL:"Receipt FAIL · not a verified result",SELF_ATTESTED:"Self-signed · not referee-signed",PARTIAL:"Partial · not a verified result",VERIFIED:"Verified by the referee"};
  const base=SHORT[STATUS]||human(STATUS)||"receipt status missing";
- if(STATUS!=="FAIL")return {html:esc(base),title:human(RCPT.label||"")};
+ // The receipt label is the tooltip only when nothing was refused and no review check failed.
+ // A refusal or a failed check uses the same words as the receipt card, prefixed with FAIL.
+ if(!REFUSAL&&!CHECK_FAIL)return {html:esc(base),title:human(RCPT.label||"")};
  const phrase=REFUSAL?reasonPhrase(RCPT.reason):"";
  const checks=failedChecks().map(c=>"review_check_failed:"+String(c.name||"check")).join("; ");
  const extra=phrase?esc(phrase):(REFUSAL?`<code>${esc(RCPT.reason)}</code>`:(checks?`<code>${esc(checks)}</code>`:""));
- const label=human(RCPT.label||"");
- return {html:extra?`${esc(base)} · ${extra}`:esc(base),title:label}}
+ return {html:extra?`${esc(base)} · ${extra}`:esc(base),title:`FAIL · ${receiptFailPlain()}`}}
 function failBanner(){const names=failedNames();
  const phrase=REFUSAL?reasonPhrase(RCPT.reason):"";
  const detail=phrase?`${esc(phrase)} <span class="code">${esc(RCPT.reason)}</span>`:(REFUSAL?codeText(RCPT.reason):"");
