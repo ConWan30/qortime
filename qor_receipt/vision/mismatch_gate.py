@@ -69,6 +69,17 @@ FRAME_BIND_STATUSES = ("verified", "missing", "stripped", "broken")
 MIN_CALIBRATION_SAMPLES = 30
 MAX_PLAUSIBLE_ENCODE_LATENCY_MS = 2_000.0
 
+
+class _FinalResultMeta(type):
+    """Rejects subclasses even when a mixin ``__init_subclass__`` skips ``super()``."""
+
+    def __new__(mcls, name: str, bases: tuple[type, ...], namespace: dict[str, Any], **kwargs: Any) -> type:
+        for base in bases:
+            if base.__dict__.get("_mismatch_gate_final") is True:
+                raise TypeError(f"{base.__name__} is final and cannot be subclassed")
+        return super().__new__(mcls, name, bases, namespace, **kwargs)
+
+
 # Documentation only. The result object returns the literal "PARTIAL" and never
 # reads this name, so patching it changes nothing.
 CEILING = "PARTIAL"
@@ -109,7 +120,7 @@ class EncodeLatencyCalibration:
 
 
 @final
-class MismatchGateResult(tuple):
+class MismatchGateResult(tuple, metaclass=_FinalResultMeta):
     """Frozen gate result. ``allowed`` is always False and ``ceiling`` is ``"PARTIAL"``.
 
     ``allowed`` and ``ceiling`` are read-only properties that return literals, and
@@ -120,17 +131,20 @@ class MismatchGateResult(tuple):
     neither ``setattr`` nor ``object.__setattr__`` can change it. The reason is
     validated in ``__new__`` and re-checked on every read.
 
-    The class is final (``__init_subclass__`` raises ``TypeError``). Equality and
-    hashing need this exact type on both sides; a plain tuple, a look-alike, or
-    anything else never compares equal. ``copy``, ``deepcopy`` and ``pickle`` go
-    through ``__reduce__``, which rebuilds via ``__new__`` and so re-validates
-    the reason; a forged payload with an unknown reason raises ``ValueError``.
+    The class is final. A metaclass rejects subclasses, including a mixin whose
+    ``__init_subclass__`` does not call ``super()``. A same-process ``__class__``
+    assignment is not blocked. Equality and hashing need this exact type on both
+    sides; a plain tuple, a look-alike, or anything else never compares equal.
+    ``copy``, ``deepcopy`` and ``pickle`` go through ``__reduce__``, which rebuilds
+    via ``__new__`` and so re-validates the reason; a forged payload with an
+    unknown reason raises ``ValueError``.
 
     ``reason`` is diagnostic only. A caller must never branch on it to raise a
     tier: ``no_bundle_verifier`` means "no verifier exists", not "passed".
     """
 
     __slots__ = ()
+    _mismatch_gate_final = True
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         raise TypeError("MismatchGateResult is final and cannot be subclassed")

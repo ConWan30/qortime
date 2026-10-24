@@ -22,7 +22,17 @@ from redteam.pan_frames import FRAME_W, crop, draw_scorebug, pan_frames, world_t
 from redteam.scorers import PanBin as ContractBin  # noqa: E402
 from redteam.scorers import validate_pan_bin  # noqa: E402
 
+from qor_receipt.vision import estimator_allowlist as al  # noqa: E402
 from qor_receipt.vision import pan_estimator as pe  # noqa: E402
+
+_PINNED_NUMPY = al.PINNED_NUMPY_REQUIREMENT.split("==", 1)[1]
+if np.__version__ != _PINNED_NUMPY:
+    pytest.skip(
+        f"numpy {np.__version__} is not {al.PINNED_NUMPY_REQUIREMENT}. "
+        "Off this pin the estimator hash is unknown and estimate_frames returns no_claim. "
+        "Install the dev extra to run these tests.",
+        allow_module_level=True,
+    )
 
 ROOT = Path(__file__).resolve().parents[1]
 FRAME_MS = 100
@@ -239,6 +249,49 @@ def test_allowlist_is_a_fixed_frozenset_of_lowercase_hex():
 
     # estimator_known takes only parameters; it never accepts a hash from the caller.
     assert list(inspect.signature(pe.estimator_known).parameters) == ["params"]
+
+
+def test_estimator_known_rejects_a_to_json_lookalike():
+    class Duck:
+        def to_json(self):
+            return pe.DEFAULT_PARAMS.to_json()
+
+    class Sub(pe.PanParams):
+        pass
+
+    assert pe.estimator_known(Duck()) is False
+    assert pe.estimator_known(Sub()) is False
+    assert pe.estimator_known(pe.DEFAULT_PARAMS) is True
+
+
+def test_pairs_and_bin_pairs_no_claim_when_the_hash_is_unknown(monkeypatch):
+    monkeypatch.setattr(pe, "estimator_known", lambda params=pe.DEFAULT_PARAMS: False)
+    frames = pan_frames(4, 1.0)
+    pairs = pe.OpticalFlowPanEstimator().pairs(frames)
+    assert pairs
+    assert all(not pair.ok and pair.reason == "unknown_estimator_hash" for pair in pairs)
+    planted = [pe.PairResult(100, True, "ok", yaw_rate=30.0, pitch_rate=0.0, confidence=1.0)]
+    bins = pe.bin_pairs(planted, 0, 200)
+    assert len(bins) == 2
+    assert all(b.no_claim and b.reason == "unknown_estimator_hash" and b.yaw_rate is None for b in bins)
+
+
+def test_cli_and_clip_script_exit_nonzero_on_an_unknown_hash(monkeypatch, capsys):
+    import importlib.util
+
+    monkeypatch.setattr(pe, "estimator_known", lambda params=pe.DEFAULT_PARAMS: False)
+    assert pe.main(["/no/such.mp4"]) == 1
+    err = capsys.readouterr().err
+    assert err.strip() == pe.UNKNOWN_ESTIMATOR_WARNING
+    assert "WARNING" in err
+
+    spec = importlib.util.spec_from_file_location("pan_estimate_clips", ROOT / "scripts" / "pan_estimate_clips.py")
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setattr(module, "OpticalFlowPanEstimator", pe.OpticalFlowPanEstimator)
+    assert module.main() == 1
+    assert capsys.readouterr().err.strip() == pe.UNKNOWN_ESTIMATOR_WARNING
 
 
 @pytest.mark.parametrize("target,attr,value", [

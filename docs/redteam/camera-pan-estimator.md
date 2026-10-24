@@ -72,14 +72,14 @@ The tested wheel is **`opencv-python-headless==5.0.0.93`** (OpenCV 5.0.0, `cp37-
 
 - The pin lives in `tests/constraints-pan-estimator.txt` and in the `dev` extra of `pyproject.toml`. CI already installs `.[dev,vision]`, so it gets the pin, and a test checks that the two places agree.
 - To install it locally: `pip install -e ".[dev,vision]" -c tests/constraints-pan-estimator.txt`.
-- The live referee image (`services/referee/Dockerfile`) installs `.[referee,vision]`, so it is unchanged. Neither of those extras carries the exact pin.
-- numpy is pinned to **`numpy==2.4.6`** in the same two places. 2.4.6 has wheels for both CI interpreters (CPython 3.11 and 3.13), so both report one estimator hash. Before the pin, CI resolved numpy 2.4.6 on 3.11 and 2.5.4 on 3.13 (numpy 2.5 dropped 3.11), and the hashes differed. The vision and referee extras keep `numpy>=1.26`.
+- The live referee image (`services/referee/Dockerfile`) installs `.[referee,vision]`. Neither extra carries the numpy pin or the OpenCV pin. On that image `estimator_known()` is false: the process reports an unknown hash, and `estimate_frames` is `no_claim`.
+- numpy is pinned to **`numpy==2.4.6`** in the dev extra and `tests/constraints-pan-estimator.txt`. 2.4.6 has wheels for both CI interpreters (CPython 3.11 and 3.13), so both report one estimator hash. Before the pin, CI resolved numpy 2.4.6 on 3.11 and 2.5.4 on 3.13 (numpy 2.5 dropped 3.11), and the hashes differed. The vision and referee extras keep `numpy>=1.26`.
 
 ### Known-good hash allowlist (fail closed)
 
 `qor_receipt/vision/estimator_allowlist.py` holds `KNOWN_ESTIMATOR_SHA256`, a fixed `frozenset` of exact 64-character lowercase hex digests. It is a separate file because the hash covers `pan_estimator.py`'s own source. It currently holds one entry, recorded on CPython 3.11 and 3.13 with numpy 2.4.6, `opencv-python-headless==5.0.0.93`, and `cv2.useOptimized()` True:
 
-`8f049000579fafe68b5741fb28e8b48ff71323625bb68aa7531639efd9066b0d`
+`c33339f29b1c8de21439c4d51c7b1cbf93ffee21062e1e0a88f25bd073d321f1`
 
 How the check works:
 
@@ -88,6 +88,7 @@ How the check works:
 - `identity()` reports `estimator_known` separately from `opencv_pinned`.
 - Any other numpy, OpenCV version or build, `useOptimized` setting, parameters, or edited source makes `estimate_frames` return only `no_claim` bins with reason `unknown_estimator_hash`.
 - Being known unlocks nothing: the mismatch gate still has no allow path.
+- Same-process patching cannot be fully blocked. The check recomputes the hash when it is called. Patching numpy, OpenCV, or the allowlist in the same process, or assigning `__class__` on a gate result, is outside what this check seals. A `__class__` swap is not treated as impossible.
 
 Tests check that:
 
@@ -103,7 +104,26 @@ The current hash is the allowlist entry above. Earlier revisions reported:
 - `2d236634…`, before the per-bundle frame_bind gate;
 - `b0c8f40d…`, before the status, coverage, and encode-latency conditions;
 - `b85405bd…`, before the gate moved out of this module and numpy and `useOptimized` joined the hash;
-- `c5e8ddfd…` (CPython 3.13, numpy 2.5.4), before the allowlist check and the numpy pin.
+- `c5e8ddfd…` (CPython 3.13, numpy 2.5.4), before the allowlist check and the numpy pin;
+- `8f049000…`, before `pairs` / `bin_pairs` fail closed on an unknown hash and `estimator_known` requires an exact `PanParams`.
+
+The per-bin outputs on the three clips are byte-identical across all of them.
+
+## Harness plug-in
+
+`tests/redteam/optical_flow.py` adapts the estimator to #67's `CameraPanEstimator` protocol. The harness's `VariantSample` carries no pixels, so the adapter takes a frame source. When the estimator has a `sha256`, `source_identity` folds it in and records it as `estimator_sha256`.
+
+That identity is caller-reported and is not verified. QorProof's E1–E3 show an estimator can claim any sha256, and D1 shows the adapter cache is shared across frame sources. Those tests are in `tests/test_mismatch_gate_qorproof.py` as `xfail(strict=True)`. QorVolution Bot's follow-up PR fixes that code; this PR does not touch it.
+
+The committed red-team report (`motion-rule-v3-aimbot.md`) still uses the no_claim stubs. A test plugs this estimator in on synthetic frames and checks only the contract, the identity, and determinism. No catch rate is asserted or published, because pan versus right stick is not a valid Madden aimbot signal (see below).
+
+Before the allowlist check, the box (Python 3.13, numpy 2.5.4, the pinned wheel) reported `c5e8ddfdcae2e20a12cd77b87e520abbf73cc20af1b146768eea895b2c5b695f`. That numpy is not the pin, so the hash is unknown. Earlier revisions reported:
+
+- `e225c50d…`, before the OpenCV identity was hashed;
+- `dcb9d149…`, before the clock gate;
+- `2d236634…`, before the per-bundle frame_bind gate;
+- `b0c8f40d…`, before the status, coverage, and encode-latency conditions;
+- `b85405bd…`, before the gate moved out of this module and numpy and `useOptimized` joined the hash.
 
 The per-bin outputs on the three clips are byte-identical across all of them.
 
@@ -120,7 +140,7 @@ Any video-vs-log mismatch detector must call it. Examples are a skill move, a us
 **The result always has `allowed=False` and `ceiling="PARTIAL"`, for every input.**
 
 - `MismatchGateResult` is frozen, its `allowed` is a read-only property, and the object is falsy.
-- The class is final: `__init_subclass__` raises `TypeError`. Equality and hashing require the exact type on both sides, so a plain tuple or a look-alike never compares equal.
+- The class is final. A metaclass rejects a subclass, including a mixin whose `__init_subclass__` does not call `super()`. A same-process `__class__` assignment is not blocked. Equality and hashing require the exact type on both sides, so a plain tuple or a look-alike never compares equal.
 - `ceiling`, `repr` and `to_dict()` use the literal `"PARTIAL"`. Patching the module's `CEILING` name changes nothing.
 - The reason is the single item of an immutable tuple. There are no slots and no `__dict__`, so `object.__setattr__` cannot change it, and it is re-validated on every read.
 - `copy`, `deepcopy` and `pickle` round-trip through `__reduce__`, which rebuilds the object via `__new__` and re-validates the reason, so a forged pickle with an unknown reason is rejected.

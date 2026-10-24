@@ -39,7 +39,9 @@ a low inlier ratio, a high residual, low confidence, or any exception. A bin wit
 no frame pair at all is also ``no_claim``. Values are never interpolated or filled.
 Every bin is ``no_claim`` (reason ``unknown_estimator_hash``) unless
 ``estimator_known()`` is True: the in-process hash is in the fixed allowlist in
-``estimator_allowlist.py`` and OpenCV matches its pin.
+``estimator_allowlist.py`` and OpenCV matches its pin. ``pairs`` and
+``bin_pairs`` use the same check. ``estimator_known`` accepts only an exact
+``PanParams`` instance, not a look-alike whose ``to_json`` matches.
 
 Determinism
 -----------
@@ -81,9 +83,9 @@ BIN_MS = 100
 ROUND_DIGITS = 3
 RATE_UNITS = "percent_of_frame_width_per_second"
 
-# Tested OpenCV wheel (see tests/constraints-pan-estimator.txt). Not enforced at
-# runtime: a different build still runs, but it reports a different sha256 and
-# identity()["opencv_pinned"] is False; tests/test_pan_estimator.py fails on it.
+# Tested OpenCV wheel (see tests/constraints-pan-estimator.txt). A different
+# build still loads. estimator_known() is then false, and pairs, bin_pairs, and
+# estimate_frames return no_claim with reason unknown_estimator_hash.
 PINNED_OPENCV_WHEEL = "opencv-python-headless==5.0.0.93"
 PINNED_OPENCV_VERSION = "5.0.0"
 # sha256(cv2.getBuildInformation()) of that wheel's cp37-abi3-manylinux_2_28_x86_64 build (CI and the box).
@@ -222,14 +224,24 @@ def _is_hex64(value: object) -> bool:
     return type(value) is str and len(value) == 64 and all(c in "0123456789abcdef" for c in value)
 
 
+UNKNOWN_ESTIMATOR_WARNING = (
+    "WARNING: unknown estimator hash (not on the allowlist). Refusing to print bins."
+)
+
+
 def estimator_known(params: PanParams = DEFAULT_PARAMS) -> bool:
     """True only if this process's estimator hash is allowlisted AND OpenCV matches its pin.
 
-    The hash is recomputed here; no caller-supplied hash is accepted. Any
-    exception gives False. Separate from ``opencv_matches_pin()``. It unlocks
-    nothing: the mismatch gate still has no allow path.
+    ``params`` must be an exact ``PanParams`` (``type(params) is PanParams``).
+    A subclass or any other object with a matching ``to_json`` is False. The
+    hash is recomputed here; no caller-supplied hash is accepted. Any exception
+    gives False. Separate from ``opencv_matches_pin()``. It unlocks nothing:
+    the mismatch gate still has no allow path. Same-process patching of numpy,
+    OpenCV, or this function after the check is not something this can seal.
     """
     try:
+        if type(params) is not PanParams:
+            return False
         known = estimator_allowlist.KNOWN_ESTIMATOR_SHA256
         if type(known) is not frozenset or not all(_is_hex64(h) for h in known):
             return False
@@ -393,6 +405,14 @@ class OpticalFlowPanEstimator:
     # -- public --------------------------------------------------------------
     def pairs(self, frames: Iterable[tuple[int, Any]]) -> list[PairResult]:
         """Per-pair motion. ``frames`` yields ``(mono_ms, BGR-or-gray ndarray or None)`` in time order."""
+        if not estimator_known(self.params):
+            out: list[PairResult] = []
+            seen = False
+            for mono_ms, _frame in frames:
+                if seen:
+                    out.append(PairResult(int(mono_ms), False, "unknown_estimator_hash"))
+                seen = True
+            return out
         prev_threads = cv2.getNumThreads()
         cv2.setNumThreads(1)
         out: list[PairResult] = []
@@ -440,6 +460,8 @@ def _replace(res: PairResult, **kw: Any) -> PairResult:
 def bin_pairs(pair_results: Sequence[PairResult] | None, start_ms: int, end_ms: int) -> list[PanBin]:
     """Group pair results into 100 ms bins. Any unreadable pair in a bin makes the whole bin no_claim."""
     starts = list(range(start_ms, end_ms, BIN_MS))
+    if not estimator_known():
+        return [PanBin(t, None, None, None, True, "unknown_estimator_hash") for t in starts]
     if pair_results is None:
         return [PanBin(t, None, None, None, True, "exception") for t in starts]
     grouped: dict[int, list[PairResult]] = {}
@@ -502,6 +524,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("video")
     ap.add_argument("--mono-offset-ms", type=int, default=0)
     args = ap.parse_args(argv)
+    if not estimator_known():
+        print(UNKNOWN_ESTIMATOR_WARNING, file=sys.stderr)
+        return 1
     frames = list(iter_video_frames(args.video, args.mono_offset_ms))
     if not frames:
         print(json.dumps({"error": "could not decode video"}), file=sys.stderr)

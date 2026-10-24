@@ -89,6 +89,16 @@ def test_result_cannot_be_subclassed():
         type("Evil", (mg.MismatchGateResult,), {"__slots__": (), "allowed": property(lambda self: True)})
 
 
+def test_mixin_cannot_bypass_the_final_class():
+    class Mixin:
+        def __init_subclass__(cls, **kwargs):
+            return None
+
+    with pytest.raises(TypeError):
+        class Evil(Mixin, mg.MismatchGateResult):  # noqa: F841
+            pass
+
+
 def test_lookalike_result_never_compares_equal_to_a_real_one():
     class LookAlike:
         __slots__ = ("_reason",)
