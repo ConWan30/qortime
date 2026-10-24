@@ -54,7 +54,7 @@
   <ul>
    <li><b>Integrity checks in code:</b> video fingerprints, checkpoint chain, and signatures. Scores can only move in legal football steps, never backwards. The clock only runs down within a quarter. The final screen must match the last score.</li>
    <li><b>AI referee:</b> reads frames to confirm the score. It only accepts a reading when it is confident and the reading agrees across several frames, and it <b>abstains</b> rather than guessing. Tampering is caught by the integrity checks, not by trusting a model.</li>
-   <li><b>Honest limit:</b> QorTime proves the footage's integrity and timing (and, since QorCap v0.3.0, the controller inputs from the same session). It does <b>not</b> prove who held the controller.</li>
+   <li><b>Honest limit:</b> QorTime proves the footage's integrity and timing. Since QorCap v0.3.0 it also logs controller reports from a pad that enumerated on USB in that session. It does <b>not</b> prove who held the controller, or that the console obeyed that pad.</li>
   </ul>
   <a class="btn ghost mag" href="how-it-works/"><span>How it works</span></a>
  </div>
@@ -190,8 +190,8 @@ receipt_hash</pre>
 
 <section class="wrap" id="limits">
  <div class="glass limits"><h2>Honest limits</h2>
- <p>QorTime proves the footage's integrity and timing. Controller inputs from the same session are logged by QorCap <span class="tag">since v0.3.0</span>. It does <b>not</b> prove:</p>
- <ul><li><b>Account sharing:</b> who is physically holding the controller. The referee does not check pad identity. QorCap’s second-pad note, when it exists, stays in the local <span class="mono">input_proof.json</span>.</li><li><b>Collusion:</b> both players agreeing to throw or fake a match.</li><li>Anything outside what the capture card saw.</li><li><b>Red team:</b> a virtual capture device was missed. Relays under about 2.5–3&nbsp;seconds, and a splice that is rehashed and resigned, came out weak. <a href="https://github.com/ConWan30/qorcap/blob/main/docs/REDTEAM.md">QorCap red-team notes</a>.</li></ul>
+ <p>QorTime proves the footage's integrity and timing. Controller reports from a USB-enumerated pad in the same session are logged by QorCap <span class="tag">since v0.3.0</span>. It does <b>not</b> prove:</p>
+ <ul><li><b>Account sharing:</b> who is physically holding the controller. The referee does not check pad identity. QorCap’s second-pad note, when it exists, stays in the local <span class="mono">input_proof.json</span>.</li><li><b>Right-stick injection:</b> an inline passthrough adapter can add right-stick input the console obeys while QorCap logs the real pad. Open. Planned checks are an advisory per-axis stick-versus-camera signal first, and hardware such as a sealed tap before any pad-to-console binding.</li><li><b>Collusion:</b> both players agreeing to throw or fake a match.</li><li>Anything outside what the capture card saw.</li><li><b>Red team:</b> a virtual capture device was missed. Relays under about 2.5–3&nbsp;seconds, and a splice that is rehashed and resigned, came out weak. <a href="https://github.com/ConWan30/qorcap/blob/main/docs/REDTEAM.md">QorCap red-team notes</a>.</li></ul>
  <a class="btn ghost mag" href="https://github.com/ConWan30/qortime/blob/main/docs/RISKS.md"><span>Read RISKS.md</span></a></div>
 </section>
 
