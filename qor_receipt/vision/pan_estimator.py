@@ -37,6 +37,9 @@ it is unreadable: decode failure (``None`` frame), a black or flat frame, a scen
 cut (masked grayscale histogram jump), a timing gap, too few tracked features,
 a low inlier ratio, a high residual, low confidence, or any exception. A bin with
 no frame pair at all is also ``no_claim``. Values are never interpolated or filled.
+Every bin is ``no_claim`` (reason ``unknown_estimator_hash``) unless
+``estimator_known()`` is True: the in-process hash is in the fixed allowlist in
+``estimator_allowlist.py`` and OpenCV matches its pin.
 
 Determinism
 -----------
@@ -69,6 +72,8 @@ from typing import Any
 
 import cv2
 import numpy as np
+
+from qor_receipt.vision import estimator_allowlist
 
 ESTIMATOR_NAME = "qorai-optical-flow-pan"
 ESTIMATOR_VERSION = "qorai-optical-flow-pan/v1"
@@ -213,6 +218,27 @@ def estimator_sha256(params: PanParams = DEFAULT_PARAMS) -> str:
     return hashlib.sha256(blob).hexdigest()
 
 
+def _is_hex64(value: object) -> bool:
+    return type(value) is str and len(value) == 64 and all(c in "0123456789abcdef" for c in value)
+
+
+def estimator_known(params: PanParams = DEFAULT_PARAMS) -> bool:
+    """True only if this process's estimator hash is allowlisted AND OpenCV matches its pin.
+
+    The hash is recomputed here; no caller-supplied hash is accepted. Any
+    exception gives False. Separate from ``opencv_matches_pin()``. It unlocks
+    nothing: the mismatch gate still has no allow path.
+    """
+    try:
+        known = estimator_allowlist.KNOWN_ESTIMATOR_SHA256
+        if type(known) is not frozenset or not all(_is_hex64(h) for h in known):
+            return False
+        sha = estimator_sha256(params)
+        return _is_hex64(sha) and sha in known and opencv_matches_pin() is True
+    except Exception:
+        return False
+
+
 def _r(value: float) -> float:
     out = round(float(value), ROUND_DIGITS)
     return 0.0 if out == 0 else out  # no "-0.0"
@@ -253,6 +279,7 @@ class OpticalFlowPanEstimator:
             "params": self.params.to_json(),
             "opencv": opencv_identity(),
             "opencv_pinned": opencv_matches_pin(),
+            "estimator_known": estimator_known(self.params),
         }
 
     # -- frame preparation -------------------------------------------------
@@ -393,6 +420,10 @@ class OpticalFlowPanEstimator:
         """One ``PanBin`` per 100 ms in ``[start_ms, end_ms)``; ``start_ms`` must be a multiple of 100."""
         if start_ms % BIN_MS != 0 or end_ms < start_ms:
             raise ValueError("start_ms must be a multiple of 100 and end_ms >= start_ms")
+        if not estimator_known(self.params):
+            # Fail closed: an estimator hash not on the allowlist for this interpreter
+            # (other numpy/OpenCV, edited source or parameters) never produces a claim.
+            return [PanBin(t, None, None, None, True, "unknown_estimator_hash") for t in range(start_ms, end_ms, BIN_MS)]
         try:
             pair_results = self.pairs(frames)
         except Exception:

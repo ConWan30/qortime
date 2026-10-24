@@ -44,7 +44,10 @@ def main() -> int:
     manifest = json.loads((CLIPS / "manifest.json").read_text(encoding="utf-8"))
     est = OpticalFlowPanEstimator()
     ident = est.identity()
-    print(f"estimator sha256 {ident['sha256']} (opencv_pinned={ident['opencv_pinned']})")
+    print(
+        f"estimator sha256 {ident['sha256']} (opencv_pinned={ident['opencv_pinned']}, "
+        f"estimator_known={ident['estimator_known']})"
+    )
     print()
     print("| clip | bins | claimed | no_claim | no_claim reasons | abs yaw p50 / p90 / max | abs pitch p50 / p90 / max |")
     print("|---|---|---|---|---|---|---|")
