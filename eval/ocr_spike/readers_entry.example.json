@@ -1,0 +1,49 @@
+{
+  "schema": "qorcap-readers/v0",
+  "qorcap_version": "0.3.32",
+  "readers": [
+    {
+      "id": "ppocrv6_small_rec_scorebug_spike",
+      "version": "0.1-spike",
+      "files": [
+        {
+          "kind": "code",
+          "path": "eval/ocr_spike/roi.py",
+          "sha256": "ae629bc30e39624cb6fe33b8e4eb2ef50948ab847dfd7e3bd694a01a76ac45ac"
+        },
+        {
+          "kind": "code",
+          "path": "eval/ocr_spike/preprocess.py",
+          "sha256": "39e6e884ca2849ae37b865732726007710d11eddc23094366484d32b679d9c0f"
+        },
+        {
+          "kind": "code",
+          "path": "eval/ocr_spike/decode.py",
+          "sha256": "d906c8c4cff43050cb73fbda2bd7b13e6d1cd6fb4b359cd57f9bd742e6a281c6"
+        },
+        {
+          "kind": "code",
+          "path": "eval/ocr_spike/ortrun.py",
+          "sha256": "d8ab7ce7703b77fd7b37dbcdc6f910e97b8e0c4cf917900d0a2ba54b4e4f1435"
+        },
+        {
+          "kind": "code",
+          "path": "eval/ocr_spike/scorebug_dict.txt",
+          "sha256": "aabbe6eea68a0bcc1b159d6031835b8fa83aaf6adeef35b23c317ff1483f537e"
+        },
+        {
+          "kind": "pack",
+          "path": "models/scorebug_rec_int8.onnx",
+          "sha256": "09f13fce44628f43c29bf4af8c9f20564ae0ceedfa86743401bbc04d7cfa9777"
+        }
+      ]
+    }
+  ],
+  "runtimes": [
+    {
+      "id": "onnxruntime",
+      "version": "1.31.0",
+      "sha256": "c8f3c0f7b51e0d12563f77829fc2632daade3a7d09b3a17b6cf3a50d490f5b0b"
+    }
+  ]
+}

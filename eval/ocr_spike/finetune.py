@@ -8,7 +8,7 @@ Steps (each is a sub-command so a long CPU run can be resumed):
     python eval/ocr_spike/finetune.py train --work WORK --paddleocr PADDLEOCR [--run] [--resume]
     # 3. export best checkpoint -> Paddle PIR inference model -> ONNX (paddle2onnx 2.x)
     python eval/ocr_spike/finetune.py export --work WORK --paddleocr PADDLEOCR --paddle2onnx /path/to/py312env/bin/paddle2onnx
-    # 4. int8 static quantisation with onnxruntime (ORT env), calibration on synthetic TRAIN crops only
+    # 4. int8 static QDQ quantisation (MatMul only by default) with onnxruntime (ORT env), calibrated on synthetic TRAIN crops only
     python eval/ocr_spike/finetune.py quantize --work WORK --data DATA
 
 ``WORK/weights.json`` collects sha256 of every input/output weight file. Nothing here is committed weights.
@@ -142,13 +142,17 @@ def cmd_quantize(a) -> int:
 
     out = work / "scorebug_rec_int8.onnx"
     # U8U8 avoids the x64 U8S8 VPMADDUBSW saturation path on non-VNNI CPUs (ORT quantization docs).
+    # Spike finding (synthetic val, step-200 snapshot, 200-400 crops): quantising Conv (static Conv+MatMul,
+    # Conv-only, or dynamic) dropped exact match from about 0.98 to 0.40-0.53. MatMul-only (the lightsvtr
+    # neck and the CTC FC) kept about 0.975. So the default is MatMul-only; the convs stay fp32.
+    ops = a.ops.split(",")
     quantize_static(str(pre), str(out), Reader(), quant_format=QuantFormat.QDQ, activation_type=QuantType.QUInt8,
-                    weight_type=QuantType.QUInt8, per_channel=True, op_types_to_quantize=["Conv", "MatMul"])
+                    weight_type=QuantType.QUInt8, per_channel=True, op_types_to_quantize=ops)
     import onnxruntime
 
     record(work, "int8_onnx", {"path": str(out), "sha256": sha256(out), "calib_crops": len(calib),
                                "calib_source": "synthetic train split", "ort_version": onnxruntime.__version__,
-                               "format": "QDQ U8U8 per-channel, Conv+MatMul"})
+                               "format": f"QDQ U8U8 per-channel, ops={'+'.join(ops)}"})
     print(json.dumps(json.loads((work / "weights.json").read_text()), indent=2))
     _ = np
     return 0
@@ -183,6 +187,7 @@ def main(argv=None) -> int:
     p.add_argument("--work", required=True)
     p.add_argument("--data", required=True)
     p.add_argument("--calib", type=int, default=512)
+    p.add_argument("--ops", default="MatMul", help="op types to int8-quantise (Conv quantisation broke accuracy in the spike)")
     a = ap.parse_args(argv)
     return {"prepare": cmd_prepare, "train": cmd_train, "export": cmd_export, "quantize": cmd_quantize}[a.cmd](a)
 

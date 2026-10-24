@@ -31,11 +31,16 @@
       "dict": "full"
     },
     "scorebug_ft_int8": {
-      "desc": "PP-OCRv6_small_rec fine-tuned on synthetic scorebug crops, 69-class CTC head, static QDQ U8U8 int8. Not hosted yet (publishing weights needs Con's OK).",
+      "desc": "PP-OCRv6_small_rec fine-tuned 750 steps on synthetic scorebug crops (CPU), 69-class CTC head, static QDQ U8U8 int8 on MatMul only (convs fp32). Built with onnxruntime 1.31.0. Not hosted yet (publishing weights needs Con's OK), so CI skips it.",
       "url": null,
-      "sha256": null,
+      "sha256": "09f13fce44628f43c29bf4af8c9f20564ae0ceedfa86743401bbc04d7cfa9777",
       "file": "scorebug_rec_int8.onnx",
-      "dict": "scorebug"
+      "dict": "scorebug",
+      "built_with": {
+        "onnxruntime": "1.31.0",
+        "fp32_onnx_sha256": "5d6700b1ffb22f8bbb6ebf01836dbc0f93d7b45c86384e2124751fc4d1e52c8e",
+        "trained_pdparams_sha256": "c65d6530be956346b2d88632bb6414aa7d0f22a4b7375eca7795cc0a202110b2"
+      }
     }
   }
 }

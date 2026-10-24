@@ -13,12 +13,26 @@
 | `preprocess.py`, `decode.py`, `ortrun.py` | Pinned PP-OCR rec preprocessing (48x320, `INTER_LINEAR`, zero padding), CTC greedy decoding, and the pinned onnxruntime CPU session (1 intra-op and 1 inter-op thread, sequential, `ORT_ENABLE_BASIC`, `use_deterministic_compute`). |
 | `eval_rec.py` | Exact match per field on a synthetic split. **Synthetic only.** |
 | `slice_head.py` | Shrinks the official checkpoint's CTC head (18,710 classes) and NRTR head (18,714) to the 67-character scorebug alphabet. It keeps the pretrained rows rather than starting from a random head. |
-| `paddle_config.py`, `finetune.py` | PaddleOCR CPU fine-tune, then export to a PIR inference model, then paddle2onnx 2.x, then onnxruntime static QDQ int8 (U8U8, per-channel, Conv+MatMul, calibrated on synthetic train crops). Writes `weights.json` with the sha256 of every weight file. |
+| `paddle_config.py`, `finetune.py` | PaddleOCR CPU fine-tune, then export to a PIR inference model, then paddle2onnx 2.x, then onnxruntime static QDQ int8 (U8U8, per-channel, **MatMul only**, calibrated on synthetic train crops; quantising the convs broke accuracy, see Findings). Writes `weights.json` with the sha256 of every weight file. |
 | `rerun.py`, `rerun_check.py` | Re-run check: the same model is run twice in-process and once in each of two separate processes, then raw logits bytes and decoded strings are compared. **Exits 1 on any byte difference.** A pass means "re-runnable with the same pinned setup" on that machine only. |
 | `probe/`, `probe.py` | 32 committed synthetic crops (156 KB) with a hash-locked preprocessed-input sha256. |
 | `pinned_models.json`, `golden.json`, `golden_check.py` | Cross-machine check. It downloads the pinned weights by URL (or derives them by a pinned recipe), verifies their sha256 **before** running, runs them single-threaded on the probe, and compares against the committed golden hashes. CPU features are recorded. A mismatch is a finding; it is not re-blessed. |
 | `readers_entry.py` | Emits a `qorcap-readers/v0`-shaped document following open qortime PR #70's closed schema: the ONNX file as a `pack` and `onnxruntime` as a `runtime`. It is an example only, and nothing writes it into a bundle. |
 | `smoke_clips.py` | **Smoke test only.** Compares the current reader, zero-shot PP-OCRv6 and the fine-tuned model on the 3 public, hash-locked clips in `site/matches/170123/clips/`. This is not accuracy evidence. |
+
+## Findings (box, 2026-10-24). SYNTHETIC ONLY: these never count toward replacing the current reader
+Exact match per field on the synthetic val split (2,000 bands, 16,000 field crops, seed 20261024). The fine-tune's best checkpoint was chosen on `rec_val_small` (480 crops), which is a subset of this split, so these numbers are optimistic even as synthetic numbers.
+
+| model | sha256 | all fields | worst field |
+|---|---|---|---|
+| upstream PP-OCRv6 small fp32, zero-shot, full dict | `5435fd74…` | 11760/16000 = 0.7350 | team_l 0.3235 (reads timeout bars as `_`) |
+| fine-tuned fp32 (750 steps, CPU) | `5d6700b1…` | 15900/16000 = 0.9938 | quarter 0.9840 |
+| fine-tuned int8 (QDQ U8U8, MatMul only) | `09f13fce…` | 15898/16000 = 0.9936 | quarter 0.9830 |
+
+- **int8 finding:** quantising the LCNet convs collapsed accuracy. On a step-200 snapshot (200–400 crops), static Conv+MatMul scored 0.51, Conv-only 0.53 and dynamic 0.40, against 0.98 for fp32. MatMul-only kept 0.975, so `finetune.py quantize` defaults to `--ops MatMul` and the convs stay fp32.
+- **Re-run check** (int8, ORT 1.31.0, x86-64 with AVX-512/VNNI): over 2 in-process runs plus 2 subprocesses, raw logits bytes and strings were identical on the 32-crop probe and on 300 val bands (2,400 crops). That makes it re-runnable with the same pinned setup on this machine. It says nothing yet about other CPUs.
+- **Cross-runner:** the golden hashes are committed. The matrix job is only a proposal (`ci/ocr-spike.yml`) until someone with the `workflow` scope moves it into `.github/workflows/`. The fine-tuned model is skipped in CI because it is not hosted.
+- **Smoke test** (3 public clips, 144 frames, not accuracy evidence): wherever the current reader produced a score, quarter or clock, both OCR models agreed with it (109/109, 109/109, 109/109 and 4/4). On frames where the current reader abstained, OCR still returned text. Zero-shot did so on 25/22/31/132 frames and the fine-tune on 4/12/22/126 (score_l, score_r, quarter, game_clock). OCR has no refusal path, so an abstention gate would have to be designed, and it is not.
 
 ## Weights and licences
 - Upstream `PaddlePaddle/PP-OCRv6_small_rec_onnx` (HF rev `b8f84f0b`) `inference.onnx` sha256 `5435fd747c9e0efe15a96d0b378d5bd157e9492ed8fd80edf08f30d02fa24634`. The model card's licence is **Apache-2.0**.
