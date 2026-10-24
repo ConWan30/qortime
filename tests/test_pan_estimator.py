@@ -181,6 +181,46 @@ def test_version_and_hash_cover_source_and_params():
     assert other != est.sha256
 
 
+def test_hash_covers_the_opencv_build(monkeypatch):
+    base = pe.estimator_sha256()
+    ident = pe.opencv_identity()
+    assert ident["cv2_version"] == cv2.__version__
+    assert len(ident["build_info_sha256"]) == 64
+    assert pe.OpticalFlowPanEstimator().identity()["opencv"] == ident
+
+    monkeypatch.setattr(pe.cv2, "__version__", "0.0.0-other")
+    other_version = pe.estimator_sha256()
+    monkeypatch.undo()
+    monkeypatch.setattr(pe.cv2, "getBuildInformation", lambda: "a different OpenCV build")
+    other_build = pe.estimator_sha256()
+    monkeypatch.undo()
+
+    assert len({base, other_version, other_build}) == 3
+    assert pe.estimator_sha256() == base
+
+
+def test_pinned_wheel_matches_the_constraints_file():
+    text = (ROOT / "tests" / "constraints-pan-estimator.txt").read_text(encoding="utf-8")
+    pins = [line.strip() for line in text.splitlines() if line.strip() and not line.startswith("#")]
+    assert pe.PINNED_OPENCV_WHEEL in pins
+    assert pe.PINNED_OPENCV_WHEEL.startswith("opencv-python-headless==" + pe.PINNED_OPENCV_VERSION + ".")
+    import tomllib
+
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+    assert pe.PINNED_OPENCV_WHEEL in project["optional-dependencies"]["dev"]
+    # The referee image installs .[referee,vision]; neither extra carries the exact pin.
+    for extra in ("referee", "vision"):
+        assert pe.PINNED_OPENCV_WHEEL not in project["optional-dependencies"][extra]
+
+
+def test_clock_skew_window_is_no_claim():
+    assert pe.MEASURED_CLIP_CAPTURE_SKEW_MS == (120, 719)
+    assert pe.CLOCK_SKEW_NO_CLAIM_MS == 719
+    assert pe.within_clock_skew(10_000, 10_719)
+    assert pe.within_clock_skew(10_500, 10_000)
+    assert not pe.within_clock_skew(10_000, 10_720)
+
+
 def test_scorebug_mask_comes_from_the_local_scorebug_profile():
     from qor_receipt._vendor.qoresence.vision.local_scorebug.profile import MADDEN27_STANDARD
 

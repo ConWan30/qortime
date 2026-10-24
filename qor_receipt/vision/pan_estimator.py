@@ -43,7 +43,21 @@ Determinism
 ``cv2.setNumThreads(1)`` for the duration of a run (restored afterwards), fixed
 parameters, median-based estimation, and rounding of every output float to
 ``ROUND_DIGITS``. ``estimator_sha256()`` covers this module's source text, the
-version string, and the parameters, and is what a harness should record.
+version string, the parameters, ``cv2.__version__``, and a SHA-256 of
+``cv2.getBuildInformation()``, so two OpenCV builds never share a hash. It is
+what a harness should record. The tested build is pinned in
+``tests/constraints-pan-estimator.txt`` (``PINNED_OPENCV_WHEEL``).
+
+Clock skew (applies to any future video-vs-log mismatch detector)
+-----------------------------------------------------------------
+On the match 170123 highlight clips, two independent clip-to-capture-clock
+alignments (segment-manifest interpolation vs. the checkpoint lock time)
+disagreed by 120-719 ms (``MEASURED_CLIP_CAPTURE_SKEW_MS``). Until per-frame
+clock binding lands, a detector that compares an on-screen event with the USB
+HID log (skill move, user catch, controlled-player motion with no matching
+logged press) must treat any event pair closer than ``CLOCK_SKEW_NO_CLAIM_MS``
+as ``no_claim``: it can neither confirm nor deny a match inside that window.
+Use ``within_clock_skew``.
 """
 from __future__ import annotations
 
@@ -63,6 +77,23 @@ ESTIMATOR_VERSION = "qorai-optical-flow-pan/v1"
 BIN_MS = 100
 ROUND_DIGITS = 3
 RATE_UNITS = "percent_of_frame_width_per_second"
+
+# Tested OpenCV wheel (see tests/constraints-pan-estimator.txt). Not enforced at
+# runtime: a different build still runs, but it reports a different sha256.
+PINNED_OPENCV_WHEEL = "opencv-python-headless==5.0.0.93"
+PINNED_OPENCV_VERSION = "5.0.0"
+# sha256(cv2.getBuildInformation()) of that wheel's cp37-abi3-manylinux_2_28_x86_64 build (CI and the box).
+PINNED_OPENCV_BUILD_INFO_SHA256 = "0ef08003c31127b3b5d34410ab13483c511e73b99e278b1a8abd6ddcb265699a"
+
+# Measured clip/capture clock skew on the 170123 highlight clips (min, max), ms.
+MEASURED_CLIP_CAPTURE_SKEW_MS = (120, 719)
+# Video-vs-log events closer than this are no_claim until per-frame clock binding lands.
+CLOCK_SKEW_NO_CLAIM_MS = MEASURED_CLIP_CAPTURE_SKEW_MS[1]
+
+
+def within_clock_skew(video_ms: int, log_ms: int, skew_ms: int = CLOCK_SKEW_NO_CLAIM_MS) -> bool:
+    """True when two events are too close to order or pair given the clock skew: report no_claim."""
+    return abs(int(video_ms) - int(log_ms)) <= skew_ms
 
 FracBox = tuple[float, float, float, float]  # x0, x1, y0, y1 as fractions of the full frame
 
@@ -157,12 +188,31 @@ class PairResult:
     residual_px: float | None = None
 
 
+def opencv_identity() -> dict[str, str]:
+    """``cv2.__version__`` plus a SHA-256 of ``cv2.getBuildInformation()`` (compile-time, stable per wheel)."""
+    try:
+        build = cv2.getBuildInformation()
+    except Exception:
+        build = "unavailable"
+    return {
+        "cv2_version": str(cv2.__version__),
+        "build_info_sha256": hashlib.sha256(str(build).encode("utf-8")).hexdigest(),
+    }
+
+
+def opencv_matches_pin() -> bool:
+    """True on the pinned wheel build. Hash-locked docs only reproduce on that build."""
+    ident = opencv_identity()
+    return ident["cv2_version"] == PINNED_OPENCV_VERSION and ident["build_info_sha256"] == PINNED_OPENCV_BUILD_INFO_SHA256
+
+
 def estimator_sha256(params: PanParams = DEFAULT_PARAMS) -> str:
-    """SHA-256 over the version, the parameters (canonical JSON), and this module's source."""
+    """SHA-256 over the version, the parameters, this module's source, and the OpenCV build identity."""
     src = Path(__file__).read_bytes()
     blob = b"\n".join([
         ESTIMATOR_VERSION.encode("utf-8"),
         json.dumps(params.to_json(), sort_keys=True, separators=(",", ":")).encode("utf-8"),
+        json.dumps(opencv_identity(), sort_keys=True, separators=(",", ":")).encode("utf-8"),
         src,
     ])
     return hashlib.sha256(blob).hexdigest()
@@ -206,6 +256,7 @@ class OpticalFlowPanEstimator:
             "units": RATE_UNITS,
             "bin_ms": BIN_MS,
             "params": self.params.to_json(),
+            "opencv": opencv_identity(),
         }
 
     # -- frame preparation -------------------------------------------------

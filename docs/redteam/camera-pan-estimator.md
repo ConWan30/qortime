@@ -47,7 +47,33 @@ A bin is `no_claim` when **any** frame pair in it is unreadable, or when the bin
 - Estimation is median-based.
 - Every float in the output is rounded to 3 decimals.
 
-`estimator_sha256()` is SHA-256 over the version, the canonical parameter JSON, and the module source. A test checks that two runs give byte-identical JSONL. The cv2 version is deliberately left out of the hash, so CI on another OpenCV build reports the same identity. Pin OpenCV if cross-machine byte identity matters.
+`estimator_sha256()` is SHA-256 over:
+
+- the version;
+- the canonical parameter JSON;
+- `cv2.__version__`;
+- the SHA-256 of `cv2.getBuildInformation()`, which is compile-time and stable per wheel;
+- the module source.
+
+Two OpenCV builds therefore never share a hash. `identity()["opencv"]` records the version and the build digest. A test checks that two runs give byte-identical JSONL, and another checks that changing the OpenCV version or build string changes the hash.
+
+### Pinned OpenCV
+
+The tested wheel is **`opencv-python-headless==5.0.0.93`** (OpenCV 5.0.0, `cp37-abi3-manylinux_2_28_x86_64`). Its `sha256(getBuildInformation())` is `0ef08003c31127b3b5d34410ab13483c511e73b99e278b1a8abd6ddcb265699a`.
+
+- The pin lives in `tests/constraints-pan-estimator.txt` and in the `dev` extra of `pyproject.toml`. CI already installs `.[dev,vision]`, so it gets the pin, and a test checks that the two places agree.
+- To install it locally: `pip install -e ".[dev,vision]" -c tests/constraints-pan-estimator.txt`.
+- The live referee image (`services/referee/Dockerfile`) installs `.[referee,vision]`, so it is unchanged. Neither of those extras carries the exact pin.
+
+The committed red-team doc locks the estimator hash. Its equality test is skipped, with a message, on any other OpenCV build.
+
+With that wheel the estimator hash is `dcb9d149ddd1f81e87b81cd6ac86be00578a6cec7ac39cd50c050958c7e8b14f`. The real-data numbers below were produced before the OpenCV identity was folded into the hash, so they were reported as `e225c50d…`. The code path and the wheel are identical, and the bins are unchanged.
+
+## Clock skew rule for video-vs-log detectors
+
+On these clips, two independent ways of aligning clip time to the capture clock disagree by **120–719 ms**: segment-manifest interpolation and the checkpoint lock time (`MEASURED_CLIP_CAPTURE_SKEW_MS`).
+
+Until per-frame clock binding lands, any video-vs-log mismatch detector must treat an on-screen event and a log event closer than `CLOCK_SKEW_NO_CLAIM_MS` (719 ms) as **`no_claim`**. Use `within_clock_skew()`. Examples of such events are a skill move, a user catch, or controlled-player motion with no matching logged press. Inside that window the detector can neither confirm nor deny a match.
 
 ## Real-data check: match 170123 highlight clips (not committed)
 
