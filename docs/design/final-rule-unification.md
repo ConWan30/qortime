@@ -424,8 +424,8 @@ The clock-seen precondition is removed. The previous draft left the stall undeci
 All of these hold:
 
 1. The screen is the end-of-game menu, by the discriminator in §4.2.
-2. The score is stable: 3 frames over at least 400 ms, confidence at least 0.90 on every frame, and every frame the same score (§4.3).
-3. That menu is the last such menu in the recording. A later contradicting menu, or later live play, leaves the final unconfirmed (§4.4).
+2. The score is stably read: 3 fresh menu frames, spanning at least 400 ms, confidence at least 0.90 on every frame, every frame the same score, and every frame strictly after the latest scorebug read (§4.3).
+3. That menu is the last such menu in the recording. A later contradicting menu leaves the final unconfirmed. A scorebug return resets the streak and the agreed score (§4.4). The evidence cutoff is re-derived from the end screens that remain (§4.6).
 
 The menu score is then the receipt score. `method` is `end_menu_read`, `final_basis` is `end_menu`, `final_confirmed` is true. The official `final_reread` check is `pass` when the claim equals that score. A pass can still become VERIFIED when the other checks pass. The note in §4.5 does not change this.
 
@@ -449,18 +449,21 @@ OPTIONS is the second half, for a picture the pixel test accepts. DualSense OPTI
 
 Residual, accepted with the decision: a halftime screen that is pixel-identical to the six-item end menu, and was not opened by OPTIONS, passes this discriminator. v1 does not put a clock gate behind it.
 
-### 4.3 Stable read
+### 4.3 Stably read
 
-`EndMenuAgreement` (`sidecar/qorcap_endmenu.py:231-261`) already requires 3 consecutive readable frames and a span of at least 400 ms, and it already clears the run when the score changes or a frame is unreadable.
+A menu is stably read when `decide` has 3 fresh menu frames. Fresh means `t_ms` strictly greater than the latest agreed scorebug read. A frame at that same timestamp is not fresh. With no scorebug read, every menu frame is fresh.
 
-v1 adds the confidence rule the agreement object does not implement today. `offer` stores `conf` from the frame that first completes the run (`:251-256`) and later frames update only `until_ms` and `frames` (`:259-260`). The confirm gate is stronger than that stored number:
+On those fresh frames, all of these hold:
 
-* every frame in the run has `conf` ≥ 0.90
-* a readable frame under 0.90 clears the run, the same way an unreadable frame does
-* the object carries `min_conf`, the minimum across the run
-* all frames agree on `(away, home)`
-* `until_ms - t_ms` ≥ 400
 * the run length is at least 3
+* `until_ms - t_ms` ≥ 400
+* every frame has `conf` ≥ 0.90
+* every frame agrees on `(away, home)`
+* the object carries `min_conf`, the minimum across the run
+
+`EndMenuAgreement` (`sidecar/qorcap_endmenu.py:231-261`) already requires 3 consecutive readable frames and a span of at least 400 ms, and it already clears the run when the score changes or a frame is unreadable. It does not know about the scorebug. `offer` stores `conf` from the frame that first completes the run (`:251-256`) and later frames update only `until_ms` and `frames` (`:259-260`). A readable frame under 0.90 clears the run, the same way an unreadable frame does.
+
+A scorebug return resets both the menu streak and the agreed score. Frames already offered, and a stable score already stored, are dropped. The next stable read is built only from frames strictly after that read. `_post_agreed` clears `_end_screen_earliest` (`qorcap_reader.py:1343-1344`) and does not clear `EndMenuAgreement`. The reset is in `decide`, so the tail and the referee re-read do the same thing.
 
 The glyph floor stays what makes a frame readable: `MIN_SCORE = 0.70` and `MIN_MARGIN = 0.20` (`qorcap_endmenu.py:37-38`). 0.90 is the confirm gate on top of a readable frame. A covered-panel corroboration (`CORROB_MIN = 0.55`, `qorcap_endmenu.py:272`) fails 0.90 on every frame, so a covered panel does not confirm.
 
@@ -470,12 +473,10 @@ The referee fallback's `frames >= 2` (`media.py:207`, `:258-259`) is replaced by
 
 ### 4.4 Last menu, and what a failed gate produces
 
-The menu that confirms is the last end-menu agreement in the recording.
+The menu that confirms is a stable read strictly after the latest scorebug read, and it is the last such menu.
 
-* A later end-menu agreement with a different score is a contradicting menu.
-* Later live play is an agreed scorebug row with `t_ms` after the menu's `until_ms` whose score differs from the menu, or whose `clock_s` is an integer greater than 0. A later row that repeats the menu score at `clock_s` 0 is the bug left on a finished screen. It is not live play.
-
-Either one fails the gate. The final is unconfirmed.
+* A later end-menu agreement with a different score is a contradicting menu. The final is unconfirmed at the last locked score.
+* An agreed scorebug read after menu frames have been offered is a scorebug return. It resets the streak and the agreed score, including when `clock_s` is 0. If no stable read follows that read, the final is unconfirmed at that lock.
 
 Failed gates produce one result, on both sides:
 
@@ -562,14 +563,28 @@ The note does not downgrade the verdict. `final_reread` stays `pass`. A VERIFIED
 
 Both sides call `qor_receipt.final_rule.decide`. QorCap already imports `qor_receipt`. This is not `qor_receipt.referee_ai.referee.decide`, which turns integrity errors into a verdict (`referee.py:194`).
 
+Removing the clock gate changes which frames count as end screens. A pixel match that `_accept_final_screen` used to reject for the clock (`qorcap_reader.py:999-1010`) can now be an end screen, and a `final_screen` timeline row from that match now feeds the cutoff. The cutoff is re-derived here. It is not `_end_screen_earliest` left over after `_post_agreed` clears it.
+
 ```text
-decide(screen, frames, locks, later) -> Decision
+decide(screen, frames, locks, end_screens, evidence, later) -> Decision
 ```
 
 * `screen`: `"end_menu"` only after §4.2. `"pause"`, `"halftime"`, `"replay"`, and `"other"` do not confirm.
-* `frames`: the ordered end-menu reads `{t_ms, away, home, conf, ok}` for the candidate run.
-* `locks`: agreed scorebug rows, possibly empty. Used for the last-lock score, the stall gap, and the disagreement note. `clock_s` is not a confirm precondition. `decide` does not require a Q4 row.
-* `later`: `{contradicting_menu, live_play_after}` from the rest of the recording.
+* `frames`: ordered end-menu reads `{t_ms, away, home, conf, ok}`. `decide` keeps a frame only when `t_ms` is strictly greater than the latest lock's `t_ms`. Each lock resets the streak and the agreed score. The confirming run is the fresh suffix after the latest lock.
+* `locks`: agreed scorebug rows, possibly empty. Used for that suffix, the last-lock score, the stall gap, and the disagreement note. `clock_s` is not a confirm precondition. `decide` does not require a Q4 row.
+* `end_screens`: every end-screen timestamp in milliseconds. That is each pixel-match start, each `final_screen` row, and each readable menu frame on an end-screen picture, including screens the clock gate used to drop.
+* `evidence`: clip, haptic, and input rows `{t_ms, kind}`. A scorebug row is a lock, not evidence.
+* `later`: a contradicting end-menu agreement after the fresh stable read. A scorebug return is not this flag. It is a lock, and it resets the run.
+
+`Decision` carries `cutoff_ms` and the evidence rows that count. `cutoff_ms` is not a receipt field. The menu still confirms when the gates pass and no evidence counts. The cutoff does not grant or withhold `final_confirmed`.
+
+Cutoff, computed by `decide` and by nothing else:
+
+* Let `E0` be the earliest `end_screens` timestamp. Let `S` be the latest lock's `t_ms`. When `locks` is empty there is no `S`, and `cutoff_ms` is `E0`.
+* When `S` is present, the cutoff is the earliest end screen strictly after `S`. When no end screen is strictly after `S`, the cutoff falls back to `E0`.
+* When any end screen exists, `cutoff_ms` is that integer. It does not come back as null. With no end screen, `cutoff_ms` is null. Today's `end_screen_evidence_cutoff_ms` (`qorcap_reader.py:1710-1733`) returns null whenever its inputs are missing, and the filter then skips (`:1703`), so late evidence counts. v1 uses the fallback instead of that skip.
+* Evidence counts only when `t_ms < cutoff_ms`. `t_ms >= cutoff_ms` does not count. The comparison is inclusive of the equal timestamp. The code already uses `>=` at `:1704`. The contract keeps that operator.
+* Evidence with `E0 <= t_ms <= S` never counts, including when that timestamp is below `cutoff_ms`. That is the interval from the first end screen through the latest scorebug read, both ends included. A cleared `_end_screen_earliest` does not let a timestamp in that interval through.
 
 `ReaderCore._end_menu`, `tail_final_check`, offline `finalize`, and `reread_final` all call it. `end_menu_fallback` stops being a second rule. The rejection string is an output of a failed gate, not a switch that selects a looser rule.
 
@@ -592,7 +607,7 @@ Plan only. This change does not edit these files.
 | `sidecar/qorcap_reader.py` `on_frame` `:1025-1036` | Keep the OPTIONS short-hold return that happens before `_end_menu`. |
 | `sidecar/qorcap_reader.py` `_end_context` `:970-975`, `_accept_final_screen` `:999-1010` | Stop using them as a precondition for `_end_menu`. They require quarter and clock today. |
 | `sidecar/qorcap_reader.py` `_end_menu` `:1511-1538` | Remove the quarter rejection (`:1515-1517`), the clock rejection (`:1529-1530`), the `end_menu_consistency` refusal (`:1532-1535`), and the tie refusal (`:1536-1538`). Call `decide`. |
-| `sidecar/qorcap_endmenu.py` `EndMenuAgreement.offer` `:242-261` | Track `min_conf`. Every frame in the run has `conf` ≥ 0.90. A lower frame clears the run. `n` stays 3. `min_span_ms` stays 400. |
+| `sidecar/qorcap_endmenu.py` `EndMenuAgreement.offer` `:242-261` | Track `min_conf`. Every frame in the run has `conf` ≥ 0.90. A lower frame clears the run. `n` stays 3. `min_span_ms` stays 400. Frames at or before the latest scorebug read are not offered into the confirming run. |
 | `sidecar/qorcap_reader.py` `end_menu_consistency` `:1646-1657` | No longer a refusal. The delta feeds the sidecar note. `end_menu_delta_corroborated` (`:1660-1707`) is not required to confirm. |
 | `sidecar/qorcap_reader.py` `_note_end_menu_disagreement` `:1576-1595` | A later different menu fails the last-menu gate. Receipt score becomes the last lock, `final_confirmed` false. |
 | `sidecar/qorcap_match.py` `tail_final_check` `:2495` | Stop `core.timeline = live`. Pass those rows to `decide` as locks. Do not break at the first `end_menu` (`:2520-2521`); scan the window. |
@@ -603,6 +618,8 @@ Plan only. This change does not edit these files.
 | `qor_receipt/review/engine.py` `_final_check` `:799-828` | A confirmed menu is `pass` when the claim equals the menu score, including a stall and a multi-play delta. A failed gate with a lock is `partial` at the last lock. A note does not flip `pass` to `partial`. Score mismatch stays `fail` (`:807-809`). |
 | `qor_receipt/review/engine.py` `_result_from_reread` `:831-847` | Write `decide`'s boolean. The `:840` test `is not False` becomes that boolean. Missing is false. |
 | `qor_receipt/referee_ai/integrity.py` `check_final` `:189-202` | An adopted end menu more than one legal step past the last scorebug is not an error. `:201` is that error today, and `referee.py:184` and `:189` both append it. Leaving it in place would FAIL a multi-play menu and downgrade the verdict. `decide` does not adopt a menu that is below the last lock, so the signed score equals that lock and `check_final` sees a match. A backward menu posted anyway still errors. |
+| `sidecar/qorcap_reader.py` `end_screen_evidence_cutoff_ms` `:1710-1733`, filter `:1703-1704` | Replaced by `decide`'s cutoff. Null no longer means "all evidence counts". Fallback is the earliest end screen. The test stays `t_ms >= cutoff_ms`. Evidence from the first end screen through the latest scorebug read is out. | 
+| `sidecar/qorcap_reader.py` `_post_agreed` `:1343-1344` | Still clears the running `_end_screen_earliest` pointer. Also clears the menu streak and the agreed score. `decide` re-derives the cutoff from `end_screens`, so a null pointer is not a null cutoff. | 
 | `qor_receipt/match_index/build.py`, `viewer_template.html` `paintFinal`, `publish.py` `_card` | Read `final.rule.json` and show `note` as in §4.5. Gold stays. |
 
 `post_final_tail` is unchanged.
@@ -1000,15 +1017,17 @@ A hash mismatch fails the test. The two pause cases also have pixel fixtures bes
       "screen": "end_menu",
       "options_hold_ms": null,
       "locks": [
-        {"t_ms": 1000, "away": 10, "home": 7, "quarter": 4, "clock_s": 0}
+        {"t_ms": 1000, "away": 10, "home": 7, "quarter": 4, "clock_s": 0},
+        {"t_ms": 9000, "away": 10, "home": 7, "quarter": 4, "clock_s": 45}
       ],
       "frames": [
         {"t_ms": 5000, "away": 10, "home": 7, "conf": 0.95, "ok": true},
         {"t_ms": 5400, "away": 10, "home": 7, "conf": 0.95, "ok": true},
         {"t_ms": 5800, "away": 10, "home": 7, "conf": 0.95, "ok": true}
       ],
+      "end_screens": [5000],
       "later_menu": null,
-      "later_live_play": {"t_ms": 9000, "away": 10, "home": 7, "clock_s": 45},
+      "later_live_play": false,
       "expect": {
         "adopt_menu": false,
         "final_confirmed": false,
@@ -1082,14 +1101,140 @@ A hash mismatch fails the test. The two pause cases also have pixel fixtures bes
         "home": null,
         "method": "last_scorebug_read_unconfirmed",
         "review": "fail",
-        "note": null
+        "note": null,
+        "cutoff_ms": null
+      }
+    },
+    {
+      "id": "scorebug-return-resets-agreed-score",
+      "screen": "end_menu",
+      "options_hold_ms": null,
+      "locks": [
+        {"t_ms": 10000, "away": 10, "home": 7, "quarter": 4, "clock_s": 0}
+      ],
+      "frames": [
+        {"t_ms": 3000, "away": 3, "home": 0, "conf": 0.95, "ok": true},
+        {"t_ms": 3500, "away": 3, "home": 0, "conf": 0.95, "ok": true},
+        {"t_ms": 4000, "away": 3, "home": 0, "conf": 0.95, "ok": true},
+        {"t_ms": 20000, "away": 10, "home": 7, "conf": 0.95, "ok": true},
+        {"t_ms": 20500, "away": 10, "home": 7, "conf": 0.95, "ok": true},
+        {"t_ms": 21000, "away": 10, "home": 7, "conf": 0.95, "ok": true}
+      ],
+      "end_screens": [2000, 20000],
+      "later_menu": null,
+      "later_live_play": false,
+      "expect": {
+        "adopt_menu": true,
+        "final_confirmed": true,
+        "away": 10,
+        "home": 7,
+        "method": "end_menu_read",
+        "review": "pass",
+        "note": null,
+        "cutoff_ms": 20000,
+        "downgrades_verdict": false
+      }
+    },
+    {
+      "id": "menu-frame-equal-to-scorebug-not-fresh",
+      "screen": "end_menu",
+      "options_hold_ms": null,
+      "locks": [
+        {"t_ms": 5000, "away": 10, "home": 7, "quarter": 4, "clock_s": 0}
+      ],
+      "frames": [
+        {"t_ms": 5000, "away": 10, "home": 7, "conf": 0.95, "ok": true},
+        {"t_ms": 5400, "away": 10, "home": 7, "conf": 0.95, "ok": true},
+        {"t_ms": 5800, "away": 10, "home": 7, "conf": 0.95, "ok": true}
+      ],
+      "end_screens": [5000],
+      "later_menu": null,
+      "later_live_play": false,
+      "expect": {
+        "adopt_menu": false,
+        "final_confirmed": false,
+        "away": 10,
+        "home": 7,
+        "method": "last_scorebug_read_unconfirmed",
+        "review": "partial",
+        "note": null,
+        "cutoff_ms": 5000
+      }
+    },
+    {
+      "id": "cutoff-dead-zone-and-inclusive-equal",
+      "screen": "end_menu",
+      "options_hold_ms": null,
+      "locks": [
+        {"t_ms": 10000, "away": 10, "home": 7, "quarter": 4, "clock_s": 0}
+      ],
+      "frames": [
+        {"t_ms": 20000, "away": 10, "home": 7, "conf": 0.95, "ok": true},
+        {"t_ms": 20500, "away": 10, "home": 7, "conf": 0.95, "ok": true},
+        {"t_ms": 21000, "away": 10, "home": 7, "conf": 0.95, "ok": true}
+      ],
+      "end_screens": [2000, 20000],
+      "evidence": [
+        {"id": "before-first-screen", "t_ms": 1500, "kind": "input_activity"},
+        {"id": "at-first-screen", "t_ms": 2000, "kind": "input_activity"},
+        {"id": "between-screen-and-scorebug", "t_ms": 5000, "kind": "haptic"},
+        {"id": "at-scorebug", "t_ms": 10000, "kind": "score_change_clip"},
+        {"id": "after-scorebug-before-menu", "t_ms": 12000, "kind": "input_activity"},
+        {"id": "at-fresh-cutoff", "t_ms": 20000, "kind": "input_activity"},
+        {"id": "after-cutoff", "t_ms": 21000, "kind": "haptic"}
+      ],
+      "later_menu": null,
+      "later_live_play": false,
+      "expect": {
+        "adopt_menu": true,
+        "final_confirmed": true,
+        "away": 10,
+        "home": 7,
+        "method": "end_menu_read",
+        "review": "pass",
+        "note": null,
+        "cutoff_ms": 20000,
+        "evidence_counts": ["before-first-screen", "after-scorebug-before-menu"],
+        "downgrades_verdict": false
+      }
+    },
+    {
+      "id": "cutoff-falls-back-to-earliest-end-screen",
+      "screen": "end_menu",
+      "options_hold_ms": null,
+      "locks": [
+        {"t_ms": 10000, "away": 10, "home": 7, "quarter": 4, "clock_s": 11}
+      ],
+      "frames": [
+        {"t_ms": 3000, "away": 10, "home": 7, "conf": 0.95, "ok": true},
+        {"t_ms": 3500, "away": 10, "home": 7, "conf": 0.95, "ok": true},
+        {"t_ms": 4000, "away": 10, "home": 7, "conf": 0.95, "ok": true}
+      ],
+      "end_screens": [2000],
+      "evidence": [
+        {"id": "before-first-screen", "t_ms": 1500, "kind": "input_activity"},
+        {"id": "at-first-screen", "t_ms": 2000, "kind": "input_activity"},
+        {"id": "after-scorebug", "t_ms": 12000, "kind": "input_activity"}
+      ],
+      "later_menu": null,
+      "later_live_play": false,
+      "expect": {
+        "adopt_menu": false,
+        "final_confirmed": false,
+        "away": 10,
+        "home": 7,
+        "method": "last_scorebug_read_unconfirmed",
+        "review": "partial",
+        "note": null,
+        "cutoff_ms": 2000,
+        "evidence_counts": ["before-first-screen"]
       }
     }
   ]
 }
 ```
 
-The stall case's three frames are the gate. `reported_frames: 485` records the issue's count. An implementation that checks only the first frame's confidence fails a sibling the runner adds by setting the middle frame to 0.89, which is the `conf-below-0-90-on-one-frame` case.
+The stall case's three frames are the gate. `reported_frames: 485` records the issue's count. An implementation that checks only the first frame's confidence fails a sibling the runner adds by setting the middle frame to 0.89, which is the `conf-below-0-90-on-one-frame` case. A case that omits `end_screens` uses the `t_ms` of its `ok` frames when `screen` is `end_menu`, and an empty list otherwise. `scorebug-return-resets-agreed-score` confirms 10–7 from the frames after the lock and drops the 3–0 run. `menu-frame-equal-to-scorebug-not-fresh` has its first frame at the lock time, so only two frames are fresh. `cutoff-dead-zone-and-inclusive-equal` keeps evidence before the first end screen and evidence strictly between the scorebug and the fresh menu, and drops every timestamp from the first end screen through the scorebug, plus every timestamp `>= cutoff_ms`. `cutoff-falls-back-to-earliest-end-screen` has no end screen after the lock, so `cutoff_ms` is 2000 and the menu frames before the lock do not confirm.
 
 ## 8. Schema
 
