@@ -137,6 +137,33 @@ def test_v0311_challenge_fixtures_partials():
     assert versions["1"]["dark_menu_bright_frac"] == versions["2"]["dark_menu_bright_frac"]
     assert versions["1"]["dark_menu_bright_frac"] == [th.dark_menu_bright_min, th.dark_menu_bright_max]
     assert set(versions) == {"1", "2"}
+    motion = COMPAT["motion_rules"]
+    from qor_receipt.review.motion import (
+        MOTION_BASIS_V3,
+        MOTION_BIN_MS,
+        MOTION_HZ,
+        MOTION_MAX_LAG,
+        MOTION_MIN_BINS,
+        MOTION_RULE,
+        MOTION_SAMPLE_MAX_SEGMENTS,
+        MOTION_SIZE,
+    )
+    assert motion["current"] == MOTION_RULE == 3
+    assert motion["floor_permille"] == R.MOTION_MIN_PERMILLE == 300
+    assert motion["min_bins"] == MOTION_MIN_BINS == 20
+    assert motion["max_lag_bins"] == MOTION_MAX_LAG == 3
+    assert motion["bin_ms"] == MOTION_BIN_MS == 1000
+    assert motion["sample_max_segments"] == MOTION_SAMPLE_MAX_SEGMENTS == 24
+    assert motion["sample_hz"] == MOTION_HZ == 10
+    assert motion["sample_size"] == list(MOTION_SIZE) == [640, 360]
+    assert motion["clock"] == "fragment_pts"
+    assert motion["rule_versions"]["3"]["basis"] == MOTION_BASIS_V3
+    assert "motion-rule/v3" in MOTION_BASIS_V3
+    assert set(motion["rule_versions"]["3"]["excluded_keys"]) == {
+        "scorebug_absent", "end_menu", "final_screen", "challenge_pause", "total"}
+    js = (ROOT / "verify" / "verify.js").read_text(encoding="utf-8")
+    assert "MOTION_MIN = 300" in js
+    assert "motion-rule/v3" in js
     assert rules["menu_leave_buttons"] == [b for b in CH.ALPHABET if b in CH.MENU_LEAVE]
     receipt = json.loads((ROOT / "schema" / "receipt.v0.json").read_text(encoding="utf-8"))
     rule_enum = receipt["properties"]["challenges"]["items"]["properties"]["result"]["oneOf"][1]["properties"]["rule"]["enum"]

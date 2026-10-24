@@ -1,8 +1,10 @@
 """Synthetic QorCap bundle with a real fragmented MP4 (ffmpeg) for referee-service tests.
 
-40 s of 640x360 video in 2 s fMP4 fragments. "Busy" seconds have a fast-moving block and lots of controller
-reports; "still" seconds are static with few reports (so the referee's motion correlation is high). Three
-challenge windows show a Madden-like dark pause menu right after an OPTIONS press.
+96 s of 640x360 video in 2 s fMP4 fragments (48 media segments). "Busy" seconds have a fast-moving block
+and lots of controller reports; "still" seconds are static with few reports (so the referee's motion
+correlation is high). Three challenge windows show a Madden-like dark pause menu right after an OPTIONS
+press. The length leaves media unrequested after motion rule v3 takes a spread of 24 fragments, the
+recorded tail, the challenge windows, and the random spot-check.
 """
 from __future__ import annotations
 
@@ -19,7 +21,7 @@ from qor_receipt.keys import SoftwareKey
 
 W0 = 1_792_000_000_000
 FPS = 30
-SECS = 40
+SECS = 96
 SEG_S = 2
 # (phase, issued offset ms, OPTIONS press video ms, pause on video ms, pause off video ms)
 CHALLENGES = [("kickoff", 3_000, 4_800, 5_000, 7_000), ("halftime", 15_000, 16_800, 17_000, 19_000),

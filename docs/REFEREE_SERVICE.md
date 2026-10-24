@@ -32,14 +32,16 @@ laptop (QorCap)                                   referee service (official key)
    official_challenges, anchors)                   laptop's own keys.  Reject on any error (HTTP 422).
                                     ◀──────────── commit = H(all of the above); THEN draw the plan:
                                                    init segment(s), recorded tail (last 240 s), segments around
-                                                   each challenge's OPTIONS press, 16 random media segments
+                                                   each challenge's OPTIONS press, a spread of at most 24 media
+                                                   fragments for motion, 16 random media segments
 2 PUT /v1/submissions/{id}/segments/{seq} ─────▶ stream-hash each fMP4 segment; must equal the committed
   (raw bytes from video.mp4 at manifest offset)    sha256 + length (stored only if needed for decoding)
 3 POST …/review ───────────────────────────────▶ decode tail with ffmpeg → QorCap's own ReaderCore (pinned
                                                    sidecar: scorebug + end-of-game menu) from scratch, no laptop
                                                    timeline; compare with the claimed final; re-run challenge
                                                    patterns from raw inputs.jsonl + pause seen on its own decode;
-                                                   motion correlation over decoded seconds; then sign (or refuse)
+                                                   motion rule v3 over the spread sample (not the tail); then sign
+                                                   (or refuse)
 4 POST …/player-signature (device key) ────────▶ receipt complete; segments deleted
 ```
 
@@ -57,7 +59,9 @@ Same `qor-receipt/v0`, with:
 - `checkpoints` are the laptop's live countersigned chain; in review mode both verifiers check them under
   `review.capture_referee.pubkey` (still gap ≤ 10 s, skew ≤ 3 s).
 - `challenges[*].issuer` = signed `qortime-challenge/v1` token; `result` is the referee's own re-run.
-- `signals.motion_permille` is computed by the referee (`signals.motion_basis` says how).
+- `signals.motion_permille` is computed by the referee (`signals.motion_basis` says how). Motion rule v3
+  writes `motion-rule/v3` there. Excluded-bin counts stay in `review.checks.motion.detail` and in
+  `schema/contracts/compat.json`. `receipt.v0.json` has no new fields.
 
 ## Challenge latency (rule v1 and rule v2)
 
@@ -120,6 +124,39 @@ a delay past 2500 ms. What a constant-delay relay under 2500 ms can still do: sh
 same offset on every challenge. That offset is inside the ceiling and inside the jitter window.
 The pattern is still unpredictable and issued at runtime, so the relay has to be a live delayed
 copy, not a recording made earlier.
+
+## Motion correlation (rule v3)
+
+New reviews score motion on live-play seconds. The rule id is 3. It is not `result.rule` and not
+`challenge_rule`. Those stay 1 or 2, because `receipt.v0.json` freezes that enum. Older receipts
+keep the integer they were signed with. Both verifiers still only compare that integer with 300.
+They do not recompute it, so a rule-v1 or rule-v2 receipt verifies exactly as it did before.
+
+The sample is a deterministic spread of at most 24 media fragments across the match, chosen from
+the manifest (`seq`, `offset`, `mono_ms` only). At QorCap's ~2 s fragments that is about 48 s,
+decoded at 10 Hz and 640×360. That is the whole motion decode budget. The 240 s tail is still
+decoded for the final re-read and is not added to the correlation.
+
+Frame time is the fragment PTS clock (the same `tfdt` fit as challenge rule v2). A 10 Hz frame is
+mapped through the nominal 30 fps frame so it lands on that clock. A fragment with no `tfdt` keeps
+the segment close stamp for that fragment only.
+
+The controller series is still the logged report count per second. A second with no reports is 0.
+It is not dropped. The lag search is still 0..3 one-second bins, now paired by absolute second
+rather than by list index, because the sample is not one contiguous run. Fewer than 20 bins after
+exclusions is not a score. The floor stays 300.
+
+A bin is excluded only when the referee measured one of these on the frames it decoded:
+
+- scorebug absent: the vendored reader returns `layout_unknown`, and only after this sample has
+  produced one ok read. A second needs at least half of its classified frames absent.
+  `frame_too_small` is not absence.
+- end menu or final screen, from the pinned sidecar readers when they load. Without the sidecar
+  those two screens are not excluded.
+- a challenge pause span already measured on the challenge re-run. The span is the menu the
+  detector held, not the 90 s issue window, and not every dark frame in the match.
+
+`timeline.jsonl`, a `bundle.json` field, or any other client label cannot add a bin to that set.
 
 ## Verdict rules (Python `qor_receipt/receipt.py` = JS `verify/verify.js`)
 
@@ -215,7 +252,7 @@ The transparency log and the known-install-key list persist on the Railway volum
 - To rotate, set a new seed the same way, add the new allowlist entry and retire the old one (`TRUSTED_REFEREES.md`).
 
 Cost: one small always-on Railway container (≈0.25–0.5 vCPU idle-light, 512 MB–1 GB RAM while decoding).
-Ingress is free on Railway; a spot-check is ~150–300 MB per match (mostly the 240 s tail), `--full` 1–3 GB.
+Ingress is free on Railway; a spot-check is ~150–300 MB per match (mostly the 240 s tail, plus at most 24 fragments for the motion sample), `--full` 1–3 GB.
 Review CPU is ~10–60 s per match. Egress is tiny (JSON). Stripe is not involved.
 
 Local run:

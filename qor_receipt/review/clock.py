@@ -127,7 +127,24 @@ def capture_clock(segments: list[dict[str, Any]]) -> tuple[float, float]:
 
 
 def frame_mono_ms(clock: tuple[float, float], pts0_ms: float, n: int, hz: float) -> int:
-    """Capture mono time of decoded frame ``n`` in a run whose first sample PTS is ``pts0_ms``."""
+    """Capture mono time of decoded frame ``n`` in a run whose first sample PTS is ``pts0_ms``.
+
+    This treats one decoded frame as one media frame. That is the challenge-rule v2 clock at
+    30 fps. Do not use it for a decoder that runs at a different rate.
+    """
     intercept, slope = clock
     frame = (pts0_ms + n * 1000.0 / hz) * (hz / 1000.0)
+    return int(round(intercept + slope * frame))
+
+
+def motion_mono_ms(clock: tuple[float, float], pts0_ms: float, n: int, hz: float) -> int:
+    """Capture mono time of motion-sample frame ``n``.
+
+    Media time is ``pts0_ms + n * 1000/hz``. That time is mapped through the nominal 30 fps
+    frame the manifest fit uses, so a 10 Hz sample lands on the same clock as a 30 Hz frame
+    with the same PTS. At 30 fps this matches ``frame_mono_ms``.
+    """
+    intercept, slope = clock
+    media_ms = pts0_ms + n * 1000.0 / hz
+    frame = media_ms / _NOMINAL_MS
     return int(round(intercept + slope * frame))

@@ -11,7 +11,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
 
@@ -125,6 +125,26 @@ def sidecar_core_factory(sidecar_dir: str | None = None):
         return ReaderCore(post, AutoProfileReader(make_reader(), prep=prep), AgreementWindow(), PauseDetector(),
                           detect_final, final_screen_detector=madden_final_screen, end_menu_reader=EndMenuReader())
     return factory
+
+
+def motion_screen_detectors(sidecar_dir: str | None = None):
+    """End-menu and final-screen readers from the pinned QorCap sidecar, or ``(None, None)``.
+
+    Motion exclusions call these on the referee's own frames. A missing sidecar or a missing
+    template pack means those two screens are not measured, so they are not excluded. The
+    scorebug reader does not live here: it is vendored and always available.
+    """
+    d = sidecar_dir or os.getenv("QORCAP_SIDECAR")
+    if not d or not (Path(d) / "qorcap_endmenu.py").exists() or not (Path(d) / "qorcap_reader.py").exists():
+        return None, None
+    if d not in sys.path:
+        sys.path.insert(0, d)
+    try:
+        from qorcap_endmenu import EndMenuReader  # type: ignore
+        from qorcap_reader import madden_final_screen  # type: ignore
+        return EndMenuReader(), madden_final_screen
+    except OSError:
+        return None, None
 
 
 def sidecar_standard_reader(sidecar_dir: str | None = None):
@@ -291,6 +311,8 @@ class PauseScan:
     max_lower: float = 8.0
     bright_min: float = 0.005
     bright_max: float = 0.05
+    # [onset_ms, last paused frame]. Times are whatever the caller fed in (wall time on the challenge scan).
+    spans: list[tuple[int, int]] = field(default_factory=list)
 
 
 def scan_pause(frames: Iterable[tuple[int, Any]], detector=None) -> PauseScan:
@@ -300,20 +322,36 @@ def scan_pause(frames: Iterable[tuple[int, Any]], detector=None) -> PauseScan:
     det = detector or PauseDetector()
     th = det.th
     samples: list[dict[str, Any]] = []
+    spans: list[tuple[int, int]] = []
+    open_span: list[int] | None = None
     error = None
     try:
         for t, img in frames:
-            det.update(int(t), img)
+            t = int(t)
+            det.update(t, img)
             f = det.last
-            samples.append({"t_ms": int(t),
+            samples.append({"t_ms": t,
                             "full_luma": round(float(f.get("full_luma", 0.0)), 2),
                             "lower_luma": round(float(f.get("lower_luma", 0.0)), 2),
                             "bright_frac": round(float(f.get("bright_frac", 0.0)), 4)})
+            if det.paused:
+                if open_span is None:
+                    open_span = [det.onsets[-1] if det.onsets else t, t]
+                else:
+                    open_span[1] = t
+            elif open_span is not None:
+                spans.append((open_span[0], open_span[1]))
+                open_span = None
     except Exception as e:
         error = f"{type(e).__name__}: {e}"
+    if error:
+        spans = []
+    elif open_span is not None:
+        spans.append((open_span[0], open_span[1]))
     return PauseScan(onsets=[] if error else list(det.onsets), frames_decoded=len(samples), samples=samples,
                      error=error, max_luma=float(th.dark_menu_max_luma), max_lower=float(th.dark_menu_max_lower),
-                     bright_min=float(th.dark_menu_bright_min), bright_max=float(th.dark_menu_bright_max))
+                     bright_min=float(th.dark_menu_bright_min), bright_max=float(th.dark_menu_bright_max),
+                     spans=spans)
 
 
 def pause_onsets(frames: Iterable[tuple[int, Any]], detector=None) -> list[int]:
