@@ -5,7 +5,7 @@
 // these constants when it decides VERIFIED / PARTIAL / FAIL / SELF_ATTESTED.
 // Porting frame_bind_status into the browser is a follow-up.
 
-export const FRAME_BIND_STATUSES = ["verified", "missing", "stripped", "broken"];
+export const FRAME_BIND_STATUSES = Object.freeze(["verified", "missing", "stripped", "broken"]);
 export const FRAME_BIND_VERIFIED = FRAME_BIND_STATUSES[0];
 
 // True only for a string primitive equal to FRAME_BIND_VERIFIED.

@@ -66,8 +66,9 @@ the security argument (no pre-knowledge, HID + video pause 0–600 ms after the 
 ## 4. Checkpoint chain
 
 The agent sends `cp = {seq, t_ms, frames_hash, input_hash, prev}` every ~4 s, with `hash = SHA-256(JCS(cp))`. It is
-chained from `prev = 64×"0"`, and the request is signed by the player key. `frames_hash` is the SHA-256 over the
-SHA-256 values of the window's frames. A per-frame PTS binding, when a bundle has one, is the optional `frames.jsonl`
+chained from `prev = 64×"0"`, and the request is signed by the player key. `frames_hash` is `SHA-256(JCS(qorcap))`,
+the checkpoint's `qorcap` object (`check_checkpoints` requires `frames_hash == sha256_hex(qorcap)` and
+`hash == sha256_hex({seq, t_ms, frames_hash, input_hash, prev})`). A per-frame PTS binding, when a bundle has one, is the optional `frames.jsonl`
 sidecar in §7, outside this receipt. `input_hash` is the SHA-256 of the JCS of the window's HID events.
 The referee checks seq/prev/hash, then signs
 `JCS({type:"checkpoint", match_id, role, hash, referee_ts_ms})`.
@@ -122,7 +123,8 @@ that PTS to the capture clock. `au_sha256` is the SHA-256 of the encoded video a
 A segment that is not fully bound is one `align_gap` line: `seg`, `from_frame`, `samples`, `bound`, and `reason`.
 Coverage is `bound` of `samples`. The sample span is `[from_frame, from_frame + samples)`. Samples in that span
 without a frame row are the gap. `reason` is `pts_regression`, `composition_offset`, `sample_pes_mismatch`,
-`clock_lost`, or `unreadable`.
+`clock_lost`, or `unreadable`. A segment with no `align_gap` must have contiguous frame indexes, so its bound
+frame count equals its sample count. A hole, or a return to an earlier `seg` after a later one, is broken.
 
 `readers.json` (`qorcap-readers/v0`) is one closed object (`additionalProperties` false): hashes of the scorebug
 and vision reader code and packs, plus a `runtimes` array of the builds that produced the reads (ffmpeg and cv2
@@ -148,9 +150,12 @@ re-verify if it does not match that result (`frame_bind_result_ok(bundle, result
 trust a caller-supplied result. A copy of a real result compares equal; that still requires the bundle bytes.
 
 * **verified** — every checkpoint has `frame_bind`, seq 0 has `readers`, the files those commitments require are
-  present, and the hash chain, PTS order, gap coverage, and schemas check. Successive frame rows have strictly
-  increasing `pts`. `readers` `state: "unbound"` with no `readers.json` can still be verified: that is a frame
-  binding with no reader-identity claim.
+  present, and the hash chain, PTS order, gap coverage, and schemas check. The checkpoint chain is recomputed from
+  the bytes: `seq` is `0..n-1`, `prev` links from 64 `0` characters, `frames_hash` is `SHA-256(JCS(qorcap))`, and
+  `hash` is `SHA-256(JCS({seq, t_ms, frames_hash, input_hash, prev}))`. `readers` `sha256` is the SHA-256 of the
+  `readers.json` bytes (JCS plus one LF). Successive frame rows have strictly increasing `pts` and non-decreasing
+  `seg`. `readers` `state: "unbound"` with no `readers.json` can still be verified: that is a frame binding with
+  no reader-identity claim. A frames.jsonl with no frame row is broken.
 * **missing** — no `frame_bind`, no `readers` on seq 0, and neither sidecar file. missing does not prove binding was never enabled.
   A complete strip and reseal is indistinguishable from never-enabled at this verifier. Only a
   referee signature over a checkpoint hash that still contained the commitment can show that removal, and this
@@ -160,7 +165,11 @@ trust a caller-supplied result. A copy of a real result compares equal; that sti
   `readers.json` present without its commitment; a `frame_bind` or readers-hash commitment whose file is absent;
   or `readers.json` beside `state: "unbound"`.
 * **broken** — the commitments and the files they require are present, and the hash chain, PTS monotonicity, gap
-  coverage, or a schema check fails. A checkpoints file that cannot be parsed, and any other shape, is broken.
+  coverage, or a schema check fails. That includes a `frames_hash`, body `hash`, `prev`, or `seq` that does not
+  match the bytes, a frame-index hole with no `align_gap`, interleaved segments, a header and no frame row, or a
+  duplicate JSON key (the same key twice; NaN and Infinity too). A checkpoints file that cannot be parsed, a
+  symlink, a zip member whose name is not exactly `checkpoints.jsonl`, `frames.jsonl`, or `readers.json`, and any
+  other shape, is broken. Over a size cap is broken.
 
 missing and stripped are no claim. broken is no claim. The status is advisory. It is not an input to `VERIFIED`,
 `PARTIAL`, `FAIL`, or `SELF_ATTESTED`.
@@ -171,7 +180,15 @@ count as that measurement. missing, stripped, broken, any other value, or any ev
 claim. There is no fixed-fps skew formula. 719 ms is an observed maximum across 3 clips in one session. It is
 not a limit.
 
-`verify/verify.js` does not walk these files. `verify/frame-bind-status.js` exports the same status set and
+`frames.jsonl` is a bundle meta file, so the referee upload counts it toward the same 96 MiB budget as
+`read_meta_zip` (`MAX_META_BYTES`). At about 150–200 bytes a frame and 30 frames a second, that is about 20 MB per
+hour. A long capture can cross that budget and be refused before a receipt verdict. `verify_frame_bind` uses that
+same 96 MiB cap on the bundle and on each member, read with a bounded stream so a declared or inflated member
+cannot grow past it. A line over 1 MiB, more than 1,000,000 rows, or more than 64 zip members is broken. A
+directory member that is a symlink is broken. None of these caps is a receipt verdict.
+
+`verify/verify.js` does not walk these files. `verify/frame-bind-status.js` exports the same status set, frozen,
+and
 `isFrameBindVerified`, which is true only for a string primitive equal to the verified constant. It does not
 decide a receipt and does not recompute a bundle. Porting `verify_frame_bind` into the browser verifier is a
 follow-up.

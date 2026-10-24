@@ -23,6 +23,7 @@
     "canonical_json": "RFC 8785 JCS, integers only (|n| <= 2^53-1), no floats",
     "genesis": "0000000000000000000000000000000000000000000000000000000000000000",
     "segment_link": "head_n = sha256(JCS({prev, seq, sha256}))",
+    "frames_hash": "sha256(JCS(qorcap))",
     "checkpoint_hash": "sha256(JCS({seq, t_ms, frames_hash, input_hash, prev}))",
     "countersign_payload": "JCS({type:'checkpoint', match_id, role, hash, referee_ts_ms})",
     "signature": "Ed25519 over JCS(receipt minus signatures); {key_id, sig}; key_id = 16 hex"

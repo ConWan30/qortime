@@ -27,8 +27,9 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-from qor_receipt.checkpoints import GENESIS
+from qor_receipt.checkpoints import GENESIS, body_of
 from qor_receipt.jcs import canonicalize, sha256_hex
+from qor_receipt.review.policy import MAX_META_BYTES
 
 # Spec order. These four values are plain str objects. Do not wrap them in Enum.
 FRAME_BIND_STATUSES = ("verified", "missing", "stripped", "broken")
@@ -37,6 +38,13 @@ _MISSING = FRAME_BIND_STATUSES[1]
 _STRIPPED = FRAME_BIND_STATUSES[2]
 _BROKEN = FRAME_BIND_STATUSES[3]
 _BUNDLE_MAGIC = b"qor-frame-bind-bundle/v0\n"
+# Same byte budget as read_meta_zip. frames.jsonl counts against it on upload.
+MAX_BUNDLE_BYTES = MAX_META_BYTES
+MAX_MEMBER_BYTES = MAX_META_BYTES
+MAX_ZIP_MEMBERS = 64
+MAX_LINE_BYTES = 1024 * 1024
+MAX_ROWS = 1_000_000
+_SYMLINK_MODE = 0o120000
 
 SCHEMA = "qorcap-frame-bind/v0"
 READERS_SCHEMA = "qorcap-readers/v0"
@@ -48,8 +56,11 @@ _MEMBER_ORDER = (CHECKPOINTS_FILE, FRAMES_FILE, READERS_FILE)
 PATH_PATTERN = (
     r"^(?!.*\.(?:[Kk][Ee][Yy]|[Pp][Ee][Mm]|[Pp]12|[Pp][Ff][Xx])$)"
     r"(?!.*(?:^|/)[Kk][Ee][Yy][Ss](?:/|$))"
+    r"(?!.*(?:^|/)[Ss][Ee][Cc][Rr][Ee][Tt][Ss]?(?:/|$))"
+    r"(?!.*(?:^|/)[^/]*_[Kk][Ee][Yy](?:\.[^/.]+)?$)"
     r"(?:[A-Za-z0-9_][A-Za-z0-9_.+-]*/)*[A-Za-z0-9_][A-Za-z0-9_.+-]*$"
 )
+_FORBIDDEN_SEGMENTS = frozenset({"keys", "secret", "secrets"})
 _PATH_RE = re.compile(PATH_PATTERN)
 _RUNTIME_ID_RE = re.compile(r"^[A-Za-z0-9._+-]{1,80}$")
 _HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -195,20 +206,25 @@ def _make_result(status: object, raw: bytes, coverage: tuple[FrameBindSegment, .
 def _open_bundle(bundle: str | Path | bytes | bytearray) -> tuple[bytes, dict[str, bytes]]:
     if isinstance(bundle, (bytes, bytearray)):
         raw = bytes(bundle)
+        if len(raw) > MAX_BUNDLE_BYTES:
+            raise ValueError("bundle bytes exceed the cap")
         files = _files_from_bytes(raw)
         if files is None:
             raise ValueError("bundle bytes are not a frame-bind image or zip")
         return raw, files
     path = Path(bundle)
+    if path.is_symlink():
+        raise ValueError("symlink")
     if path.is_dir():
-        files: dict[str, bytes] = {}
-        for name in _MEMBER_ORDER:
-            child = path / name
-            if child.is_file():
-                files[name] = child.read_bytes()
-        return frame_bind_bundle_bytes(files), files
+        files = _files_from_dir(path)
+        raw = frame_bind_bundle_bytes(files)
+        if len(raw) > MAX_BUNDLE_BYTES:
+            raise ValueError("bundle image exceeds the cap")
+        return raw, files
     if path.is_file():
-        raw = path.read_bytes()
+        raw = _read_path_limited(path, MAX_BUNDLE_BYTES)
+        if raw is None:
+            raise ValueError("bundle file exceeds the cap")
         files = _files_from_bytes(raw)
         if files is None:
             raise ValueError("bundle file is not a frame-bind image or zip")
@@ -216,7 +232,52 @@ def _open_bundle(bundle: str | Path | bytes | bytearray) -> tuple[bytes, dict[st
     raise ValueError("bundle path is missing")
 
 
+def _files_from_dir(path: Path) -> dict[str, bytes]:
+    files: dict[str, bytes] = {}
+    total = 0
+    for name in _MEMBER_ORDER:
+        child = path / name
+        if child.is_symlink():
+            raise ValueError("symlink")
+        if not child.is_file():
+            continue
+        size = child.stat().st_size
+        if size > MAX_MEMBER_BYTES or total + size > MAX_BUNDLE_BYTES:
+            raise ValueError("member exceeds the cap")
+        payload = _read_path_limited(child, size)
+        if payload is None:
+            raise ValueError("member exceeds the cap")
+        total += len(payload)
+        files[name] = payload
+    return files
+
+
+def _read_path_limited(path: Path, limit: int) -> bytes | None:
+    if path.stat().st_size > limit:
+        return None
+    with path.open("rb") as src:
+        return _read_limited(src, limit)
+
+
+def _read_limited(src: Any, limit: int) -> bytes | None:
+    """Read at most ``limit`` bytes. One byte over the cap returns None and stops."""
+    if limit < 0:
+        return None
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        block = src.read(min(1024 * 1024, limit - total + 1))
+        if not block:
+            return b"".join(chunks)
+        total += len(block)
+        if total > limit:
+            return None
+        chunks.append(block)
+
+
 def _files_from_bytes(raw: bytes) -> dict[str, bytes] | None:
+    if len(raw) > MAX_BUNDLE_BYTES:
+        return None
     if raw[:2] == b"PK":
         return _files_from_zip(raw)
     return _parse_bundle_bytes(raw)
@@ -261,19 +322,44 @@ def _parse_bundle_bytes(raw: bytes) -> dict[str, bytes] | None:
 def _files_from_zip(raw: bytes) -> dict[str, bytes] | None:
     try:
         with zipfile.ZipFile(BytesIO(raw)) as zf:
+            infos = zf.infolist()
+            if len(infos) > MAX_ZIP_MEMBERS:
+                return None
             files: dict[str, bytes] = {}
-            for info in zf.infolist():
+            total = 0
+            for info in infos:
+                if _zip_member_forbidden(info):
+                    return None
                 if info.is_dir():
                     continue
-                name = info.filename.replace("\\", "/").rsplit("/", 1)[-1]
-                if name not in _MEMBER_ORDER:
-                    continue
-                if name in files:
+                name = info.filename
+                if name in files or info.file_size > MAX_MEMBER_BYTES or total + info.file_size > MAX_BUNDLE_BYTES:
                     return None
-                files[name] = zf.read(info)
-    except (zipfile.BadZipFile, ValueError, OSError):
+                with zf.open(info, "r") as src:
+                    payload = _read_limited(src, MAX_MEMBER_BYTES)
+                if payload is None or total + len(payload) > MAX_BUNDLE_BYTES:
+                    return None
+                total += len(payload)
+                files[name] = payload
+    except (zipfile.BadZipFile, ValueError, OSError, RuntimeError, EOFError):
         return None
     return files
+
+
+def _zip_member_forbidden(info: zipfile.ZipInfo) -> bool:
+    """Exact member names only. Traversal, absolute paths, backslashes, and links are rejected."""
+    name = info.filename
+    if not name or "\\" in name or "\x00" in name or name.startswith("/"):
+        return True
+    parts = [part for part in name.split("/") if part]
+    if any(part in ("..", ".") for part in parts):
+        return True
+    mode = (info.external_attr >> 16) & 0o170000
+    if mode == _SYMLINK_MODE or info.flag_bits & 0x1:
+        return True
+    if info.is_dir():
+        return False
+    return name not in _MEMBER_ORDER
 
 
 def _rows_parse(files: Mapping[str, bytes]) -> bool:
@@ -350,8 +436,12 @@ def _gap_segment(gap: dict[str, Any]) -> FrameBindSegment:
 
 
 def _status(files: Mapping[str, bytes]) -> str:
+    total = 0
     for key, val in files.items():
         if not isinstance(key, str) or not isinstance(val, (bytes, bytearray)):
+            return _BROKEN
+        total += len(val)
+        if total > MAX_BUNDLE_BYTES or _payload_over_cap(bytes(val)):
             return _BROKEN
     raw_cps = files.get(CHECKPOINTS_FILE)
     if raw_cps is None:
@@ -402,6 +492,8 @@ def _status(files: Mapping[str, bytes]) -> str:
 
 def _content_ok(cps: list[dict[str, Any]], frames: bytes, readers_val: Any,
                 readers_file: bytes | None) -> bool:
+    if not _checkpoint_chain_ok(cps):
+        return False
     lines = _split_lines(frames)
     if not lines:
         return False
@@ -431,6 +523,33 @@ def _content_ok(cps: list[dict[str, Any]], frames: bytes, readers_val: Any,
     return _hashed_commitment_ok(readers_val) and _readers_file_ok(readers_file, readers_val["sha256"])
 
 
+def _checkpoint_chain_ok(cps: list[dict[str, Any]]) -> bool:
+    """Recompute frames_hash, the body hash, prev, and seq from the checkpoint bytes.
+
+    ``input_hash`` is inside the hashed body. This image has no ``inputs.jsonl``, so that field is not
+    recomputed from HID events. ``readers`` sha256 is checked against the file bytes in ``_readers_file_ok``.
+    """
+    prev = GENESIS
+    for index, cp in enumerate(cps):
+        if not isinstance(cp, dict) or not _is_int(cp.get("seq"), 0) or cp["seq"] != index:
+            return False
+        if cp.get("prev") != prev:
+            return False
+        q = cp.get("qorcap")
+        if not isinstance(q, dict):
+            return False
+        try:
+            if cp.get("frames_hash") != sha256_hex(q):
+                return False
+            digest = sha256_hex(body_of(cp))
+        except (KeyError, TypeError, ValueError):
+            return False
+        if cp.get("hash") != digest:
+            return False
+        prev = digest
+    return True
+
+
 def _rows_ok(objs: list[dict[str, Any]]) -> bool:
     if not _header_ok(objs[0]):
         return False
@@ -451,17 +570,29 @@ def _rows_ok(objs: list[dict[str, Any]]) -> bool:
             gaps[seg] = obj
         else:
             return False
+    if not frames and not gaps:
+        return False
     prev_pts = None
     prev_frame = None
+    prev_seg = None
     by_seg: dict[int, list[dict[str, Any]]] = {}
     for row in frames:
         if prev_pts is not None and row["pts"] <= prev_pts:
             return False
         if prev_frame is not None and row["frame"] <= prev_frame:
             return False
+        if prev_seg is not None and row["seg"] < prev_seg:
+            return False
         prev_pts = row["pts"]
         prev_frame = row["frame"]
+        prev_seg = row["seg"]
         by_seg.setdefault(row["seg"], []).append(row)
+    for seg, rows in by_seg.items():
+        if seg in gaps:
+            continue
+        indexes = [row["frame"] for row in rows]
+        if any(indexes[i] + 1 != indexes[i + 1] for i in range(len(indexes) - 1)):
+            return False
     for seg, gap in gaps.items():
         rows = by_seg.get(seg, [])
         if len(rows) != gap["bound"] or gap["bound"] > gap["samples"]:
@@ -529,9 +660,11 @@ def _readers_file_ok(raw: bytes, want: str) -> bool:
     if not raw.endswith(b"\n") or raw.endswith(b"\n\n") or b"\r" in raw:
         return False
     body = raw[:-1]
+    if len(body) > MAX_LINE_BYTES:
+        return False
     try:
-        obj = json.loads(body.decode("utf-8"))
-    except (UnicodeError, ValueError):
+        obj = _loads_strict(body.decode("utf-8"))
+    except (UnicodeError, ValueError, RecursionError):
         return False
     if not isinstance(obj, dict) or canonicalize(obj) != body:
         return False
@@ -567,7 +700,13 @@ def _reader_file_ok(obj: Any) -> bool:
         return False
     if len(path) > 240 or _PATH_RE.fullmatch(path) is None:
         return False
-    return all(part.lower() != "keys" for part in path.split("/"))
+    for part in path.split("/"):
+        if part.lower() in _FORBIDDEN_SEGMENTS:
+            return False
+        stem = part.rsplit(".", 1)[0] if "." in part else part
+        if stem.lower().endswith("_key"):
+            return False
+    return True
 
 
 def _runtime_ok(obj: Any) -> bool:
@@ -619,8 +758,8 @@ def _parse_objects(raw: bytes) -> list[dict[str, Any]] | None:
     out: list[dict[str, Any]] = []
     for line in lines:
         try:
-            obj = json.loads(line.decode("utf-8"))
-        except (UnicodeError, ValueError):
+            obj = _loads_strict(line.decode("utf-8"))
+        except (UnicodeError, ValueError, RecursionError):
             return None
         if not isinstance(obj, dict):
             return None
@@ -632,8 +771,8 @@ def _canonical_objects(lines: list[bytes]) -> list[dict[str, Any]] | None:
     out: list[dict[str, Any]] = []
     for line in lines:
         try:
-            obj = json.loads(line.decode("utf-8"))
-        except (UnicodeError, ValueError):
+            obj = _loads_strict(line.decode("utf-8"))
+        except (UnicodeError, ValueError, RecursionError):
             return None
         if not isinstance(obj, dict) or canonicalize(obj) != line:
             return None
@@ -641,8 +780,36 @@ def _canonical_objects(lines: list[bytes]) -> list[dict[str, Any]] | None:
     return out
 
 
+def _loads_strict(text: str) -> Any:
+    """JSON object parse that rejects duplicate keys and NaN/Infinity."""
+    def pairs(items: list[tuple[Any, Any]]) -> dict[str, Any]:
+        obj: dict[str, Any] = {}
+        for key, value in items:
+            if type(key) is not str or key in obj:
+                raise ValueError("duplicate key")
+            obj[key] = value
+        return obj
+
+    def reject(constant: str) -> Any:
+        raise ValueError(constant)
+
+    return json.loads(text, object_pairs_hook=pairs, parse_constant=reject)
+
+
+def _payload_over_cap(raw: bytes) -> bool:
+    if len(raw) > MAX_MEMBER_BYTES:
+        return True
+    body = raw[:-1] if raw.endswith(b"\n") else raw
+    if body == b"":
+        return False
+    parts = body.split(b"\n")
+    if len(parts) > MAX_ROWS:
+        return True
+    return any(len(part) > MAX_LINE_BYTES for part in parts)
+
+
 def _split_lines(raw: bytes) -> list[bytes] | None:
-    if b"\r" in raw:
+    if _payload_over_cap(raw) or b"\r" in raw:
         return None
     if raw.endswith(b"\n"):
         raw = raw[:-1]

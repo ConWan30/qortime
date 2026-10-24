@@ -7,10 +7,13 @@ from __future__ import annotations
 
 import enum
 import hashlib
+import io
 import json
+import os
 import re
 import shutil
 import subprocess
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -23,11 +26,15 @@ from qor_receipt.review.frame_bind import (
     FRAME_BIND_STATUSES,
     FRAME_BIND_VERIFIED,
     FRAMES_FILE,
+    MAX_BUNDLE_BYTES,
+    MAX_LINE_BYTES,
+    MAX_MEMBER_BYTES,
     PATH_PATTERN,
     READERS_FILE,
     READERS_SCHEMA,
     SCHEMA,
     FrameBindResult,
+    _read_limited,
     frame_bind_bundle_bytes,
     frame_bind_result_ok,
     frame_bind_status,
@@ -131,14 +138,37 @@ def _cp(seq: int, n: int, head: str, readers: dict | None = None, *, bind: bool 
     }
 
 
+def _seal(cps: list[dict]) -> None:
+    """Fill frames_hash, prev, and hash from the checkpoint objects. Replaces fixture placeholders."""
+    prev = GENESIS
+    for cp in cps:
+        q = cp.get("qorcap")
+        if isinstance(q, dict):
+            cp["frames_hash"] = sha256_hex(q)
+        cp["prev"] = prev
+        cp["hash"] = sha256_hex(body_of(cp))
+        prev = cp["hash"]
+
+
 def _bundle(lines: list[bytes], checkpoints: list[dict], readers: bytes | None = None, *,
-            frames: bool = True) -> dict[str, bytes]:
-    files = {CHECKPOINTS_FILE: _jsonl(checkpoints)}
+            frames: bool = True, seal: bool = True) -> dict[str, bytes]:
+    rows = [dict(cp) for cp in checkpoints]
+    if seal:
+        _seal(rows)
+    files = {CHECKPOINTS_FILE: _jsonl(rows)}
     if frames:
         files[FRAMES_FILE] = b"\n".join(lines) + b"\n"
     if readers is not None:
         files[READERS_FILE] = readers
     return files
+
+
+def _zip(members: list[tuple[str, bytes]]) -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as archive:
+        for name, data in members:
+            archive.writestr(name, data)
+    return buf.getvalue()
 
 
 def _valid_parts(pts: tuple[int, ...] = (0, 3003), *, gap: bool = True):
@@ -193,11 +223,15 @@ def test_status_words_are_written_once_and_match_the_spec():
     assert "recompute the bundle digest from bytes" in flat
     assert "type(value) is str" in flat
     assert "verify_frame_bind" in spec
+    assert "SHA-256(JCS(qorcap))" in spec
+    assert "A frames.jsonl with no frame row is broken" in flat
+    assert "about 20 MB per hour" in flat
+    assert "96 MiB" in spec
     compat = json.loads((CONTRACTS / "compat.json").read_text(encoding="utf-8"))
     assert tuple(compat["frame_bind"]["statuses"]) == FRAME_BIND_STATUSES
     assert compat["frame_bind"]["verified"] == FRAME_BIND_VERIFIED
     js = (ROOT / "verify" / "frame-bind-status.js").read_text(encoding="utf-8")
-    found = re.search(r"FRAME_BIND_STATUSES = \[(.*?)\]", js, re.S)
+    found = re.search(r"FRAME_BIND_STATUSES = Object\.freeze\(\[(.*?)\]\)", js, re.S)
     assert found
     assert tuple(re.findall(r'"([a-z]+)"', found.group(1))) == FRAME_BIND_STATUSES
     assert "FRAME_BIND_VERIFIED = FRAME_BIND_STATUSES[0]" in js
@@ -216,6 +250,10 @@ def test_js_mirror_exports_the_same_set():
         "if (!isFrameBindVerified(FRAME_BIND_VERIFIED)) process.exit(3);"
         "if (isFrameBindVerified(new String(FRAME_BIND_VERIFIED))) process.exit(4);"
         "if (FRAME_BIND_STATUSES.slice(1).some(isFrameBindVerified)) process.exit(5);"
+        "if (!Object.isFrozen(FRAME_BIND_STATUSES)) process.exit(6);"
+        "let rejected = false;"
+        "try { FRAME_BIND_STATUSES.push('extra'); } catch (e) { rejected = true; }"
+        "if (!rejected || FRAME_BIND_STATUSES.length !== 4) process.exit(7);"
         "process.stdout.write(JSON.stringify(FRAME_BIND_STATUSES));"
     )
     proc = subprocess.run([node, "--input-type=module", "-e", script], cwd=ROOT, capture_output=True, text=True, timeout=30)
@@ -348,7 +386,8 @@ def test_forged_result_is_rejected_when_the_bundle_bytes_are_checked(tmp_path: P
 def test_valid_frame_bind_is_verified_and_schemas_accept_it():
     js = pytest.importorskip("jsonschema")
     lines, cps, readers = _valid_parts()
-    got = frame_bind_status(_bundle(lines, cps, readers))
+    files = _bundle(lines, cps, readers)
+    got = frame_bind_status(files)
     assert got == FRAME_BIND_VERIFIED
     assert got in FRAME_BIND_STATUSES
     row_schema = _schema("qorcap-frame-bind.v0.json")
@@ -357,9 +396,13 @@ def test_valid_frame_bind_is_verified_and_schemas_accept_it():
     js.validate(json.loads(readers), _schema("qorcap-readers.v0.json"))
     checkpoint = _schema("qorcap-checkpoint.v0.json")
     validator = js.Draft202012Validator(checkpoint, registry=_registry())
-    for row in cps:
-        row = dict(row)
+    sealed = [json.loads(line) for line in files[CHECKPOINTS_FILE].splitlines()]
+    for row in sealed:
         validator.validate(row)
+        assert row["frames_hash"] == sha256_hex(row["qorcap"])
+        assert row["hash"] == sha256_hex(body_of(row))
+    assert sealed[0]["prev"] == GENESIS
+    assert sealed[1]["prev"] == sealed[0]["hash"]
     header = json.loads(lines[0])
     assert "fps" not in header and "fps_num" not in header and "fps_den" not in header
     assert header["time_base"] == {"num": 1, "den": 90000}
@@ -509,6 +552,134 @@ def test_schema_rejects_fps_fields_and_accepts_an_old_checkpoint():
         js.validate(both, commitment)
     path = _schema("qorcap-readers.v0.json")["$defs"]["file"]["properties"]["path"]["pattern"]
     assert path == PATH_PATTERN
+
+
+def test_unrelated_checkpoint_hashes_are_broken():
+    """Placeholder frames_hash, hash, and prev do not verify. The sealed chain does."""
+    lines, cps, readers = _valid_parts()
+    assert frame_bind_status(_bundle(lines, cps, readers, seal=False)) == BROKEN
+    assert frame_bind_status(_bundle(lines, cps, readers)) == VERIFIED
+    forged = _bundle(lines, cps, readers)
+    obj = json.loads(forged[CHECKPOINTS_FILE].splitlines()[0])
+    obj["frames_hash"] = "00" * 32
+    forged[CHECKPOINTS_FILE] = canonicalize(obj) + b"\n" + b"\n".join(forged[CHECKPOINTS_FILE].splitlines()[1:]) + b"\n"
+    assert frame_bind_status(forged) == BROKEN
+
+
+def test_frame_hole_without_align_gap_is_broken():
+    lines = [_header(), _frame(0, 0, 0, 1000), _frame(0, 5, 3003, 1200)]
+    readers = _readers_bytes()
+    heads = _chain(lines)
+    cps = [_cp(0, len(lines), heads[-1], {"schema": READERS_SCHEMA, "sha256": hashlib.sha256(readers).hexdigest()})]
+    assert frame_bind_status(_bundle(lines, cps, readers)) == BROKEN
+    covered = [
+        _header(),
+        _frame(0, 0, 0, 1000),
+        _gap(0, 0, 6, 2, "clock_lost"),
+        _frame(0, 5, 3003, 1200),
+    ]
+    readers = _readers_bytes()
+    heads = _chain(covered)
+    cps = [_cp(0, len(covered), heads[-1], {"schema": READERS_SCHEMA, "sha256": hashlib.sha256(readers).hexdigest()})]
+    assert frame_bind_status(_bundle(covered, cps, readers)) == VERIFIED
+
+
+def test_header_only_bundle_is_broken():
+    """Commitments and the file are present, and no frame is bound, so this is broken."""
+    lines = [_header()]
+    readers = _readers_bytes()
+    heads = _chain(lines)
+    cps = [_cp(0, len(lines), heads[-1], {"schema": READERS_SCHEMA, "sha256": hashlib.sha256(readers).hexdigest()})]
+    assert frame_bind_status(_bundle(lines, cps, readers)) == BROKEN
+
+
+def test_interleaved_segments_are_broken():
+    lines = [_header(), _frame(0, 0, 0, 1000), _frame(1, 1, 10, 1100), _frame(0, 2, 20, 1200)]
+    readers = _readers_bytes()
+    heads = _chain(lines)
+    cps = [_cp(0, len(lines), heads[-1], {"schema": READERS_SCHEMA, "sha256": hashlib.sha256(readers).hexdigest()})]
+    assert frame_bind_status(_bundle(lines, cps, readers)) == BROKEN
+
+
+def test_duplicate_checkpoint_key_is_broken():
+    lines, cps, readers = _valid_parts()
+    files = _bundle(lines, cps, readers)
+    first, rest = files[CHECKPOINTS_FILE].split(b"\n", 1)
+    files[CHECKPOINTS_FILE] = b'{"qorcap":{"trigger":"segment"},' + first[1:] + b"\n" + rest
+    assert frame_bind_status(files) == BROKEN
+    nan = first.replace(b'"t_ms":1000', b'"t_ms":NaN', 1)
+    files[CHECKPOINTS_FILE] = nan + b"\n" + rest
+    assert frame_bind_status(files) == BROKEN
+
+
+def test_key_like_reader_paths_are_rejected():
+    js = pytest.importorskip("jsonschema")
+    schema = _schema("qorcap-readers.v0.json")
+    for path in ("secrets/referee_key.json", "secret/reader.py", "sidecar/referee_key.json", "a/foo_KEY.py"):
+        obj = _readers_obj()
+        obj["readers"][0]["files"][0]["path"] = path
+        with pytest.raises(js.ValidationError):
+            js.validate(obj, schema)
+        lines, _cps, _readers = _valid_parts()
+        raw = canonicalize(obj) + b"\n"
+        heads = _chain(lines)
+        cps = [_cp(0, len(lines), heads[-1], {"schema": READERS_SCHEMA, "sha256": hashlib.sha256(raw).hexdigest()})]
+        assert frame_bind_status(_bundle(lines, cps, raw)) == BROKEN
+
+
+def test_zip_names_symlinks_and_size_caps_are_broken(tmp_path: Path):
+    lines, cps, readers = _valid_parts()
+    files = _bundle(lines, cps, readers)
+    members = list(files.items())
+    assert verify_frame_bind(_zip(members)).status == VERIFIED
+    assert verify_frame_bind(_zip([("../" + name, data) for name, data in members])).status == BROKEN
+    assert verify_frame_bind(_zip([("/abs/dir/" + name, data) for name, data in members])).status == BROKEN
+    mixed = [
+        ("a/" + CHECKPOINTS_FILE, files[CHECKPOINTS_FILE]),
+        ("b/c/" + FRAMES_FILE, files[FRAMES_FILE]),
+        ("..\\" + READERS_FILE, files[READERS_FILE]),
+    ]
+    assert verify_frame_bind(_zip(mixed)).status == BROKEN
+    claimed = bytearray(_zip(members))
+    huge = (1 << 30).to_bytes(4, "little")
+    for sig, offset in ((b"PK\x03\x04", 22), (b"PK\x01\x02", 24)):
+        start = 0
+        while True:
+            at = claimed.find(sig, start)
+            if at < 0:
+                break
+            claimed[at + offset:at + offset + 4] = huge
+            start = at + 4
+    assert verify_frame_bind(bytes(claimed)).status == BROKEN
+
+    class Endless:
+        def read(self, n: int) -> bytes:
+            return b"\0" * n
+
+    assert _read_limited(Endless(), 8) is None
+
+    outside = tmp_path / "outside-readers.json"
+    outside.write_bytes(files[READERS_FILE])
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    for name, data in files.items():
+        if name == READERS_FILE:
+            (bundle / name).symlink_to(outside)
+        else:
+            (bundle / name).write_bytes(data)
+    assert verify_frame_bind(bundle).status == BROKEN
+    linked = tmp_path / "linked"
+    linked.symlink_to(bundle, target_is_directory=True)
+    assert verify_frame_bind(linked).status == BROKEN
+
+    sparse = tmp_path / "sparse"
+    sparse.mkdir()
+    for name, data in files.items():
+        (sparse / name).write_bytes(data)
+    os.truncate(sparse / FRAMES_FILE, MAX_MEMBER_BYTES + 1)
+    assert verify_frame_bind(sparse).status == BROKEN
+    assert frame_bind_status({CHECKPOINTS_FILE: b"{" + b"a" * (MAX_LINE_BYTES + 1)}) == BROKEN
+    assert MAX_BUNDLE_BYTES == MAX_MEMBER_BYTES
 
 
 def test_unknown_shapes_are_not_verified():
