@@ -219,6 +219,12 @@ Not proven (also embedded in every receipt as `review.not_proven`):
 - delta corroboration for a one-legal-step end-menu delta still uses QorCap's existing evidence rules
   (haptics / inputs from the committed log; score-clip hashes as claimed in bundle.json — clip bytes not uploaded).
 
+The chain binds the controller log QorCap recorded. Challenges show that presses in that log lined up with pause
+menus on the video. Motion rule v3 correlates frame-difference energy with the count of logged input rows per
+second, not stick values. None of that shows the console obeyed the observed pad for the rest of the match. An
+inline passthrough adapter that injects only right-stick input is an open gap ([RISKS.md](RISKS.md) item 11).
+That gap is not a new `review.not_proven` line. The four strings the receipt embeds are unchanged.
+
 ## Operations
 
 ```

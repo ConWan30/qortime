@@ -191,6 +191,11 @@ for (const c of ["referee_local_self_attested", "home:key_kind_claim_unverified:
   const x = explainCode(c);
   ok(!/attest/i.test(x.text) && (x.code === null || !/attest/i.test(x.code)), `explanation for ${c} avoids attested wording`);
 }
+ok(explainCode("no_haptic_events").text === "No haptic events were recorded.", "missing IMU bursts are labeled haptic events");
+ok(explainCode("haptic_low_confidence_only").text === "Haptic events were recorded, but none with high confidence.",
+   "low-confidence IMU bursts are labeled haptic events");
+ok(!/rumble/i.test(`${explainCode("no_haptic_events").text} ${explainCode("haptic_low_confidence_only").text}`),
+   "haptic explanations do not call the bursts rumble");
 const odd = describeSidecar("vendor_probe.v3.json", JSON.stringify({ schema: "acme-probe/v3", samples: [1, 2] }));
 ok(odd.state === "info" && odd.family === "acme-probe" && odd.version === "v3" && odd.known === null && odd.fields.length === 2,
    "an unknown sidecar is identified by schema and listed generically");

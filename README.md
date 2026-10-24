@@ -11,7 +11,7 @@
 QorCap, on the player's Windows PC, records an HDMI capture card, reads the scorebug locally, and signs a match receipt (ed25519). QorTime verifies that receipt and serves the public match pages. The package name is still `qor_receipt`. Both `qortime` and `qor-receipt` work. MIT licensed.
 
 [![MIT license](https://img.shields.io/badge/license-MIT-2ef2ff?labelColor=04050a)](LICENSE)
-[![QorCap release](https://img.shields.io/github/v/release/ConWan30/qorcap?label=QorCap&color=2ef2ff&labelColor=04050a)](https://github.com/ConWan30/qorcap/releases/tag/v0.3.30)
+[![QorCap release](https://img.shields.io/github/v/release/ConWan30/qorcap?label=QorCap&color=2ef2ff&labelColor=04050a)](https://github.com/ConWan30/qorcap/releases/tag/v0.3.32)
 [![site live](https://img.shields.io/website?url=https%3A%2F%2Fconwan30.github.io%2Fqortime%2F&label=site&up_message=live&down_message=down&up_color=2ef2ff&down_color=ff4d5e&labelColor=04050a)](https://conwan30.github.io/qortime/)
 [![X @QorTimeHQ](https://img.shields.io/badge/X-@QorTimeHQ-111111?logo=x&logoColor=white)](https://x.com/QorTimeHQ)
 
@@ -66,7 +66,7 @@ flowchart LR
 4. **QorTime referee.** `qorcap submit` can upload the bundle to the official referee at `https://qortime-referee-production.up.railway.app`. It re-checks chains, video bytes, and the ending, and only then may countersign. Any check error is HTTP 422. Code and rules: [docs/REFEREE_SERVICE.md](docs/REFEREE_SERVICE.md).
 5. **Public viewer.** `qortime publish` writes `site/matches/<id>/`. The page is labeled with the status the verifier computed. A FAIL receipt is refused unless `--allow-fail`, and then every surface says the result is not verified.
 
-QorTime proves integrity and timing of the footage, and, from QorCap v0.3, that controller reports were logged in the same session. It does not prove who held the controller.
+QorTime proves integrity and timing of the footage, and, from QorCap v0.3, that controller reports were logged from a USB-enumerated pad in the same session. It does not prove who held the controller, or that the console obeyed that pad.
 
 ## What makes it different
 
@@ -91,7 +91,7 @@ The local demo referee is in-memory and is not the official key:
 QOR_REFEREE_SEED=<64 hex> uvicorn qor_receipt.referee.app:app
 ```
 
-QorCap, the Windows capture app, is a separate repo. Latest release checked for this README: [v0.3.30](https://github.com/ConWan30/qorcap/releases/tag/v0.3.30). Installers: [releases/latest](https://github.com/ConWan30/qorcap/releases/latest).
+QorCap, the Windows capture app, is a separate repo. Latest release checked for this README: [v0.3.32](https://github.com/ConWan30/qorcap/releases/tag/v0.3.32). Installers: [releases/latest](https://github.com/ConWan30/qorcap/releases/latest).
 
 ## Repo layout
 
@@ -173,6 +173,6 @@ The Jev final-screen detector (`qor_receipt/agent/final_screen_jev.py`) is shado
 
 ### Where the design can still break
 
-Replay and pre-recorded video are the problem the nonce challenges exist to catch. They are not finished business on a real full match: halftime challenge timing is not confirmed end to end, and rule v1 does not fit measured pause-menu latency. A relay under about 2.5–3 seconds is a weak catch, and so is a splice that is rehashed and resigned. A virtual capture device was missed. Two players can still collude. Account sharing is not solved. The referee does not check which controller was held. The full list is [docs/RISKS.md](docs/RISKS.md), and the QorCap runs are in [docs/REDTEAM.md](https://github.com/ConWan30/qorcap/blob/main/docs/REDTEAM.md).
+Replay and pre-recorded video are the problem the nonce challenges exist to catch. They are not finished business on a real full match: halftime challenge timing is not confirmed end to end, and rule v1 does not fit measured pause-menu latency. A relay under about 2.5–3 seconds is a weak catch, and so is a splice that is rehashed and resigned. A virtual capture device was missed. Two players can still collude. Account sharing is not solved. The referee does not check which controller was held. A passthrough adapter that injects only right-stick input is an open gap. The full list is [docs/RISKS.md](docs/RISKS.md), and the QorCap runs are in [docs/REDTEAM.md](https://github.com/ConWan30/qorcap/blob/main/docs/REDTEAM.md).
 
 </details>

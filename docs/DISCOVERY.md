@@ -80,7 +80,7 @@ Also:
 ### Pin (draft concept — Con posts when ready)
 
 > The final whistle, sealed.  
-> QorTime reads the Madden scorebug, proves a human is on the DualSense, and seals an Ed25519 receipt a referee co-signs. Anyone verifies in-browser — nothing uploaded.  
+> QorTime reads the Madden scorebug, logs controller reports from the same session, and seals an Ed25519 receipt a referee co-signs. It does not prove who held the controller, or that the console obeyed that pad. Anyone verifies in-browser — nothing uploaded.  
 > Verify: https://conwan30.github.io/qortime/verify/  
 > Verified Match (hosted referee countersign, $9.99): **early access / coming soon** until we finish KYC.  
 > Spec + code: github.com/ConWan30/qortime
