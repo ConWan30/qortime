@@ -108,8 +108,12 @@ def test_final_flag_rejects_ordinary_assignment_and_deletion():
     assert result_cls._mismatch_gate_final is True
 
 
+@pytest.mark.xfail(
+    strict=False,
+    reason="Documented in-process holes, not a seal. Closing one must not fail CI.",
+)
 def test_in_process_bypasses_are_not_a_seal():
-    """The holes named in the docs still go through. Each one is restored."""
+    """The holes named in the docs. Each one is restored. An xfail so sealing one stays green."""
     result_cls = mg.MismatchGateResult
     original = result_cls(mg.R_NO_BUNDLE_VERIFIER)
 

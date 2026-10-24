@@ -79,7 +79,7 @@ The tested wheel is **`opencv-python-headless==5.0.0.93`** (OpenCV 5.0.0, `cp37-
 
 `qor_receipt/vision/estimator_allowlist.py` holds `KNOWN_ESTIMATOR_SHA256`, a fixed `frozenset` of exact 64-character lowercase hex digests. It is a separate file because the hash covers `pan_estimator.py`'s own source. It currently holds one entry, recorded on CPython 3.11 and 3.13 with numpy 2.4.6, `opencv-python-headless==5.0.0.93`, and `cv2.useOptimized()` True:
 
-`518f6f70e88646a4dc54ba5061b73feab820264dddde6d880026b2f376c8f5e9`
+`50a1ce3020b17b5fedd27a3a8dc5ab334a5355ed2bbb7da20723a6c01a101788`
 
 How the check works:
 
@@ -88,7 +88,8 @@ How the check works:
 - `identity()` reports `estimator_known` separately from `opencv_pinned`.
 - Any other numpy, OpenCV version or build, `useOptimized` setting, parameters, or edited source makes `estimate_frames` return only `no_claim` bins with reason `unknown_estimator_hash`.
 - Being known unlocks nothing: the mismatch gate still has no allow path.
-- `estimator_known` accepts only an exact `PanParams` whose fields are exact `int` and `float` values. An `int` or `float` subclass is rejected. `identity()["estimator_known"]` is false for a subclass that overrides `pairs`.
+- `estimator_known` accepts only an exact `PanParams` whose fields are exact `int` and `float` values. An `int` or `float` subclass is rejected. `identity()["estimator_known"]` is false for a subclass that overrides `pairs`, and for an instance whose `__dict__` holds anything other than `params` and `_mask_cache` (so `estimator._pair = ...` is not known).
+- The public `bin_pairs` does not claim caller-supplied pair results. `estimate_frames` bins only after the running instance is known.
 - Same-process patching cannot be fully blocked, and the list of holes is not exhaustive. It includes a `__class__` swap via `object.__setattr__`, `type.__new__` after deleting `__init_subclass__`, a metaclass subclass that skips the finality check, patching `MismatchGateResult.allowed`, and writing `_mismatch_gate_final` with `type.__setattr__`. Ordinary assignment of that flag is rejected. Patching numpy, OpenCV, or the allowlist in the same process is also outside what this check seals.
 
 Tests check that:
@@ -107,7 +108,8 @@ The current hash is the allowlist entry above. Earlier revisions reported:
 - `b85405bd…`, before the gate moved out of this module and numpy and `useOptimized` joined the hash;
 - `c5e8ddfd…` (CPython 3.13, numpy 2.5.4), before the allowlist check and the numpy pin;
 - `8f049000…`, before `pairs` / `bin_pairs` fail closed on an unknown hash and `estimator_known` requires an exact `PanParams`;
-- `c33339f2…`, before each `PanParams` field had to be an exact `int` or `float` and a subclass overriding `pairs` stopped counting as known.
+- `c33339f2…`, before each `PanParams` field had to be an exact `int` or `float` and a subclass overriding `pairs` stopped counting as known;
+- `518f6f70…`, before public `bin_pairs` stopped claiming caller-supplied pair results and an extra instance attribute stopped counting as known.
 
 The per-bin outputs on the three clips are byte-identical across all of them.
 

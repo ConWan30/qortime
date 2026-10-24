@@ -39,11 +39,14 @@ a low inlier ratio, a high residual, low confidence, or any exception. A bin wit
 no frame pair at all is also ``no_claim``. Values are never interpolated or filled.
 Every bin is ``no_claim`` (reason ``unknown_estimator_hash``) unless
 ``estimator_known()`` is True: the in-process hash is in the fixed allowlist in
-``estimator_allowlist.py`` and OpenCV matches its pin. ``pairs`` and
-``bin_pairs`` use the same check. ``estimator_known`` accepts only an exact
+``estimator_allowlist.py`` and OpenCV matches its pin. ``pairs`` uses that check
+on the running instance. The public ``bin_pairs`` does not turn caller-supplied
+pair results into claims. ``estimator_known`` accepts only an exact
 ``PanParams`` instance whose fields are exact ``int`` and ``float`` values, not
 a look-alike whose ``to_json`` matches and not an ``int`` or ``float`` subclass.
 A subclass of ``OpticalFlowPanEstimator`` that overrides ``pairs`` is not known.
+An instance attribute other than ``params`` and ``_mask_cache``, including a
+replacement ``_pair``, is not known.
 
 Determinism
 -----------
@@ -289,10 +292,22 @@ def estimator_known(params: PanParams = DEFAULT_PARAMS) -> bool:
         return False
 
 
+# Instance attributes ``__init__`` writes. Anything else, including ``_pair``, is not the known estimator.
+_ESTIMATOR_ATTRS = frozenset({"params", "_mask_cache"})
+
+
 def _running_estimator_known(estimator: object) -> bool:
-    """True only for an exact ``OpticalFlowPanEstimator`` whose ``pairs`` was not replaced."""
+    """True only for an exact instance with no method patched onto it.
+
+    ``pairs`` on the instance must be ``OpticalFlowPanEstimator.pairs``. The
+    instance ``__dict__`` may contain only ``params`` and ``_mask_cache``, so
+    assigning ``estimator._pair`` (or any other attribute) is not known.
+    """
     cls = OpticalFlowPanEstimator
     if type(estimator) is not cls:
+        return False
+    data = getattr(estimator, "__dict__", None)
+    if type(data) is not dict or not set(data) <= _ESTIMATOR_ATTRS:
         return False
     pairs = getattr(estimator, "pairs", None)
     if getattr(pairs, "__func__", None) is not cls.pairs:
@@ -492,13 +507,14 @@ class OpticalFlowPanEstimator:
         if not _running_estimator_known(self):
             # Fail closed: an estimator hash not on the allowlist for this interpreter
             # (other numpy/OpenCV, edited source or parameters) never produces a claim.
-            # A subclass, or an instance whose pairs method was replaced, is the same.
+            # A subclass, a replaced pairs method, or any other instance attribute
+            # (such as ``_pair``) is the same.
             return [PanBin(t, None, None, None, True, "unknown_estimator_hash") for t in range(start_ms, end_ms, BIN_MS)]
         try:
             pair_results = self.pairs(frames)
         except Exception:
             pair_results = None
-        return bin_pairs(pair_results, start_ms, end_ms)
+        return _bin_pairs(pair_results, start_ms, end_ms, self)
 
 
 def _replace(res: PairResult, **kw: Any) -> PairResult:
@@ -508,9 +524,20 @@ def _replace(res: PairResult, **kw: Any) -> PairResult:
 
 
 def bin_pairs(pair_results: Sequence[PairResult] | None, start_ms: int, end_ms: int) -> list[PanBin]:
-    """Group pair results into 100 ms bins. Any unreadable pair in a bin makes the whole bin no_claim."""
+    """Caller-supplied pair results are never claims.
+
+    ``Forged().pairs(...)`` passed here does not become a yaw claim. Binning of a
+    known estimator's own results happens in ``estimate_frames`` via ``_bin_pairs``.
+    """
+    del pair_results
     starts = list(range(start_ms, end_ms, BIN_MS))
-    if not estimator_known():
+    return [PanBin(t, None, None, None, True, "unknown_estimator_hash") for t in starts]
+
+
+def _bin_pairs(pair_results: Sequence[PairResult] | None, start_ms: int, end_ms: int, estimator: object) -> list[PanBin]:
+    """Group one known estimator's own pair results. Any unreadable pair makes the bin no_claim."""
+    starts = list(range(start_ms, end_ms, BIN_MS))
+    if not _running_estimator_known(estimator):
         return [PanBin(t, None, None, None, True, "unknown_estimator_hash") for t in starts]
     if pair_results is None:
         return [PanBin(t, None, None, None, True, "exception") for t in starts]

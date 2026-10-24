@@ -243,6 +243,29 @@ def test_estimator_known_rejects_int_and_float_subclasses():
     assert pe.estimator_known(pe.DEFAULT_PARAMS) is True
 
 
+def test_bin_pairs_does_not_claim_forged_pair_results():
+    class Forged(pe.OpticalFlowPanEstimator):
+        def pairs(self, frames):
+            return [
+                pe.PairResult(t, True, "ok", yaw_rate=99.0, pitch_rate=0.0, confidence=1.0)
+                for t in range(100, 1000, 100)
+            ]
+
+    frames = [(t, None) for t in range(0, 1000, 100)]
+    bins = pe.bin_pairs(Forged().pairs(frames), 0, 1000)
+    assert len(bins) == 10
+    assert all(b.no_claim and b.yaw_rate is None for b in bins)
+
+
+def test_replacing_pair_on_the_instance_is_not_known():
+    est = pe.OpticalFlowPanEstimator()
+    est._pair = lambda *_args, **_kwargs: pe.PairResult(100, True, "ok", yaw_rate=99.0, pitch_rate=0.0, confidence=1.0)
+    assert est.identity()["estimator_known"] is False
+    bins = est.estimate_frames([(0, None), (100, None)], 0, 200)
+    assert bins and all(b.no_claim and b.reason == "unknown_estimator_hash" and b.yaw_rate is None for b in bins)
+    assert pe.estimator_known(pe.DEFAULT_PARAMS) is True
+
+
 def test_subclass_that_overrides_pairs_is_not_known():
     class Evil(pe.OpticalFlowPanEstimator):
         def pairs(self, frames):
