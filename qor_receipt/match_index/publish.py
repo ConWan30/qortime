@@ -261,12 +261,15 @@ def _recorded_ct(receipt: dict) -> str | None:
     if not isinstance(start, (int, float)):
         return None
 
-    def _fmt(ms: float, pat: str) -> str:
-        return time.strftime(pat, time.gmtime(ms / 1000 - 5 * 3600))
-    start_s = _fmt(start, "%b %d, %Y, %-I:%M %p")
+    def _clock(ms: float) -> str:
+        # 12-hour clock without a leading zero. Built by hand because the no-pad strftime
+        # flag is glibc-only and raises ValueError on Windows.
+        t = time.gmtime(ms / 1000 - 5 * 3600)
+        return f"{t.tm_hour % 12 or 12}:{time.strftime('%M %p', t)}"
+    start_s = f"{time.strftime('%b %d, %Y', time.gmtime(start / 1000 - 5 * 3600))}, {_clock(start)}"
     end = match.get("ended_ms")
     if isinstance(end, (int, float)):
-        return f"Recorded {start_s}–{_fmt(end, '%-I:%M %p')} CT."
+        return f"Recorded {start_s}–{_clock(end)} CT."
     return f"Recorded {start_s} CT."
 
 

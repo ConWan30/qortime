@@ -327,3 +327,27 @@ def test_published_match_170123_verifies_and_stays_public():
     assert 'class="lockg"' in index and "n = 1" in index
     assert "SELF-SIGNED" in index and ">FAIL<" in index
     assert "No page here is referee-verified" not in index
+
+
+def test_publish_uses_no_glibc_only_strftime_flags():
+    # '%-d' / '%-I' style no-pad directives are glibc-only; Windows strftime raises ValueError on them.
+    src = Path(P.__file__).read_text(encoding="utf-8")
+    assert "%-" not in src, "publish.py must not use '%-' strftime directives (crash on Windows)"
+
+
+def test_recorded_ct_portable_12h_clock(monkeypatch):
+    import time as _time
+
+    real = _time.strftime
+
+    def windows_like(fmt, *a):
+        if "%-" in fmt:
+            raise ValueError("Invalid format string")
+        return real(fmt, *a)
+
+    monkeypatch.setattr(P.time, "strftime", windows_like)
+    ct = 5 * 3600 * 1000  # UTC ms of 00:00 CT on 1970-01-01, the fixed offset the page uses
+    day = 86_400_000 * 20_000
+    rec = {"match": {"started_ms": day + ct + 9 * 3600_000 + 5 * 60_000, "ended_ms": day + ct + 12 * 3600_000 + 30 * 60_000}}
+    assert P._recorded_ct(rec) == "Recorded Oct 04, 2024, 9:05 AM–12:30 PM CT."
+    assert P._recorded_ct({"match": {"started_ms": day + ct + 7 * 60_000}}) == "Recorded Oct 04, 2024, 12:07 AM CT."
