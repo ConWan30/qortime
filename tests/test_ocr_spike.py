@@ -74,6 +74,7 @@ def test_ctc_greedy_collapse_and_alphabet():
 
 
 def test_label_sampler_and_degrade_are_seeded():
+    pytest.importorskip("PIL")
     from ocr_spike import synth
 
     for i in range(20):
@@ -102,6 +103,7 @@ def _fonts():
 
 
 def test_generator_is_reproducible_and_labelled():
+    pytest.importorskip("PIL")
     from ocr_spike import synth
 
     d, specs = _fonts()
