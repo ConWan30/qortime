@@ -22,6 +22,7 @@ sys.path.insert(0, str(ROOT))
 
 from qor_receipt.vision.pan_estimator import (  # noqa: E402
     BIN_MS,
+    UNKNOWN_ESTIMATOR_WARNING,
     OpticalFlowPanEstimator,
     bins_jsonl,
     iter_video_frames,
@@ -44,6 +45,9 @@ def main() -> int:
     manifest = json.loads((CLIPS / "manifest.json").read_text(encoding="utf-8"))
     est = OpticalFlowPanEstimator()
     ident = est.identity()
+    if ident.get("estimator_known") is not True:
+        print(UNKNOWN_ESTIMATOR_WARNING, file=sys.stderr)
+        return 1
     print(
         f"estimator sha256 {ident['sha256']} (opencv_pinned={ident['opencv_pinned']}, "
         f"estimator_known={ident['estimator_known']})"
