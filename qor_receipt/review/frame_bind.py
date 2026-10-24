@@ -41,9 +41,16 @@ _BUNDLE_MAGIC = b"qor-frame-bind-bundle/v0\n"
 # Same byte budget as read_meta_zip. frames.jsonl counts against it on upload.
 MAX_BUNDLE_BYTES = MAX_META_BYTES
 MAX_MEMBER_BYTES = MAX_META_BYTES
+# checkpoints.jsonl is a few hundred bytes a row, about 900 rows an hour.
+MAX_CHECKPOINT_BYTES = 4 * 1024 * 1024
+# readers.json is one closed object.
+MAX_READERS_BYTES = 64 * 1024
 MAX_ZIP_MEMBERS = 64
 MAX_LINE_BYTES = 1024 * 1024
 MAX_ROWS = 1_000_000
+# Checkpoint and reader objects are a handful of levels deep. Wide arrays are
+# bounded by the member caps; this stops a nested bomb before json.loads.
+MAX_JSON_DEPTH = 32
 _SYMLINK_MODE = 0o120000
 
 SCHEMA = "qorcap-frame-bind/v0"
@@ -54,14 +61,16 @@ CHECKPOINTS_FILE = "checkpoints.jsonl"
 _MEMBER_ORDER = (CHECKPOINTS_FILE, FRAMES_FILE, READERS_FILE)
 
 PATH_PATTERN = (
-    r"^(?!.*\.(?:[Kk][Ee][Yy]|[Pp][Ee][Mm]|[Pp]12|[Pp][Ff][Xx])$)"
+    r"^(?!.*\.(?:[Kk][Ee][Yy]|[Pp][Ee][Mm]|[Pp]12|[Pp][Ff][Xx]|[Jj][Ww][Kk])$)"
     r"(?!.*(?:^|/)[Kk][Ee][Yy][Ss](?:/|$))"
     r"(?!.*(?:^|/)[Ss][Ee][Cc][Rr][Ee][Tt][Ss]?(?:/|$))"
-    r"(?!.*(?:^|/)[^/]*_[Kk][Ee][Yy](?:\.[^/.]+)?$)"
+    r"(?!.*(?:^|/)[^/]*_[Kk][Ee][Yy](?:\.[^/]+)?$)"
+    r"(?!.*(?:^|/)[Ii][Dd]_(?:[Rr][Ss][Aa]|[Dd][Ss][Aa]|[Ee][Cc][Dd][Ss][Aa](?:_[Ss][Kk])?|[Ee][Dd]25519(?:_[Ss][Kk])?)(?:\.[^/]+)?$)"
     r"(?:[A-Za-z0-9_][A-Za-z0-9_.+-]*/)*[A-Za-z0-9_][A-Za-z0-9_.+-]*$"
 )
 _FORBIDDEN_SEGMENTS = frozenset({"keys", "secret", "secrets"})
 _PATH_RE = re.compile(PATH_PATTERN)
+_PRIVATE_KEY_NAME = re.compile(r"(?i)^id_(?:rsa|dsa|ecdsa(?:_sk)?|ed25519(?:_sk)?)$")
 _RUNTIME_ID_RE = re.compile(r"^[A-Za-z0-9._+-]{1,80}$")
 _HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
 _GAP_REASONS = frozenset({
@@ -241,10 +250,11 @@ def _files_from_dir(path: Path) -> dict[str, bytes]:
             raise ValueError("symlink")
         if not child.is_file():
             continue
+        limit = _member_cap(name)
         size = child.stat().st_size
-        if size > MAX_MEMBER_BYTES or total + size > MAX_BUNDLE_BYTES:
+        if size > limit or total + size > MAX_BUNDLE_BYTES:
             raise ValueError("member exceeds the cap")
-        payload = _read_path_limited(child, size)
+        payload = _read_path_limited(child, limit)
         if payload is None:
             raise ValueError("member exceeds the cap")
         total += len(payload)
@@ -312,7 +322,7 @@ def _parse_bundle_bytes(raw: bytes) -> dict[str, bytes] | None:
             return None
         length = int(length_txt)
         i = nl + 1
-        if i + length > len(raw):
+        if length > _member_cap(name) or i + length > len(raw):
             return None
         files[name] = raw[i:i + length]
         i += length
@@ -333,10 +343,11 @@ def _files_from_zip(raw: bytes) -> dict[str, bytes] | None:
                 if info.is_dir():
                     continue
                 name = info.filename
-                if name in files or info.file_size > MAX_MEMBER_BYTES or total + info.file_size > MAX_BUNDLE_BYTES:
+                limit = _member_cap(name)
+                if name in files or info.file_size > limit or total + info.file_size > MAX_BUNDLE_BYTES:
                     return None
                 with zf.open(info, "r") as src:
-                    payload = _read_limited(src, MAX_MEMBER_BYTES)
+                    payload = _read_limited(src, limit)
                 if payload is None or total + len(payload) > MAX_BUNDLE_BYTES:
                     return None
                 total += len(payload)
@@ -435,20 +446,32 @@ def _gap_segment(gap: dict[str, Any]) -> FrameBindSegment:
     )
 
 
+def _member_cap(name: str) -> int:
+    if name == CHECKPOINTS_FILE:
+        return MAX_CHECKPOINT_BYTES
+    if name == READERS_FILE:
+        return MAX_READERS_BYTES
+    return MAX_MEMBER_BYTES
+
+
 def _status(files: Mapping[str, bytes]) -> str:
     total = 0
     for key, val in files.items():
         if not isinstance(key, str) or not isinstance(val, (bytes, bytearray)):
             return _BROKEN
-        total += len(val)
-        if total > MAX_BUNDLE_BYTES or _payload_over_cap(bytes(val)):
+        blob = bytes(val)
+        total += len(blob)
+        if len(blob) > _member_cap(key) or total > MAX_BUNDLE_BYTES or _payload_over_cap(blob):
             return _BROKEN
     raw_cps = files.get(CHECKPOINTS_FILE)
-    if raw_cps is None:
+    if raw_cps is None or bytes(raw_cps) == b"":
         cps: list[dict[str, Any]] = []
     else:
         parsed = _parse_objects(bytes(raw_cps))
-        if parsed is None:
+        # A checkpoint file that does not parse, or whose chain does not recompute,
+        # is broken before leftover classification. missing and stripped require a
+        # chain that matches, or no checkpoint bytes.
+        if parsed is None or not _checkpoint_chain_ok(parsed):
             return _BROKEN
         cps = parsed
 
@@ -458,6 +481,12 @@ def _status(files: Mapping[str, bytes]) -> str:
     any_fb = any(flagged)
     all_fb = bool(cps) and all(flagged)
     readers_present, readers_val = _readers_on_seq0(cps)
+
+    # A frames file that is present and does not match its commitments is broken
+    # even when another sidecar is missing. Absence of the file, on a chain that
+    # recomputes, stays a leftover.
+    if has_frames and any_fb and not _frames_match(cps, bytes(files[FRAMES_FILE])):
+        return _BROKEN
 
     if cps and any_fb and not all_fb:
         return _STRIPPED
@@ -538,6 +567,9 @@ def _checkpoint_chain_ok(cps: list[dict[str, Any]]) -> bool:
         q = cp.get("qorcap")
         if not isinstance(q, dict):
             return False
+        # Later checkpoints omit readers. Any readers object on seq >= 1 is broken.
+        if index > 0 and "readers" in q:
+            return False
         try:
             if cp.get("frames_hash") != sha256_hex(q):
                 return False
@@ -570,7 +602,8 @@ def _rows_ok(objs: list[dict[str, Any]]) -> bool:
             gaps[seg] = obj
         else:
             return False
-    if not frames and not gaps:
+    # A header, or a header plus only align_gap lines, binds no frame.
+    if not frames:
         return False
     prev_pts = None
     prev_frame = None
@@ -602,7 +635,74 @@ def _rows_ok(objs: list[dict[str, Any]]) -> bool:
         for row in rows:
             if gap["samples"] == 0 or not (start <= row["frame"] < end):
                 return False
+    return _frame_indexes_covered(frames, gaps)
+
+
+def _frame_indexes_covered(frames: list[dict[str, Any]], gaps: dict[int, dict[str, Any]]) -> bool:
+    """Frame indexes run from 0 with no hole, unless an align_gap span covers the jump.
+
+    The check is across segments. A segment that starts at 100, or a later segment
+    whose first index skips ahead of the previous segment, is broken when no gap
+    covers the missing indexes.
+    """
+    spans = [(gap["from_frame"], gap["from_frame"] + gap["samples"]) for gap in gaps.values()]
+    cursor = 0
+    for row in frames:
+        index = row["frame"]
+        if index > cursor and not _span_covers(spans, cursor, index):
+            return False
+        cursor = index + 1
     return True
+
+
+def _span_covers(spans: list[tuple[int, int]], start: int, end: int) -> bool:
+    """True when every integer in ``[start, end)`` lies in some half-open span."""
+    if start >= end:
+        return True
+    cursor = start
+    for lo, hi in sorted(spans):
+        if hi <= cursor:
+            continue
+        if lo > cursor:
+            return False
+        cursor = hi
+        if cursor >= end:
+            return True
+    return False
+
+
+def _frames_match(cps: list[dict[str, Any]], frames: bytes) -> bool:
+    """True when every frame_bind commitment matches a prefix of ``frames``.
+
+    A trailing uncommitted line is still a leftover, so this does not require the
+    last commitment to cover the whole file. A file that is present and does not
+    match is not classified as stripped.
+    """
+    lines = _split_lines(frames)
+    if not lines:
+        return False
+    objs = _canonical_objects(lines)
+    if objs is None or not _rows_ok(objs):
+        return False
+    heads = _prefix_heads(lines)
+    prev_n = -1
+    saw = False
+    for cp in cps:
+        q = cp.get("qorcap")
+        if not isinstance(q, dict) or "frame_bind" not in q:
+            continue
+        fb = q.get("frame_bind")
+        if not _frame_commitment_ok(fb):
+            return False
+        n = fb["n"]
+        if n < prev_n or n > len(lines):
+            return False
+        expect = GENESIS if n == 0 else heads[n - 1]
+        if fb["head"] != expect:
+            return False
+        prev_n = n
+        saw = True
+    return saw
 
 
 def _header_ok(obj: dict[str, Any]) -> bool:
@@ -633,7 +733,7 @@ def _gap_ok(obj: dict[str, Any]) -> bool:
     if obj["type"] != "align_gap" or obj["reason"] not in _GAP_REASONS:
         return False
     return (_is_int(obj["seg"], 0) and _is_int(obj["from_frame"], 0)
-            and _is_int(obj["samples"], 0) and _is_int(obj["bound"], 0))
+            and _is_int(obj["samples"], 1) and _is_int(obj["bound"], 0))
 
 
 def _frame_commitment_ok(obj: Any) -> bool:
@@ -703,8 +803,8 @@ def _reader_file_ok(obj: Any) -> bool:
     for part in path.split("/"):
         if part.lower() in _FORBIDDEN_SEGMENTS:
             return False
-        stem = part.rsplit(".", 1)[0] if "." in part else part
-        if stem.lower().endswith("_key"):
+        stem = part.split(".", 1)[0]
+        if stem.lower().endswith("_key") or _PRIVATE_KEY_NAME.fullmatch(stem):
             return False
     return True
 
@@ -780,8 +880,38 @@ def _canonical_objects(lines: list[bytes]) -> list[dict[str, Any]] | None:
     return out
 
 
+def _json_too_deep(text: str) -> bool:
+    """True when ``{`` / ``[`` nesting exceeds ``MAX_JSON_DEPTH``. Strings are skipped."""
+    depth = 0
+    in_str = False
+    escape = False
+    for ch in text:
+        if in_str:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch in "{[":
+            depth += 1
+            if depth > MAX_JSON_DEPTH:
+                return True
+        elif ch in "}]":
+            if depth == 0:
+                return True
+            depth -= 1
+    return False
+
+
 def _loads_strict(text: str) -> Any:
-    """JSON object parse that rejects duplicate keys and NaN/Infinity."""
+    """JSON object parse that rejects duplicate keys, NaN/Infinity, and deep nesting."""
+    if _json_too_deep(text):
+        raise ValueError("nesting")
+
     def pairs(items: list[tuple[Any, Any]]) -> dict[str, Any]:
         obj: dict[str, Any] = {}
         for key, value in items:
@@ -797,15 +927,29 @@ def _loads_strict(text: str) -> Any:
 
 
 def _payload_over_cap(raw: bytes) -> bool:
+    """True when ``raw`` is over the shared member, row, or line cap.
+
+    Row count is ``newline count + 1`` on the body. The member is not split into
+    a list of lines, so a run of ``1\\n`` cannot allocate one object per row.
+    """
     if len(raw) > MAX_MEMBER_BYTES:
         return True
     body = raw[:-1] if raw.endswith(b"\n") else raw
     if body == b"":
         return False
-    parts = body.split(b"\n")
-    if len(parts) > MAX_ROWS:
+    if body.count(b"\n") + 1 > MAX_ROWS:
         return True
-    return any(len(part) > MAX_LINE_BYTES for part in parts)
+    start = 0
+    length = len(body)
+    limit = MAX_LINE_BYTES
+    while start < length:
+        nl = body.find(b"\n", start)
+        if nl < 0:
+            return length - start > limit
+        if nl - start > limit:
+            return True
+        start = nl + 1
+    return False
 
 
 def _split_lines(raw: bytes) -> list[bytes] | None:

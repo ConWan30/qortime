@@ -13,6 +13,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import zipfile
 from pathlib import Path
 
@@ -431,8 +432,10 @@ def test_unbound_readers_with_a_valid_frame_chain_is_verified():
 def test_missing_when_the_bundle_has_no_binding_material():
     plain = _cp(0, 0, GENESIS, bind=False)
     assert frame_bind_status({}) == MISSING
-    assert frame_bind_status({CHECKPOINTS_FILE: _jsonl([plain])}) == MISSING
     assert frame_bind_status({CHECKPOINTS_FILE: b""}) == MISSING
+    # A chain that recomputes and carries no binding is missing. Placeholders are broken.
+    assert frame_bind_status(_bundle([], [plain], frames=False)) == MISSING
+    assert frame_bind_status({CHECKPOINTS_FILE: _jsonl([plain])}) == BROKEN
     assert MISSING != FRAME_BIND_VERIFIED
 
 
@@ -460,11 +463,14 @@ def test_stripped_readers_on_seq0_without_frame_bind():
 def test_stripped_files_present_without_commitments():
     lines, _cps, readers = _valid_parts()
     plain = _cp(0, 0, GENESIS, bind=False)
-    base = {CHECKPOINTS_FILE: _jsonl([plain])}
-    assert frame_bind_status({**base, FRAMES_FILE: b"\n".join(lines) + b"\n"}) == STRIPPED
+    base = _bundle([], [plain], frames=False)
+    frames = b"\n".join(lines) + b"\n"
+    assert frame_bind_status({**base, FRAMES_FILE: frames}) == STRIPPED
     assert frame_bind_status({**base, READERS_FILE: readers}) == STRIPPED
-    assert frame_bind_status({FRAMES_FILE: b"\n".join(lines) + b"\n"}) == STRIPPED
+    assert frame_bind_status({FRAMES_FILE: frames}) == STRIPPED
     assert frame_bind_status({READERS_FILE: readers}) == STRIPPED
+    # The same sidecar on a chain that does not recompute is broken, not stripped.
+    assert frame_bind_status({CHECKPOINTS_FILE: _jsonl([plain]), FRAMES_FILE: frames}) == BROKEN
 
 
 def test_stripped_commitments_whose_files_are_absent():
@@ -615,7 +621,12 @@ def test_duplicate_checkpoint_key_is_broken():
 def test_key_like_reader_paths_are_rejected():
     js = pytest.importorskip("jsonschema")
     schema = _schema("qorcap-readers.v0.json")
-    for path in ("secrets/referee_key.json", "secret/reader.py", "sidecar/referee_key.json", "a/foo_KEY.py"):
+    rejected = (
+        "secrets/referee_key.json", "secret/reader.py", "sidecar/referee_key.json", "a/foo_KEY.py",
+        "id_ed25519", "id_rsa", "ID_ED25519", "a/id_rsa.pub", "id_ecdsa_sk", "x.jwk", "a_key.tar.gz",
+    )
+    allowed = ("secretary", "foo_keyish.py", "key.json", "monkey_keyboard.py", "sidecar/qorcap_standard.py")
+    for path in rejected:
         obj = _readers_obj()
         obj["readers"][0]["files"][0]["path"] = path
         with pytest.raises(js.ValidationError):
@@ -625,6 +636,192 @@ def test_key_like_reader_paths_are_rejected():
         heads = _chain(lines)
         cps = [_cp(0, len(lines), heads[-1], {"schema": READERS_SCHEMA, "sha256": hashlib.sha256(raw).hexdigest()})]
         assert frame_bind_status(_bundle(lines, cps, raw)) == BROKEN
+    for path in allowed:
+        obj = _readers_obj()
+        obj["readers"][0]["files"][0]["path"] = path
+        js.validate(obj, schema)
+        lines, _cps, _readers = _valid_parts()
+        raw = canonicalize(obj) + b"\n"
+        heads = _chain(lines)
+        cps = [_cp(0, len(lines), heads[-1], {"schema": READERS_SCHEMA, "sha256": hashlib.sha256(raw).hexdigest()})]
+        assert frame_bind_status(_bundle(lines, cps, raw)) == VERIFIED
+
+
+def _sealed(lines: list[bytes], readers: bytes | None = None) -> dict[str, bytes]:
+    blob = _readers_bytes() if readers is None else readers
+    heads = _chain(lines)
+    cps = [_cp(0, len(lines), heads[-1], {"schema": READERS_SCHEMA, "sha256": hashlib.sha256(blob).hexdigest()})]
+    return _bundle(lines, cps, blob)
+
+
+def test_zero_frame_rows_and_zero_width_gaps_are_broken():
+    """D4/D5: a header plus only an align_gap binds nothing. D6: samples 0 beside a real segment."""
+    readers = _readers_bytes()
+    for gap in (_gap(0, 0, 0, 0, "clock_lost"), _gap(0, 0, 100, 0, "unreadable")):
+        lines = [_header(), gap]
+        assert frame_bind_status(_sealed(lines, readers)) == BROKEN
+    beside = [
+        _header(),
+        _frame(0, 0, 0, 1000),
+        _frame(0, 1, 3003, 1100),
+        _gap(1, 2, 0, 0, "clock_lost"),
+    ]
+    assert frame_bind_status(_sealed(beside, readers)) == BROKEN
+
+
+def test_frame_index_holes_across_segments_are_broken():
+    """N4: a jump across segments, or a first frame above 0, needs an align_gap over the missing indexes."""
+    hole = [
+        _header(),
+        _frame(0, 0, 0, 1000),
+        _frame(0, 1, 3003, 1100),
+        _frame(1, 5, 6006, 1200),
+        _frame(1, 6, 9009, 1300),
+    ]
+    assert frame_bind_status(_sealed(hole)) == BROKEN
+    leading = [_header(), _frame(0, 100, 0, 1000), _frame(0, 101, 3003, 1100)]
+    assert frame_bind_status(_sealed(leading)) == BROKEN
+    covered = [
+        _header(),
+        _frame(0, 0, 0, 1000),
+        _frame(0, 1, 3003, 1100),
+        _gap(0, 0, 6, 2, "clock_lost"),
+        _frame(1, 5, 6006, 1200),
+        _frame(1, 6, 9009, 1300),
+    ]
+    assert frame_bind_status(_sealed(covered)) == VERIFIED
+    leading_gap = [
+        _header(),
+        _gap(0, 0, 100, 0, "unreadable"),
+        _frame(1, 100, 0, 1000),
+        _frame(1, 101, 3003, 1100),
+    ]
+    assert frame_bind_status(_sealed(leading_gap)) == VERIFIED
+    contiguous = [
+        _header(),
+        _frame(0, 0, 0, 1000),
+        _frame(0, 1, 3003, 1100),
+        _frame(1, 2, 6006, 1200),
+        _frame(1, 3, 9009, 1300),
+    ]
+    assert frame_bind_status(_sealed(contiguous)) == VERIFIED
+
+
+def test_chain_tamper_is_broken_before_stripped_or_missing():
+    """N3: a chain that does not recompute is broken. A present frames file that does not match is broken."""
+    lines, cps, readers = _valid_parts()
+    files = _bundle(lines, cps, readers)
+    rows = [json.loads(line) for line in files[CHECKPOINTS_FILE].splitlines()]
+    rows[0]["seq"] = 9
+    files[CHECKPOINTS_FILE] = _jsonl(rows)
+    assert frame_bind_status(files) == BROKEN
+
+    files = _bundle(lines, cps, readers)
+    rows = [json.loads(line) for line in files[CHECKPOINTS_FILE].splitlines()]
+    for row in rows:
+        row["seq"] = row["seq"] + 1
+    files[CHECKPOINTS_FILE] = _jsonl(rows)
+    assert frame_bind_status(files) == BROKEN
+
+    files = _bundle(lines, cps, readers)
+    files[FRAMES_FILE] = files[FRAMES_FILE].replace(_AU.encode(), b"ff" * 32, 1)
+    del files[READERS_FILE]
+    assert frame_bind_status(files) == BROKEN
+
+    # Deleting frames.jsonl leaves a sealed chain and an absent file: that leftover is stripped.
+    files = _bundle(lines, cps, readers, frames=False)
+    assert frame_bind_status(files) == STRIPPED
+
+    # Stripping commitments without resealing no longer looks like missing.
+    files = _bundle(lines, cps, readers)
+    stripped = [json.loads(line) for line in files[CHECKPOINTS_FILE].splitlines()]
+    for row in stripped:
+        row["qorcap"].pop("frame_bind", None)
+        row["qorcap"].pop("readers", None)
+    bare = {CHECKPOINTS_FILE: _jsonl(stripped)}
+    assert frame_bind_status(bare) == BROKEN
+    assert frame_bind_status({CHECKPOINTS_FILE: _jsonl(_seal_copy(stripped))}) == MISSING
+
+
+def _seal_copy(rows: list[dict]) -> list[dict]:
+    copied = [dict(row) for row in rows]
+    _seal(copied)
+    return copied
+
+
+def test_readers_on_later_checkpoints_are_broken():
+    lines, cps, readers = _valid_parts()
+    digest = cps[0]["qorcap"]["readers"]
+    cps[1]["qorcap"]["readers"] = {"schema": READERS_SCHEMA, "sha256": "99" * 32}
+    assert frame_bind_status(_bundle(lines, cps, readers)) == BROKEN
+    cps[1]["qorcap"]["readers"] = dict(digest)
+    assert frame_bind_status(_bundle(lines, cps, readers)) == BROKEN
+
+
+def test_checkpoint_and_readers_caps_and_nesting_fail_closed():
+    from qor_receipt.review.frame_bind import MAX_CHECKPOINT_BYTES, MAX_JSON_DEPTH, MAX_READERS_BYTES, _loads_strict
+
+    assert frame_bind_status({CHECKPOINTS_FILE: b"x" * (MAX_CHECKPOINT_BYTES + 1)}) == BROKEN
+    assert frame_bind_status({READERS_FILE: b"{" + b"a" * MAX_READERS_BYTES}) == BROKEN
+    shallow = '{"a":' + "[" * 3 + "1" + "]" * 3 + "}"
+    assert _loads_strict(shallow)["a"] == [[[1]]]
+    deep = "[" * (MAX_JSON_DEPTH + 1) + "]" * (MAX_JSON_DEPTH + 1)
+    with pytest.raises(ValueError):
+        _loads_strict(deep)
+
+
+def test_oversized_checkpoints_and_newline_runs_stay_bounded():
+    """N2: a checkpoints member past 4 MiB is refused before parse, and row count does not split the bytes."""
+    script = r"""
+import gc, io, json, zipfile
+from qor_receipt.review.frame_bind import (
+    CHECKPOINTS_FILE, FRAMES_FILE, MAX_CHECKPOINT_BYTES, frame_bind_status, verify_frame_bind,
+)
+
+def rss():
+    for line in open("/proc/self/status"):
+        if line.startswith("VmRSS:"):
+            return int(line.split()[1])
+    raise SystemExit("no VmRSS")
+
+chunk = b'{"a":[' + (b"[]," * 20000) + b"]}\n"
+buf = io.BytesIO()
+written = 0
+with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
+    with zf.open(CHECKPOINTS_FILE, "w") as member:
+        while written <= MAX_CHECKPOINT_BYTES * 8:
+            member.write(chunk)
+            written += len(chunk)
+raw = buf.getvalue()
+declared = None
+with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+    declared = zf.getinfo(CHECKPOINTS_FILE).file_size
+del buf
+gc.collect()
+before = rss()
+status = verify_frame_bind(raw).status
+after = rss()
+lines = b"1\n" * 4_000_000
+gc.collect()
+before_lines = rss()
+line_status = frame_bind_status({FRAMES_FILE: lines})
+after_lines = rss()
+print(json.dumps({
+    "status": status,
+    "growth": after - before,
+    "zip": len(raw),
+    "declared": declared,
+    "line_status": line_status,
+    "line_growth": after_lines - before_lines,
+}))
+"""
+    proc = subprocess.run([sys.executable, "-c", script], check=True, capture_output=True, text=True)
+    got = json.loads(proc.stdout)
+    assert got["status"] == BROKEN
+    assert got["declared"] > 4 * 1024 * 1024
+    assert got["growth"] < 16 * 1024
+    assert got["line_status"] == BROKEN
+    assert got["line_growth"] < 16 * 1024
 
 
 def test_zip_names_symlinks_and_size_caps_are_broken(tmp_path: Path):

@@ -48,13 +48,13 @@
     "alignGap": {
       "type": "object",
       "additionalProperties": false,
-      "description": "One segment that is not fully bound. Coverage is bound of samples. The sample span is [from_frame, from_frame + samples).",
+      "description": "One segment that is not fully bound. Coverage is bound of samples. The sample span is [from_frame, from_frame + samples). samples is at least 1; a zero-width gap is broken.",
       "required": ["type", "seg", "from_frame", "samples", "bound", "reason"],
       "properties": {
         "type": {"const": "align_gap"},
         "seg": {"type": "integer", "minimum": 0},
         "from_frame": {"type": "integer", "minimum": 0},
-        "samples": {"type": "integer", "minimum": 0},
+        "samples": {"type": "integer", "minimum": 1},
         "bound": {"type": "integer", "minimum": 0},
         "reason": {
           "enum": ["pts_regression", "composition_offset", "sample_pes_mismatch", "clock_lost", "unreadable"]

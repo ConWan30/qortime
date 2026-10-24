@@ -123,13 +123,17 @@ that PTS to the capture clock. `au_sha256` is the SHA-256 of the encoded video a
 A segment that is not fully bound is one `align_gap` line: `seg`, `from_frame`, `samples`, `bound`, and `reason`.
 Coverage is `bound` of `samples`. The sample span is `[from_frame, from_frame + samples)`. Samples in that span
 without a frame row are the gap. `reason` is `pts_regression`, `composition_offset`, `sample_pes_mismatch`,
-`clock_lost`, or `unreadable`. A segment with no `align_gap` must have contiguous frame indexes, so its bound
-frame count equals its sample count. A hole, or a return to an earlier `seg` after a later one, is broken.
+`clock_lost`, or `unreadable`. `samples` is at least 1. A segment with no `align_gap` must have contiguous frame
+indexes, so its bound frame count equals its sample count. Frame indexes are also contiguous across segments and
+start at 0. A jump,
+including a first frame above 0 or a hole moved onto the next segment, is broken unless an `align_gap` span covers
+every missing index. A hole, or a return to an earlier `seg` after a later one, is broken.
 
 `readers.json` (`qorcap-readers/v0`) is one closed object (`additionalProperties` false): hashes of the scorebug
 and vision reader code and packs, plus a `runtimes` array of the builds that produced the reads (ffmpeg and cv2
 when those produced them). Checkpoint seq 0 carries `qorcap.readers` as `{schema, sha256}` of the file bytes
 (JCS plus one trailing LF) or `{schema, state: "unbound"}` when no file was sealed. Later checkpoints omit it.
+A `readers` object on seq 1 or later is broken, whether or not it matches seq 0.
 
 `qor_receipt.review.frame_bind.frame_bind_status` returns exactly one status, as a plain `str`:
 
@@ -155,21 +159,29 @@ trust a caller-supplied result. A copy of a real result compares equal; that sti
   `hash` is `SHA-256(JCS({seq, t_ms, frames_hash, input_hash, prev}))`. `readers` `sha256` is the SHA-256 of the
   `readers.json` bytes (JCS plus one LF). Successive frame rows have strictly increasing `pts` and non-decreasing
   `seg`. `readers` `state: "unbound"` with no `readers.json` can still be verified: that is a frame binding with
-  no reader-identity claim. A frames.jsonl with no frame row is broken.
-* **missing** — no `frame_bind`, no `readers` on seq 0, and neither sidecar file. missing does not prove binding was never enabled.
+  no reader-identity claim. A frames.jsonl with no frame row is broken. That includes a header plus only
+  `align_gap` lines. An `align_gap` with `samples` of 0 is broken, including a zero-width gap beside a real segment.
+* **missing** — no `frame_bind`, no `readers` on seq 0, and neither sidecar file, and the checkpoint chain recomputes
+  (or there are no checkpoint bytes). An empty `checkpoints.jsonl` is missing. A forged chain with no binding is
+  broken. missing does not prove binding was never enabled.
   A complete strip and reseal is indistinguishable from never-enabled at this verifier. Only a
   referee signature over a checkpoint hash that still contained the commitment can show that removal, and this
   status does not check that signature.
 * **stripped** — a visible leftover: `frame_bind` on some checkpoints but not others; `frame_bind` without
   `readers` on seq 0, or `readers` on seq 0 without `frame_bind` on every checkpoint; `frames.jsonl` or
   `readers.json` present without its commitment; a `frame_bind` or readers-hash commitment whose file is absent;
-  or `readers.json` beside `state: "unbound"`.
+  or `readers.json` beside `state: "unbound"`. missing and stripped are reported only when that checkpoint chain
+  recomputes. A `frames.jsonl` that is present and does not match its commitment is broken even when `readers.json`
+  is absent. Deleting `frames.jsonl` on a chain that still recomputes stays stripped: the verifier sees the absent
+  file, not bytes that were removed before it ran.
 * **broken** — the commitments and the files they require are present, and the hash chain, PTS monotonicity, gap
-  coverage, or a schema check fails. That includes a `frames_hash`, body `hash`, `prev`, or `seq` that does not
-  match the bytes, a frame-index hole with no `align_gap`, interleaved segments, a header and no frame row, or a
+  coverage, or a schema check fails. The checkpoint chain is checked before leftover classification, so a `seq`,
+  `prev`, `frames_hash`, or body `hash` that does not match is broken rather than stripped or missing. That includes
+  a frame-index hole with no `align_gap` (inside a segment, across segments, or a first frame above 0), interleaved
+  segments, a header and no frame row, an `align_gap` whose `samples` is 0, a `readers` object after seq 0, or a
   duplicate JSON key (the same key twice; NaN and Infinity too). A checkpoints file that cannot be parsed, a
   symlink, a zip member whose name is not exactly `checkpoints.jsonl`, `frames.jsonl`, or `readers.json`, and any
-  other shape, is broken. Over a size cap is broken.
+  other shape, is broken. Over a size cap is broken. JSON nested deeper than 32 is broken.
 
 missing and stripped are no claim. broken is no claim. The status is advisory. It is not an input to `VERIFIED`,
 `PARTIAL`, `FAIL`, or `SELF_ATTESTED`.
@@ -183,8 +195,10 @@ not a limit.
 `frames.jsonl` is a bundle meta file, so the referee upload counts it toward the same 96 MiB budget as
 `read_meta_zip` (`MAX_META_BYTES`). At about 150–200 bytes a frame and 30 frames a second, that is about 20 MB per
 hour. A long capture can cross that budget and be refused before a receipt verdict. `verify_frame_bind` uses that
-same 96 MiB cap on the bundle and on each member, read with a bounded stream so a declared or inflated member
-cannot grow past it. A line over 1 MiB, more than 1,000,000 rows, or more than 64 zip members is broken. A
+same 96 MiB cap on the bundle and on `frames.jsonl`, read with a bounded stream so a declared or inflated member
+cannot grow past it. `checkpoints.jsonl` is capped at 4 MiB and `readers.json` at 64 KiB. Those caps are enforced
+while the member is read, before it is parsed. A line over 1 MiB, more than 1,000,000 rows (counted from newlines,
+without splitting the member into a line list), or more than 64 zip members is broken. A
 directory member that is a symlink is broken. None of these caps is a receipt verdict.
 
 `verify/verify.js` does not walk these files. `verify/frame-bind-status.js` exports the same status set, frozen,
