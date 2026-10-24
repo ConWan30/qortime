@@ -117,6 +117,12 @@ const PLAIN = {
   no_haptic_events: "No haptic events were recorded.",
   haptic_low_confidence_only: "Haptic events were recorded, but none with high confidence.",
   inputs_sha256_missing: "No hash of the controller log.",
+  noncanonical_json: "The receipt is not canonical JSON. The verifier stopped.",
+  noncanonical_number: "A number is not a canonical integer. The verifier stopped.",
+  noncanonical_surrogate: "A string has an unpaired surrogate. The verifier stopped.",
+  noncanonical_duplicate_key: "An object repeats a key. The verifier stopped.",
+  noncanonical_hex: "A hash, key, or signature is not lowercase hex of the required length.",
+  noncanonical_signatures: "The signatures object is not the exact shape the verifier accepts.",
 };
 const DEVICE_NOTE = {
   tpm_claimed: "Device signature valid. The bundle claims a TPM key. That TPM claim is unverified. Does not change the receipt verdict.",
@@ -154,6 +160,10 @@ function checkLabel(name) { return KNOWN_CHECKS[name] || String(name || "").repl
 const isObj = (x) => !!x && typeof x === "object" && !Array.isArray(x);
 const roleOf = (code) => (/^(home|away):/.exec(code) || [])[1] || null;
 
+const EARLY_STOP = new Set(["schema", "noncanonical_json", "noncanonical_number", "noncanonical_surrogate", "noncanonical_duplicate_key"]);
+function stoppedEarly(errors) {
+  return errors.some((e) => EARLY_STOP.has(e) || String(e).startsWith("malformed:"));
+}
 function pick(codes, test) { return codes.filter(test); }
 function stateFrom(errs, parts, ran) {
   if (errs.length) return "fail";
@@ -168,7 +178,7 @@ function stateFrom(errs, parts, ran) {
 export function buildSteps(receipt, v) {
   const errors = (v && v.errors) || [];
   const partial = (v && v.partial) || [];
-  const stopped = errors.includes("schema") || errors.some((e) => String(e).startsWith("malformed:"));
+  const stopped = stoppedEarly(errors);
   const r = isObj(receipt) ? receipt : {};
   const used = new Set();
   const take = (list, test) => { const out = pick(list, test); out.forEach((c) => used.add(c)); return out; };
@@ -179,10 +189,10 @@ export function buildSteps(receipt, v) {
     if (stopped && !errs.length && !parts.length && opts.applies !== false) state = "unchecked";
     steps.push({ id, title, state, codes: [...errs, ...parts], note: opts.note || "" });
   };
-  const schemaErr = take(errors, (e) => e === "schema");
+  const schemaErr = take(errors, (e) => e === "schema" || EARLY_STOP.has(e));
   add("schema", "Receipt format qor-receipt/v0", schemaErr, []);
   if (schemaErr.length) steps[0].state = "fail";
-  else if (r.schema === SCHEMA) steps[0].state = "pass";
+  else if (!stopped && r.schema === SCHEMA) steps[0].state = "pass";
   const pin = take(errors, (e) => e === "referee_key_mismatch");
   const pinP = take(partial, (p) => p === "referee_key_not_pinned" || p === "referee_pin_not_allowlisted");
   add("pin", "Pinned referee key", pin, pinP);
@@ -234,7 +244,7 @@ export function buildPanels(receipt, v, extras = {}) {
   const partial = (v && v.partial) || [];
   const status = v && v.status;
   const sigOk = !errors.includes("bad_referee_signature") && !errors.includes("schema");
-  const stopped = errors.includes("schema") || errors.some((e) => String(e).startsWith("malformed:"));
+  const stopped = stoppedEarly(errors);
   const panels = [];
   const m = isObj(r.match) ? r.match : {};
   const res = isObj(r.result) ? r.result : {};

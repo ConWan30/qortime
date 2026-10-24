@@ -333,10 +333,13 @@ def verify_receipt(r: dict[str, Any] | str | bytes, *, referee_pub: str | None =
         r = parsed
     if not isinstance(r, dict):
         return _fail_closed(["noncanonical_json"])
-    structural = structural_errors(r)
-    # Floats and lone surrogates make JCS raise (or, in JS, collapse to an integer).
-    # Reject them before signing bytes are built so both verifiers stop the same way.
-    if any(e in ("noncanonical_number", "noncanonical_surrogate") for e in structural):
+    try:
+        structural = structural_errors(r)
+    except (RecursionError, MemoryError):
+        return _fail_closed(["noncanonical_json"])
+    # Floats, lone surrogates, and prototype-key objects make JCS raise or, in JS,
+    # disagree with the signature. Reject them before signing bytes are built.
+    if any(e in ("noncanonical_number", "noncanonical_surrogate", "noncanonical_json") for e in structural):
         return _fail_closed(structural)
     errors: list[str] = []
     partial: list[str] = []

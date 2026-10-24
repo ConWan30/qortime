@@ -1,7 +1,7 @@
 // Shared with tests/test_adversarial_parity.py. Both read tests/fixtures/adversarial/manifest.json.
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { verifyReceipt } from "./verify.js";
+import { MAX_DEPTH, MAX_RECEIPT_BYTES, parseCanonical, structuralErrors, verifyReceipt } from "./verify.js";
 
 const root = new URL("../", import.meta.url);
 
@@ -13,11 +13,18 @@ function loadBase() {
 }
 
 function apply(base, cse) {
-  if (!cse.replace) return base;
-  const [old, neu] = cse.replace;
-  const found = base.split(old).length - 1;
-  if (found !== 1) throw new Error(`${cse.id}: needle count ${found}`);
-  return base.replace(old, neu);
+  if (cse.generate === "depth") return "[".repeat(MAX_DEPTH + 1) + "]".repeat(MAX_DEPTH + 1);
+  if (cse.generate === "size") return "[" + " ".repeat(MAX_RECEIPT_BYTES) + "]";
+  let text = base;
+  if (cse.replace) {
+    const [old, neu] = cse.replace;
+    const found = text.split(old).length - 1;
+    if (found !== 1) throw new Error(`${cse.id}: needle count ${found}`);
+    text = text.replace(old, neu);
+  }
+  if (cse.prefix) text = cse.prefix + text;
+  if (cse.suffix) text = text + cse.suffix;
+  return text;
 }
 
 export async function runAdversarial(ok) {
@@ -42,6 +49,31 @@ export async function runAdversarial(ok) {
         `published ${matchId} ${mode} stays ${want.status}`);
     }
   }
+  const spec = readFileSync(new URL("spec/match-receipt-v0.md", root), "utf8");
+  const src = readFileSync(new URL("verify/canonical.js", root), "utf8");
+  const py = readFileSync(new URL("qor_receipt/canonical.py", root), "utf8");
+  ok(spec.includes(`at most ${MAX_RECEIPT_BYTES} UTF-8 bytes`) && spec.includes(`at most ${MAX_DEPTH} nested`),
+    "spec states the shared size and depth caps");
+  ok(src.includes(`MAX_RECEIPT_BYTES = ${MAX_RECEIPT_BYTES}`) && src.includes(`MAX_DEPTH = ${MAX_DEPTH}`),
+    "JS caps match the spec");
+  ok(py.includes(`MAX_RECEIPT_BYTES = ${MAX_RECEIPT_BYTES}`) && py.includes(`MAX_DEPTH = ${MAX_DEPTH}`),
+    "Python caps match the spec");
+  const exact = "[]" + " ".repeat(MAX_RECEIPT_BYTES - 2);
+  const atSize = parseCanonical(exact);
+  ok(atSize.ok && Array.isArray(atSize.value) && atSize.value.length === 0, "a receipt at the size cap still parses");
+  const atDepth = parseCanonical("[".repeat(MAX_DEPTH) + "]".repeat(MAX_DEPTH));
+  ok(atDepth.ok, "nesting at the depth cap still parses");
+  ok(!structuralErrors({ review: { bundle: { hash: "NOT-HEX" } } }).includes("noncanonical_hex"),
+    "a hash outside the schema hex paths is not a hex failure");
+  ok(structuralErrors({ players: [{ pubkey: "ABCD" }] }).includes("noncanonical_hex"),
+    "player pubkey stays on the hex rule");
+  const proto = JSON.parse(readFileSync(new URL("tests/fixtures/adversarial/proto_motion.json", root), "utf8"));
+  const clean = await verifyReceipt(proto.clean, proto.pub, { allowlist: proto.allowlist });
+  const injected = await verifyReceipt(proto.injected, proto.pub, { allowlist: proto.allowlist });
+  ok(clean.status === "PARTIAL" && clean.errors.length === 0 && JSON.stringify(clean.partial) === JSON.stringify(["home:motion_signal_missing"]),
+    "proto fixture without motion stays PARTIAL");
+  ok(injected.status === "FAIL" && injected.errors.includes("noncanonical_json") && injected.status !== "VERIFIED",
+    "signals.__proto__.motion_permille cannot upgrade PARTIAL to VERIFIED");
 }
 
 const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;

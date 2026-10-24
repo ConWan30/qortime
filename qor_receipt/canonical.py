@@ -16,26 +16,10 @@ from typing import Any
 
 MAX_SAFE = 2**53 - 1
 _SAFE_DIGITS = "9007199254740991"
-_HEX = {
-    "pubkey": 64,
-    "delegate_pubkey": 64,
-    "key_id": 16,
-    "root_key_id": 16,
-    "delegate_key_id": 16,
-    "nonce": 32,
-    "frames_hash": 64,
-    "input_hash": 64,
-    "prev": 64,
-    "hash": 64,
-    "hid_sha256": 64,
-    "chain_head": 64,
-    "checkpoint_head": 64,
-    "inputs_chain_head": 64,
-    "local_receipt_sha256": 64,
-    "inputs_sha256": 64,
-    "sig": 128,
-    "referee_sig": 128,
-}
+# spec/match-receipt-v0.md §1. Same numbers in verify/canonical.js.
+MAX_RECEIPT_BYTES = 4000000
+MAX_DEPTH = 64
+_FORBIDDEN_KEYS = frozenset({"__proto__", "constructor", "prototype"})
 _WS = frozenset(" \t\r\n")
 _ESC = {"\"": "\"", "\\": "\\", "/": "/", "b": "\b", "f": "\f", "n": "\n", "r": "\r", "t": "\t"}
 _HEXDIG = frozenset("0123456789abcdefABCDEF")
@@ -52,9 +36,14 @@ def parse_canonical(text: str) -> tuple[Any, list[str]]:
     if not isinstance(text, str) or text.startswith("\ufeff"):
         return None, ["noncanonical_json"]
     try:
+        if len(text.encode("utf-8")) > MAX_RECEIPT_BYTES:
+            return None, ["noncanonical_json"]
         return _Parser(text).parse(), []
     except CanonicalError as e:
         return None, [e.code]
+    except Exception:
+        # ValueError, RecursionError, MemoryError, UnicodeEncodeError: FAIL, never raise.
+        return None, ["noncanonical_json"]
 
 
 def structural_errors(value: Any) -> list[str]:
@@ -75,6 +64,7 @@ class _Parser:
         self.s = text
         self.n = len(text)
         self.i = 0
+        self.depth = 0
 
     def parse(self) -> Any:
         value = self._value()
@@ -108,7 +98,7 @@ class _Parser:
             return self._lit("false", False)
         if c == "n":
             return self._lit("null", None)
-        if c == "-" or c.isdigit():
+        if c == "-" or _ascii_digit(c):
             return self._number()
         raise CanonicalError("noncanonical_json")
 
@@ -120,6 +110,15 @@ class _Parser:
 
     def _object(self) -> dict[str, Any]:
         self.i += 1
+        self.depth += 1
+        if self.depth > MAX_DEPTH:
+            raise CanonicalError("noncanonical_json")
+        try:
+            return self._object_body()
+        finally:
+            self.depth -= 1
+
+    def _object_body(self) -> dict[str, Any]:
         self._ws()
         out: dict[str, Any] = {}
         if self._peek() == "}":
@@ -135,6 +134,8 @@ class _Parser:
                 raise CanonicalError("noncanonical_json")
             self.i += 1
             val = self._value()
+            if key in _FORBIDDEN_KEYS:
+                raise CanonicalError("noncanonical_json")
             if key in out:
                 raise CanonicalError("noncanonical_duplicate_key")
             out[key] = val
@@ -150,6 +151,15 @@ class _Parser:
 
     def _array(self) -> list[Any]:
         self.i += 1
+        self.depth += 1
+        if self.depth > MAX_DEPTH:
+            raise CanonicalError("noncanonical_json")
+        try:
+            return self._array_body()
+        finally:
+            self.depth -= 1
+
+    def _array_body(self) -> list[Any]:
         self._ws()
         out: list[Any] = []
         if self._peek() == "]":
@@ -214,31 +224,31 @@ class _Parser:
         start = i
         if s[i] == "-":
             i += 1
-            if i >= n or not s[i].isdigit():
+            if i >= n or not _ascii_digit(s[i]):
                 raise CanonicalError("noncanonical_json")
-        if i >= n or not s[i].isdigit():
+        if i >= n or not _ascii_digit(s[i]):
             raise CanonicalError("noncanonical_json")
         if s[i] == "0":
             i += 1
-            if i < n and s[i].isdigit():
+            if i < n and _ascii_digit(s[i]):
                 raise CanonicalError("noncanonical_number")
         else:
-            while i < n and s[i].isdigit():
+            while i < n and _ascii_digit(s[i]):
                 i += 1
         if i < n and (s[i] == "." or s[i] in "eE"):
             if s[i] == ".":
                 i += 1
-                if i >= n or not s[i].isdigit():
+                if i >= n or not _ascii_digit(s[i]):
                     raise CanonicalError("noncanonical_json")
-                while i < n and s[i].isdigit():
+                while i < n and _ascii_digit(s[i]):
                     i += 1
             if i < n and s[i] in "eE":
                 i += 1
                 if i < n and s[i] in "+-":
                     i += 1
-                if i >= n or not s[i].isdigit():
+                if i >= n or not _ascii_digit(s[i]):
                     raise CanonicalError("noncanonical_json")
-                while i < n and s[i].isdigit():
+                while i < n and _ascii_digit(s[i]):
                     i += 1
             self.i = i
             raise CanonicalError("noncanonical_number")
@@ -250,6 +260,41 @@ class _Parser:
         if len(digits) > len(_SAFE_DIGITS) or (len(digits) == len(_SAFE_DIGITS) and digits > _SAFE_DIGITS):
             raise CanonicalError("noncanonical_number")
         return int(lex)
+
+
+def _ascii_digit(c: str) -> bool:
+    return len(c) == 1 and "0" <= c <= "9"
+
+
+def _hex_len(path: tuple) -> int | None:
+    """Lowercase-hex lengths from schema/receipt.v0.json, by path, not by key name."""
+    n = len(path)
+    if n == 3 and path[0] == "players" and path[2] == "pubkey":
+        return 64
+    if n == 2 and path[0] == "referee" and path[1] == "pubkey":
+        return 64
+    if n == 2 and path[0] == "referee" and path[1] == "key_id":
+        return 16
+    if n == 3 and path[0] == "challenges" and path[2] == "nonce":
+        return 32
+    if n == 4 and path[0] == "challenges" and path[2] == "result" and path[3] == "hid_sha256":
+        return 64
+    if n == 4 and path[0] == "checkpoints" and path[1] in ("home", "away"):
+        if path[3] in ("frames_hash", "input_hash", "prev", "hash"):
+            return 64
+        if path[3] == "referee_sig":
+            return 128
+    if n == 4 and path[0] == "signatures" and path[1] == "players":
+        if path[3] == "key_id":
+            return 16
+        if path[3] == "sig":
+            return 128
+    if n == 3 and path[0] == "signatures" and path[1] == "referee":
+        if path[2] == "key_id":
+            return 16
+        if path[2] == "sig":
+            return 128
+    return None
 
 
 def _lone_surrogate(text: str) -> bool:
@@ -268,7 +313,10 @@ def _lone_surrogate(text: str) -> bool:
     return False
 
 
-def _walk(value: Any, add) -> None:
+def _walk(value: Any, add, path: tuple = (), depth: int = 0) -> None:
+    if depth > MAX_DEPTH:
+        add("noncanonical_json")
+        return
     if isinstance(value, bool) or value is None:
         return
     if isinstance(value, float) or (isinstance(value, int) and abs(value) > MAX_SAFE):
@@ -279,19 +327,22 @@ def _walk(value: Any, add) -> None:
             add("noncanonical_surrogate")
         return
     if isinstance(value, list):
-        for item in value:
-            _walk(item, add)
+        for i, item in enumerate(value):
+            _walk(item, add, path + (i,), depth + 1)
         return
     if isinstance(value, dict):
         for key, item in value.items():
+            if key in _FORBIDDEN_KEYS:
+                add("noncanonical_json")
             if not isinstance(key, str) or _lone_surrogate(key):
                 add("noncanonical_surrogate")
-            length = _HEX.get(key)
+            child = path + (key,)
+            length = _hex_len(child)
             if length is not None and isinstance(item, str) and (
                 len(item) != length or any(ch not in "0123456789abcdef" for ch in item)
             ):
                 add("noncanonical_hex")
-            _walk(item, add)
+            _walk(item, add, child, depth + 1)
 
 
 def _signatures(value: Any, add) -> None:

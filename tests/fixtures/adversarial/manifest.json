@@ -1,7 +1,7 @@
 {
   "base": "site/matches/170123/receipt.json",
   "pin": "referee.pubkey",
-  "description": "Raw-text edits of the published VERIFIED receipt for match 170123. Both verifiers must return expect. error, when set, must appear in errors.",
+  "description": "Raw-text edits of the published VERIFIED receipt for match 170123, plus generated over-limit inputs. Both verifiers must return expect. error, when set, must appear in errors. Probe cases from the PR #69 review are the small edits here, not copies of the receipt.",
   "cases": [
     {
       "id": "baseline",
@@ -247,6 +247,303 @@
         "\"motion_permille\": {\n      \"away\": 521\n",
         "\"motion_permille\": {\n      \"away\": 521.0\n"
       ]
+    },
+    {
+      "id": "proto_top_obj",
+      "expect": "FAIL",
+      "error": "noncanonical_json",
+      "note": "__proto__ object at the top level is not an own member the signature covers",
+      "replace": [
+        "\"schema\": \"qor-receipt/v0\",",
+        "\"schema\": \"qor-receipt/v0\", \"__proto__\": {},"
+      ]
+    },
+    {
+      "id": "proto_top_num",
+      "expect": "FAIL",
+      "error": "noncanonical_json",
+      "note": "__proto__ number at the top level",
+      "replace": [
+        "\"schema\": \"qor-receipt/v0\",",
+        "\"schema\": \"qor-receipt/v0\", \"__proto__\": 1,"
+      ]
+    },
+    {
+      "id": "proto_in_signatures",
+      "expect": "FAIL",
+      "error": "noncanonical_json",
+      "note": "__proto__ inside signatures",
+      "replace": [
+        "  \"signatures\": {\n",
+        "  \"signatures\": {\n    \"__proto__\": {\"note\": \"unsigned\"},\n"
+      ]
+    },
+    {
+      "id": "proto_in_result",
+      "expect": "FAIL",
+      "error": "noncanonical_json",
+      "note": "__proto__ inside result",
+      "replace": [
+        "    \"final_confirmed\": true\n  },\n",
+        "    \"final_confirmed\": true,\n    \"__proto__\": {\"winner\": \"home\"}\n  },\n"
+      ]
+    },
+    {
+      "id": "proto_dup_top",
+      "expect": "FAIL",
+      "error": "noncanonical_json",
+      "note": "duplicated __proto__ member",
+      "replace": [
+        "\"schema\": \"qor-receipt/v0\",",
+        "\"schema\": \"qor-receipt/v0\", \"__proto__\": {}, \"__proto__\": {},"
+      ]
+    },
+    {
+      "id": "proto_in_players_sig",
+      "expect": "FAIL",
+      "error": "noncanonical_json",
+      "note": "__proto__ inside signatures.players",
+      "replace": [
+        "  \"signatures\": {\n    \"players\": {\n",
+        "  \"signatures\": {\n    \"players\": {\n      \"__proto__\": {\"key_id\": \"x\", \"sig\": \"y\"},\n"
+      ]
+    },
+    {
+      "id": "constructor_key",
+      "expect": "FAIL",
+      "error": "noncanonical_json",
+      "note": "constructor member",
+      "replace": [
+        "\"schema\": \"qor-receipt/v0\",",
+        "\"schema\": \"qor-receipt/v0\", \"constructor\": 1,"
+      ]
+    },
+    {
+      "id": "prototype_key",
+      "expect": "FAIL",
+      "error": "noncanonical_json",
+      "note": "prototype member",
+      "replace": [
+        "\"schema\": \"qor-receipt/v0\",",
+        "\"schema\": \"qor-receipt/v0\", \"prototype\": 1,"
+      ]
+    },
+    {
+      "id": "arabic_indic_digit",
+      "expect": "FAIL",
+      "error": "noncanonical_json",
+      "note": "Arabic-Indic digit is not an ASCII integer",
+      "replace": [
+        "    \"quarter\": 4,\n    \"final_t_ms\":",
+        "    \"quarter\": \u0664,\n    \"final_t_ms\":"
+      ]
+    },
+    {
+      "id": "superscript_digit",
+      "expect": "FAIL",
+      "error": "noncanonical_json",
+      "note": "superscript digit must not raise or verify",
+      "replace": [
+        "    \"quarter\": 4,\n    \"final_t_ms\":",
+        "    \"quarter\": \u00b2,\n    \"final_t_ms\":"
+      ]
+    },
+    {
+      "id": "fullwidth_digit",
+      "expect": "FAIL",
+      "error": "noncanonical_json",
+      "note": "fullwidth digit is not an ASCII integer",
+      "replace": [
+        "    \"quarter\": 4,\n    \"final_t_ms\":",
+        "    \"quarter\": \uff14,\n    \"final_t_ms\":"
+      ]
+    },
+    {
+      "id": "neg_arabic_zero",
+      "expect": "FAIL",
+      "error": "noncanonical_json",
+      "note": "Arabic-Indic negative zero is not canonical -0",
+      "replace": [
+        "    \"home_score\": 0,\n",
+        "    \"home_score\": -\u0660,\n"
+      ]
+    },
+    {
+      "id": "mixed_ascii_arabic_digit",
+      "expect": "FAIL",
+      "error": "noncanonical_json",
+      "note": "ASCII zero followed by an Arabic-Indic digit",
+      "replace": [
+        "    \"quarter\": 4,\n    \"final_t_ms\":",
+        "    \"quarter\": 0\u0664,\n    \"final_t_ms\":"
+      ]
+    },
+    {
+      "id": "bom",
+      "expect": "FAIL",
+      "error": "noncanonical_json",
+      "note": "leading U+FEFF",
+      "prefix": "\ufeff"
+    },
+    {
+      "id": "trailing_ws",
+      "expect": "VERIFIED",
+      "note": "trailing whitespace is still the same receipt",
+      "suffix": "\n \t\r\n"
+    },
+    {
+      "id": "trailing_garbage",
+      "expect": "FAIL",
+      "error": "noncanonical_json",
+      "note": "trailing non-json",
+      "suffix": "x"
+    },
+    {
+      "id": "trailing_nul",
+      "expect": "FAIL",
+      "error": "noncanonical_json",
+      "note": "trailing NUL",
+      "suffix": "\u0000"
+    },
+    {
+      "id": "second_doc",
+      "expect": "FAIL",
+      "error": "noncanonical_json",
+      "note": "a second JSON value",
+      "suffix": "{}"
+    },
+    {
+      "id": "exponent_1e21",
+      "expect": "FAIL",
+      "error": "noncanonical_number",
+      "note": "1e21",
+      "replace": [
+        "    \"home_score\": 0,\n",
+        "    \"home_score\": 1e21,\n"
+      ]
+    },
+    {
+      "id": "exponent_5e_324",
+      "expect": "FAIL",
+      "error": "noncanonical_number",
+      "note": "5e-324",
+      "replace": [
+        "    \"home_score\": 0,\n",
+        "    \"home_score\": 5e-324,\n"
+      ]
+    },
+    {
+      "id": "neg_zero_float",
+      "expect": "FAIL",
+      "error": "noncanonical_number",
+      "note": "-0.0",
+      "replace": [
+        "    \"home_score\": 0,\n",
+        "    \"home_score\": -0.0,\n"
+      ]
+    },
+    {
+      "id": "above_max_safe",
+      "expect": "FAIL",
+      "error": "noncanonical_number",
+      "note": "2^53",
+      "replace": [
+        "    \"home_score\": 0,\n",
+        "    \"home_score\": 9007199254740992,\n"
+      ]
+    },
+    {
+      "id": "max_safe_integer",
+      "expect": "FAIL",
+      "error": "bad_referee_signature",
+      "note": "2^53-1 is a canonical integer but it is not the signed score",
+      "replace": [
+        "    \"home_score\": 0,\n",
+        "    \"home_score\": 9007199254740991,\n"
+      ]
+    },
+    {
+      "id": "huge_integer",
+      "expect": "FAIL",
+      "error": "noncanonical_number",
+      "note": "400-digit integer",
+      "replace": [
+        "    \"home_score\": 0,\n",
+        "    \"home_score\": 9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999,\n"
+      ]
+    },
+    {
+      "id": "escaped_dup_key",
+      "expect": "FAIL",
+      "error": "noncanonical_duplicate_key",
+      "note": "schema repeated via a unicode escape",
+      "replace": [
+        "\"schema\": \"qor-receipt/v0\",",
+        "\"schema\": \"qor-receipt/v0\", \"schem\\u0061\": \"qor-receipt/v0\","
+      ]
+    },
+    {
+      "id": "nested_dup_result",
+      "expect": "FAIL",
+      "error": "noncanonical_duplicate_key",
+      "note": "duplicate key inside result",
+      "replace": [
+        "    \"final_confirmed\": true\n  },\n",
+        "    \"final_confirmed\": true,\n    \"final_confirmed\": true\n  },\n"
+      ]
+    },
+    {
+      "id": "nbsp_whitespace",
+      "expect": "FAIL",
+      "error": "noncanonical_json",
+      "note": "NBSP is not JSON whitespace",
+      "replace": [
+        "\"schema\": \"qor-receipt/v0\",",
+        "\"schema\":\u00a0\"qor-receipt/v0\","
+      ]
+    },
+    {
+      "id": "vertical_tab_whitespace",
+      "expect": "FAIL",
+      "error": "noncanonical_json",
+      "note": "vertical tab is not JSON whitespace",
+      "replace": [
+        "\"schema\": \"qor-receipt/v0\",",
+        "\"schema\":\u000b\"qor-receipt/v0\","
+      ]
+    },
+    {
+      "id": "raw_control_in_string",
+      "expect": "FAIL",
+      "error": "noncanonical_json",
+      "note": "raw control character in a string",
+      "replace": [
+        "\"player_id\": \"local:player\"",
+        "\"player_id\": \"local:play\u0001er\""
+      ]
+    },
+    {
+      "id": "unicode_escape_same_value",
+      "expect": "VERIFIED",
+      "note": "a unicode escape that decodes to the same signed string",
+      "replace": [
+        "\"player_id\": \"local:player\"",
+        "\"player_id\": \"local:pl\\u0061yer\""
+      ]
+    },
+    {
+      "id": "over_depth",
+      "expect": "FAIL",
+      "error": "noncanonical_json",
+      "note": "one level past the spec depth cap",
+      "generate": "depth"
+    },
+    {
+      "id": "over_size",
+      "expect": "FAIL",
+      "error": "noncanonical_json",
+      "note": "one byte past the spec size cap",
+      "generate": "size"
     }
   ]
 }

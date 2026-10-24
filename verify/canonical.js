@@ -4,22 +4,21 @@
 // JSON.parse alone cannot see these; verifyReceipt has to be given the text.
 
 const MAX_SAFE_DIGITS = "9007199254740991";
-const HEX_LEN = {
-  pubkey: 64, delegate_pubkey: 64, key_id: 16, root_key_id: 16, delegate_key_id: 16,
-  nonce: 32, frames_hash: 64, input_hash: 64, prev: 64, hash: 64, hid_sha256: 64,
-  chain_head: 64, checkpoint_head: 64, inputs_chain_head: 64, local_receipt_sha256: 64,
-  inputs_sha256: 64, sig: 128, referee_sig: 128,
-};
+// spec/match-receipt-v0.md §1. Same numbers in qor_receipt/canonical.py.
+export const MAX_RECEIPT_BYTES = 4000000;
+export const MAX_DEPTH = 64;
+const FORBIDDEN = new Set(["__proto__", "constructor", "prototype"]);
 const ESC = { "\"": "\"", "\\": "\\", "/": "/", b: "\b", f: "\f", n: "\n", r: "\r", t: "\t" };
 const HEXDIG = "0123456789abcdefABCDEF";
 
 export function parseCanonical(text) {
   if (typeof text !== "string" || text.charCodeAt(0) === 0xfeff) return { ok: false, errors: ["noncanonical_json"] };
   try {
+    if (new TextEncoder().encode(text).length > MAX_RECEIPT_BYTES) return { ok: false, errors: ["noncanonical_json"] };
     return { ok: true, value: new Parser(text).parse(), errors: [] };
   } catch (e) {
     if (e && e.canonical) return { ok: false, errors: [e.canonical] };
-    throw e;
+    return { ok: false, errors: ["noncanonical_json"] };
   }
 }
 
@@ -38,7 +37,7 @@ function fail(code) {
 }
 
 class Parser {
-  constructor(text) { this.s = text; this.n = text.length; this.i = 0; }
+  constructor(text) { this.s = text; this.n = text.length; this.i = 0; this.depth = 0; }
   parse() {
     const value = this.value();
     this.ws();
@@ -75,8 +74,14 @@ class Parser {
   }
   object() {
     this.i++;
+    this.depth++;
+    if (this.depth > MAX_DEPTH) fail("noncanonical_json");
+    try { return this.objectBody(); }
+    finally { this.depth--; }
+  }
+  objectBody() {
     this.ws();
-    const out = {};
+    const out = Object.create(null);
     if (this.peek() === "}") { this.i++; return out; }
     for (;;) {
       this.ws();
@@ -86,8 +91,9 @@ class Parser {
       if (this.peek() !== ":") fail("noncanonical_json");
       this.i++;
       const val = this.value();
+      if (FORBIDDEN.has(key)) fail("noncanonical_json");
       if (Object.prototype.hasOwnProperty.call(out, key)) fail("noncanonical_duplicate_key");
-      out[key] = val;
+      Object.defineProperty(out, key, { value: val, writable: true, enumerable: true, configurable: true });
       this.ws();
       const c = this.peek();
       if (c === ",") { this.i++; continue; }
@@ -97,6 +103,12 @@ class Parser {
   }
   array() {
     this.i++;
+    this.depth++;
+    if (this.depth > MAX_DEPTH) fail("noncanonical_json");
+    try { return this.arrayBody(); }
+    finally { this.depth--; }
+  }
+  arrayBody() {
     this.ws();
     const out = [];
     if (this.peek() === "]") { this.i++; return out; }
@@ -211,7 +223,38 @@ function isLowerHex(text, length) {
   return true;
 }
 
-function walk(value, add) {
+// Lengths taken from schema/receipt.v0.json hex patterns. A key named hash or sig
+// somewhere else (review, signals, delegation) is not checked here.
+function hexLen(path) {
+  const n = path.length;
+  const a = path[0], b = path[1], c = path[2], d = path[3];
+  if (n === 3 && a === "players" && c === "pubkey") return 64;
+  if (n === 2 && a === "referee" && b === "pubkey") return 64;
+  if (n === 2 && a === "referee" && b === "key_id") return 16;
+  if (n === 3 && a === "challenges" && c === "nonce") return 32;
+  if (n === 4 && a === "challenges" && c === "result" && d === "hid_sha256") return 64;
+  if (n === 4 && a === "checkpoints" && (b === "home" || b === "away")) {
+    if (d === "frames_hash" || d === "input_hash" || d === "prev" || d === "hash") return 64;
+    if (d === "referee_sig") return 128;
+  }
+  if (n === 4 && a === "signatures" && b === "players") {
+    if (d === "key_id") return 16;
+    if (d === "sig") return 128;
+  }
+  if (n === 3 && a === "signatures" && b === "referee") {
+    if (c === "key_id") return 16;
+    if (c === "sig") return 128;
+  }
+  return 0;
+}
+
+function ownValue(obj, key) {
+  const desc = Object.getOwnPropertyDescriptor(obj, key);
+  return desc && "value" in desc ? desc.value : undefined;
+}
+
+function walk(value, add, path = [], depth = 0) {
+  if (depth > MAX_DEPTH) { add("noncanonical_json"); return; }
   if (typeof value === "number") {
     if (Object.is(value, -0) || !Number.isSafeInteger(value)) add("noncanonical_number");
     return;
@@ -221,16 +264,18 @@ function walk(value, add) {
     return;
   }
   if (Array.isArray(value)) {
-    for (const item of value) walk(item, add);
+    for (let i = 0; i < value.length; i++) walk(value[i], add, path.concat(i), depth + 1);
     return;
   }
   if (value && typeof value === "object") {
     for (const key of Object.keys(value)) {
+      if (FORBIDDEN.has(key)) add("noncanonical_json");
       if (loneSurrogate(key)) add("noncanonical_surrogate");
-      const length = HEX_LEN[key];
-      const item = value[key];
+      const item = ownValue(value, key);
+      const child = path.concat(key);
+      const length = hexLen(child);
       if (length && typeof item === "string" && !isLowerHex(item, length)) add("noncanonical_hex");
-      walk(item, add);
+      walk(item, add, child, depth + 1);
     }
   }
 }

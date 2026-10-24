@@ -2,9 +2,9 @@
 import * as ed from "./vendor/noble-ed25519.js";
 import { TRUSTED_REFEREES } from "./trusted_referees.inc.js";
 import { REFEREE_REVOCATIONS } from "./referee_revocations.inc.js";
-import { parseCanonical, structuralErrors } from "./canonical.js";
+import { MAX_DEPTH, MAX_RECEIPT_BYTES, parseCanonical, structuralErrors } from "./canonical.js";
 
-export { parseCanonical, structuralErrors };
+export { parseCanonical, structuralErrors, MAX_RECEIPT_BYTES, MAX_DEPTH };
 
 export const SCHEMA = "qor-receipt/v0";
 export const SELF_ATTESTED = "SELF_ATTESTED";
@@ -433,6 +433,12 @@ function failClosed(errors) {
   return { status: "FAIL", trust_tier: null, errors, partial: [], referee_trust: "unknown" };
 }
 
+function own(obj, key) {
+  if (!obj || typeof obj !== "object") return undefined;
+  const desc = Object.getOwnPropertyDescriptor(obj, key);
+  return desc && "value" in desc ? desc.value : undefined;
+}
+
 export async function verifyReceipt(r, refereePub = null, opts = {}) {
   if (typeof r === "string") {
     const parsed = parseCanonical(r);
@@ -441,7 +447,7 @@ export async function verifyReceipt(r, refereePub = null, opts = {}) {
   }
   if (!r || typeof r !== "object" || Array.isArray(r)) return failClosed(["noncanonical_json"]);
   const structural = structuralErrors(r);
-  if (structural.includes("noncanonical_number") || structural.includes("noncanonical_surrogate")) return failClosed(structural);
+  if (structural.includes("noncanonical_number") || structural.includes("noncanonical_surrogate") || structural.includes("noncanonical_json")) return failClosed(structural);
   const allowlist = (opts && opts.allowlist) || TRUSTED_REFEREES;
   const revocations = opts && "revocations" in opts ? opts.revocations : REFEREE_REVOCATIONS;
   let reviewMode = false;
@@ -550,7 +556,7 @@ export async function verifyReceipt(r, refereePub = null, opts = {}) {
         }
       }
       partial.push(...challengeConsistencyPartials(r.challenges, role));
-      const mp = ((r.signals || {}).motion_permille || {})[role];
+      const mp = own(own(own(r, "signals"), "motion_permille"), role);
       if (mp == null) partial.push(`${role}:motion_signal_missing`);
       else if (mp < MOTION_MIN) partial.push(`${role}:motion_correlation_low`);
     }
