@@ -48,16 +48,20 @@ version string, the parameters, ``cv2.__version__``, and a SHA-256 of
 what a harness should record. The tested build is pinned in
 ``tests/constraints-pan-estimator.txt`` (``PINNED_OPENCV_WHEEL``).
 
-Clock skew (applies to any future video-vs-log mismatch detector)
------------------------------------------------------------------
-On the match 170123 highlight clips, two independent clip-to-capture-clock
-alignments (segment-manifest interpolation vs. the checkpoint lock time)
-disagreed by 120-719 ms (``MEASURED_CLIP_CAPTURE_SKEW_MS``). Until per-frame
-clock binding lands, a detector that compares an on-screen event with the USB
-HID log (skill move, user catch, controlled-player motion with no matching
-logged press) must treat any event pair closer than ``CLOCK_SKEW_NO_CLAIM_MS``
-as ``no_claim``: it can neither confirm nor deny a match inside that window.
-Use ``within_clock_skew``.
+Clock binding gate (applies to any future video-vs-log mismatch detector)
+-------------------------------------------------------------------------
+A detector that compares an on-screen event with the USB HID log (skill move,
+user catch, controlled-player motion with no matching logged press) must call
+``mismatch_claim_allowed``. Without per-frame clock binding it returns False for
+every event, whatever the spacing: the result is ``no_claim``. Spacing alone
+never permits a claim.
+
+Observation only, not a limit or threshold: on the match 170123 highlight
+clips (one session, 3 clips), two independent clip-to-capture-clock alignments
+(segment-manifest interpolation vs. the checkpoint lock time) disagreed by
+120-719 ms. ``OBSERVED_MAX_CLIP_CLOCK_SKEW_MS`` (719) is the observed max skew
+(3 clips). ``SKEW_MARGIN_FACTOR`` (1.5) is a guess, not a bound. Neither value
+is used by the gate.
 """
 from __future__ import annotations
 
@@ -85,15 +89,30 @@ PINNED_OPENCV_VERSION = "5.0.0"
 # sha256(cv2.getBuildInformation()) of that wheel's cp37-abi3-manylinux_2_28_x86_64 build (CI and the box).
 PINNED_OPENCV_BUILD_INFO_SHA256 = "0ef08003c31127b3b5d34410ab13483c511e73b99e278b1a8abd6ddcb265699a"
 
-# Measured clip/capture clock skew on the 170123 highlight clips (min, max), ms.
-MEASURED_CLIP_CAPTURE_SKEW_MS = (120, 719)
-# Video-vs-log events closer than this are no_claim until per-frame clock binding lands.
-CLOCK_SKEW_NO_CLAIM_MS = MEASURED_CLIP_CAPTURE_SKEW_MS[1]
+# Observed clip/capture clock skew, match 170123, single session, 3 highlight clips:
+# (min, max) in ms across the 3 clips. A measurement, not a limit or threshold.
+OBSERVED_CLIP_CLOCK_SKEW_RANGE_MS = (120, 719)
+# Observed max skew (3 clips). Not a limit, not a threshold.
+OBSERVED_MAX_CLIP_CLOCK_SKEW_MS = 719
+# Margin someone might apply to the observed max. A guess, not a bound.
+SKEW_MARGIN_FACTOR = 1.5
+# Both observation constants get replaced once per-frame clock binding lands; the
+# binding itself, not these numbers, must then define any timing tolerance. The
+# gate below does not read them.
 
 
-def within_clock_skew(video_ms: int, log_ms: int, skew_ms: int = CLOCK_SKEW_NO_CLAIM_MS) -> bool:
-    """True when two events are too close to order or pair given the clock skew: report no_claim."""
-    return abs(int(video_ms) - int(log_ms)) <= skew_ms
+def mismatch_claim_allowed(per_frame_binding: bool, video_ms: int | None = None, log_ms: int | None = None) -> bool:
+    """Gate for any video-vs-log mismatch claim. False means ``no_claim``.
+
+    Without per-frame clock binding (``per_frame_binding is not True``) this is
+    always False, whatever ``video_ms`` and ``log_ms`` are: event spacing never
+    permits a claim. With binding it returns True and leaves timing tolerance to
+    the bound clock; there is no path here that relies on the observed skew.
+    ``video_ms`` and ``log_ms`` are accepted only so callers pass them and the
+    tests can prove they do not matter.
+    """
+    del video_ms, log_ms
+    return per_frame_binding is True
 
 FracBox = tuple[float, float, float, float]  # x0, x1, y0, y1 as fractions of the full frame
 

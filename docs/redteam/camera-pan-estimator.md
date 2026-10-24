@@ -71,17 +71,25 @@ The tested wheel is **`opencv-python-headless==5.0.0.93`** (OpenCV 5.0.0, `cp37-
 
 The committed red-team report (`motion-rule-v3-aimbot.md`) still uses the no_claim stubs. A test plugs this estimator in on synthetic frames and checks only the contract, the identity, and determinism. No catch rate is asserted or published, because pan versus right stick is not a valid Madden aimbot signal (see below).
 
-With that wheel the estimator hash is `dcb9d149ddd1f81e87b81cd6ac86be00578a6cec7ac39cd50c050958c7e8b14f`. The real-data numbers below were produced before the OpenCV identity was folded into the hash, so they were reported as `e225c50d…`. The code path and the wheel are identical, and the bins are unchanged.
+With that wheel the estimator hash is `2d2366343bd925fe201f6dc66c49c84e0b21f8911067e720d3ea934c2720bcb4`. Earlier revisions reported `e225c50d…` (before the OpenCV identity was hashed) and `dcb9d149…` (before the clock-binding gate). The per-bin outputs on the three clips are byte-identical across all three.
 
-## Clock skew rule for video-vs-log detectors
+## Clock binding gate for video-vs-log detectors
 
-On these clips, two independent ways of aligning clip time to the capture clock disagree by **120–719 ms**: segment-manifest interpolation and the checkpoint lock time (`MEASURED_CLIP_CAPTURE_SKEW_MS`).
+Any video-vs-log mismatch detector must call `mismatch_claim_allowed(per_frame_binding, video_ms, log_ms)` before it claims anything. Examples of such a detector are a skill move, a user catch, or controlled-player motion with no matching logged press.
 
-Until per-frame clock binding lands, any video-vs-log mismatch detector must treat an on-screen event and a log event closer than `CLOCK_SKEW_NO_CLAIM_MS` (719 ms) as **`no_claim`**. Use `within_clock_skew()`. Examples of such events are a skill move, a user catch, or controlled-player motion with no matching logged press. Inside that window the detector can neither confirm nor deny a match.
+- **Without per-frame clock binding, the gate always returns False, which means `no_claim`.** That holds whatever the spacing between the events. Spacing alone never permits a claim, and tests fail if a spacing-only allow path comes back.
+- With binding, the gate defers timing tolerance to the bound clock. It has no path that relies on the numbers below.
+
+**Observation only, not a limit or threshold:**
+
+- On these clips (one session, 3 clips), two independent ways of aligning clip time to the capture clock disagree by 120–719 ms. The two methods are segment-manifest interpolation and the checkpoint lock time.
+- `OBSERVED_MAX_CLIP_CLOCK_SKEW_MS = 719` is the observed max skew (3 clips). `OBSERVED_CLIP_CLOCK_SKEW_RANGE_MS = (120, 719)` is the observed range.
+- `SKEW_MARGIN_FACTOR = 1.5` is a guess, not a bound.
+- The gate reads none of these values. All of them get replaced once per-frame binding lands.
 
 ## Real-data check: match 170123 highlight clips (not committed)
 
-The full 170123 recording is not off the capture PC. The only real frames used were the three public, hash-locked highlight clips (`site/matches/170123/clips/*.mp4`, 12 s each, 1280x720, 30 fps, re-encoded, with a burned caption). The sha256 of all three matches `clips/manifest.json`. The clips cover a field goal (away 3), a touchdown (away 9) and the extra point (away 10), so they are **not** a representative sample of play. The controller log is the `inputs.jsonl` from the match meta archive. The clips are aligned to the capture clock by interpolating `video.mp4` time onto the manifest segments' `mono_ms`. A second alignment derived from the lock disagrees by 120–719 ms, so per-bin stick alignment is approximate.
+The full 170123 recording is not off the capture PC. The only real frames used were the three public, hash-locked highlight clips (`site/matches/170123/clips/*.mp4`, 12 s each, 1280x720, 30 fps, re-encoded, with a burned caption). The sha256 of all three matches `clips/manifest.json`. The clips cover a field goal (away 3), a touchdown (away 9) and the extra point (away 10), so they are **not** a representative sample of play. The controller log is the `inputs.jsonl` from the match meta archive. The clips are aligned to the capture clock by interpolating `video.mp4` time onto the manifest segments' `mono_ms`. A second alignment derived from the lock disagrees by 120–719 ms (observed max skew, 3 clips), so per-bin stick alignment is approximate.
 
 Units in the rate columns are %W/s.
 

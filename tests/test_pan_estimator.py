@@ -8,6 +8,7 @@ so a camera move of d px per frame is d / 320 * 10 * 100 %W/s.
 from __future__ import annotations
 
 import ast
+import inspect
 import sys
 from pathlib import Path
 
@@ -213,12 +214,34 @@ def test_pinned_wheel_matches_the_constraints_file():
         assert pe.PINNED_OPENCV_WHEEL not in project["optional-dependencies"][extra]
 
 
-def test_clock_skew_window_is_no_claim():
-    assert pe.MEASURED_CLIP_CAPTURE_SKEW_MS == (120, 719)
-    assert pe.CLOCK_SKEW_NO_CLAIM_MS == 719
-    assert pe.within_clock_skew(10_000, 10_719)
-    assert pe.within_clock_skew(10_500, 10_000)
-    assert not pe.within_clock_skew(10_000, 10_720)
+def test_skew_constants_are_observations_not_limits():
+    assert pe.OBSERVED_CLIP_CLOCK_SKEW_RANGE_MS == (120, 719)
+    assert pe.OBSERVED_MAX_CLIP_CLOCK_SKEW_MS == 719
+    assert pe.SKEW_MARGIN_FACTOR == 1.5
+    # The old permissive spacing helper and "limit" names must not come back.
+    for gone in ("within_clock_skew", "CLOCK_SKEW_NO_CLAIM_MS", "MEASURED_CLIP_CAPTURE_SKEW_MS"):
+        assert not hasattr(pe, gone)
+
+
+SPACINGS_MS = (0, 1, 119, 120, 500, 719, 720, 1078, 1079, 1500, 10_000, 3_600_000, -719, -10_000)
+
+
+@pytest.mark.parametrize("binding", [False, None, 0, 1, "yes", "true", [True]])
+def test_no_per_frame_binding_is_always_no_claim(binding):
+    """Fails if a spacing-only allow path comes back: no binding, no claim, at any spacing."""
+    for spacing in SPACINGS_MS:
+        assert pe.mismatch_claim_allowed(binding, video_ms=100_000 + spacing, log_ms=100_000) is False
+        assert pe.mismatch_claim_allowed(binding, 100_000, 100_000 + spacing) is False
+    assert pe.mismatch_claim_allowed(binding) is False
+
+
+def test_binding_result_does_not_depend_on_observed_skew():
+    results = {pe.mismatch_claim_allowed(True, video_ms=100_000 + d, log_ms=100_000) for d in SPACINGS_MS}
+    assert results == {True}
+    gate_src = inspect.getsource(pe.mismatch_claim_allowed)
+    body = gate_src.split('"""')[-1]
+    for name in ("OBSERVED_MAX_CLIP_CLOCK_SKEW_MS", "OBSERVED_CLIP_CLOCK_SKEW_RANGE_MS", "SKEW_MARGIN_FACTOR", "719", "abs("):
+        assert name not in body
 
 
 def test_scorebug_mask_comes_from_the_local_scorebug_profile():
