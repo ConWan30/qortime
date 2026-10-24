@@ -451,20 +451,63 @@ The discriminator runs inside `decide`, once per frame. A recording can show a p
 
 Each frame carries `pixel` (`end_menu_6`, `pause_8`, `faded_field`, `replay`, or `other`) and, when the hold has to be measured, `picture_since_ms` (the first frame of the current dark picture). `options_presses_ms` is the list of OPTIONS rising edges, or null when that list was not measured. OPTIONS is DualSense button bit 9 (`OPTIONS_BIT = 1 << 9`, `qorcap_reader.py:55-63`; the same bit is `BUTTON_BITS` name `OPTIONS` bit 9 in `qor_receipt/review/bundle.py:306-307`). A press time is wall milliseconds: `inputs.jsonl` header `wall_anchor_ms` plus `t_us // 1000` on a rising edge of field `b` (`bundle.py:316-329`).
 
-`picture_since_ms` is required only when a measured press could still be the press that opened this frame. For a frame at `t` and a press at `p`, that window is `t - 11500 < p <= t + 500`.
+`picture_since_ms` is required only when a measured press could still label this frame a pause. For a frame at `t` and a press at `p`, that window is `t - 16000 < p <= t + 500`.
 
-* The opened-by-OPTIONS test allows the picture to start up to 500 ms before the press (`picture_since_ms - p >= -500`, `qorcap_reader.py:977-997`).
-* The frame is a pause only when the hold is under `OPTIONS_COINCIDENT_HOLD_MS` (12000), which means `picture_since_ms > t - 12000`.
-* If `p <= t - 11500`, the earliest picture that press could have opened (`p - 500`) already has a hold of at least 12000 ms. That press cannot label the frame pause.
-* If `p > t + 500`, the earliest picture for that press is after the frame.
+The binding picture is the latest one the press can open, not the earliest. The opened-by-OPTIONS test allows `picture_since_ms` from `p - 500` through `p + OPTIONS_MENU_LEAD_MS` (`OPTIONS_MENU_LEAD_MS = 4000`, `qorcap_reader.py:977-997`). The earliest picture (`p - 500`) has the longest hold. The latest picture (`p + 4000`) has the shortest hold, and that is the one that can still be under 12 s after the others are not.
 
-An empty `options_presses_ms` means OPTIONS was measured and not pressed. No press falls in the window, and `picture_since_ms` is not required. A confirming vector that leaves the field off stays an end menu.
+* The frame is a pause only when the hold is under `OPTIONS_COINCIDENT_HOLD_MS` (12000).
+* The shortest hold for a press is `t - (p + 4000)`. It is still under 12000 when `p > t - 16000`.
+* A press at exactly `t - 16000` has shortest hold 12000. That is not under 12000. The press is outside the window. `options-press-at-t-minus-16000-is-outside` confirms.
+* A press at `t - 15999` with the picture 4000 ms later has hold 11999. It is inside the window and it is a pause. `options-press-at-t-minus-15999-is-pause` does not adopt.
+* If `p > t + 500`, the earliest picture for that press is after the frame. A press at exactly `t + 500` is inside the window. `options-press-at-t-plus-500-is-pause` does not adopt.
 
-Scorebug still up is a lock. The picture was opened by OPTIONS when some press in that window has `-500 <= picture_since_ms - p <= OPTIONS_MENU_LEAD_MS` (`OPTIONS_MENU_LEAD_MS = 4000`) and at least one lock has `t_ms <= p`. The hold is `t - picture_since_ms`. A hold under 12000 labels the frame pause.
+A window of `(t - 11500, t + 500]` is the earliest picture, and it lets a pause through. At the old boundary the picture is still a pause after 11.2 s when it appears 300 ms after the press, after 9.5 s with a 2 s lag, and after 7.5 s with the 4 s lag this rule allows.
 
-The referee re-read today does not pass those presses. `reread_final` (`media.py:179-191`) feeds frames to a fresh `ReaderCore` and does not call `note_options_from_inputs`. The bundle does contain `inputs.jsonl` (`bundle.py` `META_FILES`). v1 requires the re-read to load the same rising edges the client tail loads (`qorcap_match.py` `note_options_from_inputs` at the tail check). The tail window is 240 s at 2 Hz (`policy.py` `TAIL_MS`, `engine.py` `TAIL_HZ`). A tail can start after the dark picture is already up, so `picture_since_ms` can fall outside the decoded frames.
+Scorebug still up is a lock. The picture was opened by OPTIONS when some press in the window has `-500 <= picture_since_ms - p <= 4000` and at least one lock has `t_ms <= p`. The hold is `t - picture_since_ms`. A hold under 12000 labels the frame pause.
 
-When `options_presses_ms` is null, `inputs.jsonl` was not read. Every 6-item frame fails closed. When a press does fall in the window and `picture_since_ms` is missing, that frame's hold cannot be measured, and that frame is not an end menu. The final stays unconfirmed. Official review is `partial` when a monotone lock exists, and `fail` when it does not. It is not `pass`. A 6-item frame with no `picture_since_ms` and no press in the window is still an end menu.
+`options_presses_ms` is the list that loader returns. `[]` means the log was read, the pad was connected over the frame window, and OPTIONS did not rise. A confirming vector that omits both `inputs` and `options_presses_ms` is that `[]`. It is not a missing log.
+
+The referee re-read today does not pass those presses. `reread_final` (`media.py:179-191`) feeds frames to a fresh `ReaderCore` and does not call `note_options_from_inputs`. The bundle does contain `inputs.jsonl` (`bundle.py` `META_FILES`). v1 has both the client tail and the re-read call `load_options_presses_ms` on those rows. They do not call `note_options_from_inputs` or `press_events` for the pause gate. The tail window is 240 s at 2 Hz (`policy.py` `TAIL_MS`, `engine.py` `TAIL_HZ`). A tail can start after the dark picture is already up, so `picture_since_ms` can fall outside the decoded frames. The loader's window is still the frames `decide` sees.
+
+`bundle.press_events` (`bundle.py:316-329`) cannot return null. It returns `[]` for an empty log, for an input row with no integer `b`, and for an input row with no integer `t_us`, and with no header it uses anchor 0. Each of those is "measured, not pressed", and the pause gate never runs. v1 does not call `press_events` for this list. Both sides call `load_options_presses_ms`. It returns null, and every 6-item frame fails closed, when any of these is true:
+
+* there is no header row, or `wall_anchor_ms` is not an integer (a bool is not an integer)
+* no status row shows the pad `connected` across the frame window `(min t_ms - 16000, max t_ms + 500]`
+* any input row (`type` `in`) lacks an integer `b` or an integer `t_us`, or any status row lacks an integer `t_us` or a known `state`
+
+`[]` is allowed only when the header anchor is an integer, the pad stays `connected` over that window, every input row is well-formed, and OPTIONS bit 9 never rises. `inputs-no-wall-anchor`, `inputs-wall-anchor-not-integer`, `inputs-pad-not-connected`, and `inputs-malformed-row` are the nulls. `inputs-well-formed-no-options-press` is the `[]` that confirms.
+
+```text
+load_options_presses_ms(rows, frame_times_ms) -> list | None:
+    header = the first row whose type is "header"
+    if header is missing or wall_anchor_ms is not an integer:
+        return None
+    anchor = wall_anchor_ms
+    for row in rows:
+        if row.type == "in" and (b is not an integer or t_us is not an integer):
+            return None
+        if row.type == "status" and (t_us is not an integer or state is not
+                off | searching | connected | missing | unplugged | stalled):
+            return None
+    if frame_times_ms is empty:
+        return None
+    window = (min(frame_times_ms) - 16000, max(frame_times_ms) + 500]
+    spans = the wall-time stretches where the latest status is "connected"
+            (wall = anchor + t_us // 1000; a connected status with no later
+            status runs through the end of the log)
+    if those spans do not cover every integer millisecond in the window:
+        return None
+    presses = []
+    prev = 0
+    for row in rows where type == "in", in log order:
+        rise = row.b & ~prev
+        if rise has bit 9 (OPTIONS, 1 << 9):
+            presses.append(anchor + row.t_us // 1000)
+        prev = row.b
+    return presses
+```
+
+When `options_presses_ms` is null, every 6-item frame fails closed. When a press does fall in the window and `picture_since_ms` is missing, that frame's hold cannot be measured, and that frame is not an end menu. The final stays unconfirmed. Official review is `partial` when a kept lock exists, and `fail` when it does not. It is not `pass`. A 6-item frame with no `picture_since_ms` and no press in the window is still an end menu.
 
 Accepted risks, all of which need the recording to end on the picture. A later agreed scorebug read resets the streak and the agreed score, so none of these survive a scorebug that returns:
 
@@ -503,7 +546,9 @@ Issue 94 reported one confidence, 0.912, over 485 frames. That number is the com
 
 The candidate is the stable read in the fresh suffix after the latest lock (`max t_ms`). A second stable read in that suffix with a different score is a contradicting later menu. `decide` sees it in `frames`. The final is unconfirmed. Neither menu score is posted.
 
-A later frame blocks that confirm even when it is not itself stable. After the candidate run, any readable end-menu frame whose score differs from the agreed score fails the decision closed. Readable here means `ok` is true, `pixel` is `end_menu_6`, the OPTIONS hold does not label the frame pause, and `conf` is at least the glyph floor `MIN_SCORE` (0.70, `qorcap_endmenu.py:37-38`). One frame at 0.85 is enough. The candidate is not posted. A frame under 0.70 does not block. A frame that only resets the streak, and is followed by a later stable run of the same score, is earlier than that run and does not block it. `later-readable-frame-blocks-confirm` is the 0.85 frame with no lock: posted score null, neither menu, `final_reread` fail. `later-frame-below-readability-floor` is the same shape at 0.69 and still confirms.
+A later frame blocks that confirm even when it is not itself stable. After the candidate run, any readable end-menu frame whose score differs from the agreed score fails the decision closed. Readable here means `ok` is true, `pixel` is `end_menu_6`, the OPTIONS hold does not label the frame pause, and `conf` is at least the glyph floor `MIN_SCORE` (0.70, `qorcap_endmenu.py:37-38`). 0.70 stays that constant. One frame at 0.85 is enough. The candidate is not posted. A frame under 0.70 does not block. An `ok: false` frame does not block. A frame that only resets the streak, and is followed by a later stable run of the same score, is earlier than that run and does not block it. `later-readable-frame-blocks-confirm` is the 0.85 frame with no lock: posted score null, neither menu, `final_reread` fail. `later-frame-below-readability-floor` is the same shape at 0.69 and still confirms.
+
+Before the implementation PR merges, measure blocking-flicker and streak-reset rates on the real recordings 135645, 143212, 091651, 110028, and 162055. Those five are not the held-out set, and they are not vector templates. 135645's vector stays synthetic. The held-out matches (170123, 021003, 125430, 084523, 193534) are not the measurement set. A synthetic fixture pass is not that measurement: 0 wrong of 615 on 143212, and 2 of 972 reading 4–29 on the online menu without the scorebug cross-check, only land on partial. Partial is the safe side. The implementation PR records the five rates next to this paragraph.
 
 An agreed scorebug read with `t_ms` after menu frames is later live play. It is a lock. It resets the streak and the agreed score, including when `clock_s` is 0. If no stable read follows that lock, the final is unconfirmed.
 
@@ -512,7 +557,7 @@ Failed gates produce these results, on both sides:
 | Case | Posted score | `method` | `final_basis` | `final_confirmed` | `final_reread` |
 |---|---|---|---|---|---|
 | Gate failed, locks are monotone | last lock (`max t_ms`) | `last_scorebug_read_unconfirmed` | absent | false | `partial` |
-| A later lock is below an earlier lock | the last row of the monotone prefix, not the lower lock | `last_scorebug_read_unconfirmed` | absent | false | `partial` |
+| A later lock is below the running maximum | the last lock that is not below that maximum, not the lower lock | `last_scorebug_read_unconfirmed` | absent | false | `partial` |
 | No lock, and no adopted menu | null | `last_scorebug_read_unconfirmed` | absent | false | `fail` |
 | No lock, and two menus that disagree | null. Neither menu is posted | `last_scorebug_read_unconfirmed` | absent | false | `fail` |
 | No lock, stable read, then a later readable frame with a different score | null. Neither score is posted | `last_scorebug_read_unconfirmed` | absent | false | `fail` |
@@ -521,7 +566,7 @@ The no-score fail detail stays "referee could not read any score from the record
 
 `partial` on an official review check stays PARTIAL (`qor_receipt/receipt.py:242-243`). It does not become VERIFIED.
 
-Today's `_note_end_menu_disagreement` (`qorcap_reader.py:1576-1595`) keeps the posted menu score and only clears `final_confirmed`. v1 does not keep that score when a later menu contradicts it. The receipt score is the monotone prefix. `select_offline_final` (`qorcap_match.py:2431-2445`) and `_disputed_final_result` (`:2457-2464`) follow the same result: that prefix, `final_confirmed` false. A later lock below an earlier lock is not the prefix.
+Today's `_note_end_menu_disagreement` (`qorcap_reader.py:1576-1595`) keeps the posted menu score and only clears `final_confirmed`. v1 does not keep that score when a later menu contradicts it. The receipt score is the last kept lock. `select_offline_final` (`qorcap_match.py:2431-2445`) and `_disputed_final_result` (`:2457-2464`) follow the same result: that lock, `final_confirmed` false. A lock below the running maximum is not that score, and a later kept lock still is.
 
 `tail_final_check` stops at the first end-menu agreement (`qorcap_match.py:2520-2521`). `reread_final` does the same (`media.py:190-191`). Both loops run to the end of the decoded window, then `decide` sees the last menu. The comment at `qorcap_match.py:2477-2478` is the bug those breaks leave in place.
 
@@ -551,7 +596,7 @@ The note fires when either of these is true:
 
 `wall_gap_ms` is stored in both cases. Unread seconds are not subtracted from the clock, and they are not treated as 0:00. qorcap#85 logs a stall and does not mint a score from it. The menu mints the score. The gap is recorded. The note does not downgrade the verdict.
 
-The menu must be greater than or equal to every lock on both sides, not only the latest. A menu below any lock is unconfirmed. A later lock that is below an earlier lock is a backwards lock. It resets freshness, because latest is `max t_ms`, and it is not the posted score. The posted score is the last row of the monotone prefix. The sidecar records that lock as `backwards_lock`. `check_final` (`integrity.py:195-202`) compares the receipt score to `last_state`. The caller passes that monotone row as `last_state`. The lower lock stays on the sidecar and is not the posted score.
+The menu must be greater than or equal to every lock on both sides, not only the latest. A menu below any lock is unconfirmed. Walk the locks in the order given and keep a running maximum, componentwise. A lock whose away or home is below that maximum is dropped. The walk does not stop. A later lock that is at or above the running maximum on both sides is kept, can be the posted score, and can close an episode. The posted score is the last kept lock. The sidecar records the first dropped lock as `backwards_lock`. `check_final` (`integrity.py:195-202`) compares the receipt score to `last_state`. The caller passes that last kept lock as `last_state`. The dropped lock stays on the sidecar and is not the posted score. `stale-decrease-keeps-later-lock` is the early-pause locks plus a 3–3. The unconfirmed score is 13–6, and the 13–6 lock still closes.
 
 A tie, and a menu with either side equal to 1, stay refused. See §4.7. That refusal is not a sign-off to delete them.
 
@@ -617,9 +662,9 @@ decide(frames, locks, evidence, options_presses_ms) -> Decision
 * `frames`: reads `{t_ms, away, home, conf, ok, pixel, picture_since_ms}`, listed in non-decreasing `t_ms`. A backwards step fails the decision closed. A duplicate timestamp does not add a distinct instant or any span. A frame counts toward the stable run only when `t_ms` is strictly greater than the latest lock, the timestamp is strictly greater than the previous counted frame, `ok` is true, `conf` ≥ 0.90, and §4.2 labels `pixel` as the end menu. The confirming run is the fresh suffix after the latest lock. A second stable score in that suffix is the contradicting later menu. A later readable frame at or above 0.70 with a different score blocks the confirm the same way (§4.4).
 * `locks`: agreed scorebug rows, possibly empty, each with raw `clock_s` (integer or null). Latest is `max t_ms`. Used for the fresh suffix, the monotone posted score, the stall gap, and the disagreement note. `clock_s` is not a confirm precondition. `decide` does not require a Q4 row and does not copy a clock onto a null.
 * `evidence`: clip, haptic, and input rows `{t_ms, kind}`. A scorebug row is a lock, not evidence.
-* `options_presses_ms`: measured OPTIONS rising edges, or null when `inputs.jsonl` was not read. Null fails closed on a 6-item frame. `picture_since_ms` is required only when a press falls in the §4.2 window.
+* `options_presses_ms`: the list from `load_options_presses_ms` (§4.2), or null when that loader cannot measure the log. Null fails closed on a 6-item frame. `picture_since_ms` is required only when a press falls in the §4.2 window `(t - 16000, t + 500]`.
 
-End-screen timestamps are derived inside `decide`. `decide` has no `end_screens` argument. An end screen is a frame `decide` still labels an end menu: `ok` true, `pixel` `end_menu_6`, and the OPTIONS hold does not label the frame pause. Confidence is not part of that label, so a frame under 0.70 can still be an end-screen timestamp. A 6-item frame the hold labels pause is not an end screen. A 6-item frame whose hold was not measured is not an end screen either: `options_presses_ms` is null, or a press in the §4.2 window has no `picture_since_ms`. A 6-item frame with no press in that window is an end screen without `picture_since_ms`. `picture_since_ms` on a frame that remains an end menu is included. Every vector in §7 is reproducible from `frames`, `locks`, `evidence`, and `options_presses_ms`.
+End-screen timestamps are derived inside `decide`. `decide` has no `end_screens` argument. An end screen is a frame `decide` labels by picture and hold: `pixel` `end_menu_6`, and the OPTIONS hold does not label the frame pause. `ok` and `conf` are not part of that label. An `ok: false` frame whose picture is the six-item menu is an end screen, including when name tags cover the away score. Readability is the stable-run gate and the later-frame blocker only. A frame under 0.70 can still be an end-screen timestamp, and it does not block a confirm. A 6-item frame the hold labels pause is not an end screen. A 6-item frame whose hold was not measured is not an end screen either: `options_presses_ms` is null, or a press in the §4.2 window has no `picture_since_ms`. A 6-item frame with no `picture_since_ms` and no press in the window is still an end screen. `picture_since_ms` on a frame that remains an end menu is included. A vector is reproducible from `frames`, `locks`, `evidence`, and `options_presses_ms`. When the vector carries `inputs`, `options_presses_ms` is `load_options_presses_ms` of those rows and the frame times, and it is not a second field.
 
 `Decision` carries `rule` = `final-rule/v1`, `cutoff_ms`, `cutoff_reason`, `episode_e0_ms`, `evidence_counted`, `posted_score`, and `writer`. `cutoff_ms` is not a receipt field. `cutoff_reason` is one of `no_end_screen`, `closed_episodes_only`, or `open_episode`.
 
@@ -629,7 +674,7 @@ Today the first end-screen time can outlive the picture it came from. `_end_scre
 
 v1 keeps the one-frame gap inside an episode. It does not keep the whole-capture minimum.
 
-An episode opens at an end screen. It stays open across later end screens of the same absence, including a one-frame hole and an `ok: false` frame. The confirm streak can reset. `E0` does not move forward. Only a lock in the monotone accepted prefix can close an episode. Walk the locks in the order given and stop before the first decrease on either side. A later lock below an earlier lock is refused as the score, and it does not close. Among that prefix, a lock closes when its raw `clock_s` is an integer greater than 0 and at least one end screen in the open episode has `t_ms` strictly less than the lock. `decide` reads that raw clock, not a clock copied from an earlier row. A lock with `clock_s` 0 or null does not close the episode. Screens strictly before the lock belong to the closed episode. A screen whose `t_ms` equals the lock opens the new episode and is that episode's `E0`. `equal-ts-opens-new-episode` is a flash at 4000, a touchdown lock at 8000 with raw clock 0:08, and a menu frame at that same 8000. The cutoff stays 8000, and evidence at 8250 does not count. `qorcap-98-touchdown-lock-same-ts` has no screen strictly before the lock, so nothing closes and the shared timestamp stays the open episode.
+An episode opens at an end screen. It stays open across later end screens of the same absence, including a one-frame hole and an `ok: false` frame. The confirm streak can reset. `E0` does not move forward. Only a kept lock can close an episode. A kept lock is one that is not below the running maximum (§4.5). A dropped lock cannot close, and the locks after it still can. A kept lock closes when its raw `clock_s` is an integer greater than 0 and at least one end screen in the open episode has `t_ms` strictly less than the lock. `decide` reads that raw clock, not a clock copied from an earlier row. A lock with `clock_s` 0 or null does not close the episode. Screens strictly before the lock belong to the closed episode. A screen whose `t_ms` equals the lock opens the new episode and is that episode's `E0`. `equal-ts-opens-new-episode` is a flash at 4000, a touchdown lock at 8000 with raw clock 0:08, and a menu frame at that same 8000. The cutoff stays 8000, and evidence at 8250 does not count. `qorcap-98-touchdown-lock-same-ts` has no screen strictly before the lock, so nothing closes and the shared timestamp stays the open episode.
 
 `episode_e0_ms` is the earliest end screen of the episode that is still open, including a screen at the closing lock's timestamp. When the close has no end screen at or after it, `episode_e0_ms` is null and `cutoff_ms` is null. The cutoff does not fall back to the previous episode's first screen. `cutoff_reason` is then `closed_episodes_only` if any end screen existed, and `no_end_screen` if none did.
 
@@ -676,15 +721,15 @@ Plan only. This change does not edit these files.
 | `sidecar/qorcap_endmenu.py` `EndMenuAgreement.offer` `:242-261` | Track `min_conf`. Every frame in the run has `conf` ≥ 0.90. A lower frame clears the run. `n` stays 3. `min_span_ms` stays 400. Frames at or before the latest scorebug read are not offered into the confirming run. |
 | `sidecar/qorcap_reader.py` `end_menu_consistency` `:1646-1657` | No longer a refusal. The delta feeds the sidecar note. `end_menu_delta_corroborated` (`:1660-1707`) is not required to confirm. |
 | `sidecar/qorcap_reader.py` `_note_end_menu_disagreement` `:1576-1595` | A later different menu fails the last-menu gate, including one readable frame at or above 0.70 that is not itself a stable run. Neither menu score is kept. The receipt score is the monotone lock, `final_confirmed` false. |
-| `sidecar/qorcap_match.py` `tail_final_check` `:2495` | Stop `core.timeline = live`. Pass those rows to `decide` as locks. Do not break at the first `end_menu` (`:2520-2521`); scan the window. |
+| `sidecar/qorcap_match.py` `tail_final_check` `:2495` | Stop `core.timeline = live`. Pass those rows to `decide` as locks. Load OPTIONS with `load_options_presses_ms`, not `press_events`. Do not break at the first `end_menu` (`:2520-2521`); scan the window. |
 | `sidecar/qorcap_match.py` `apply_final` `:2094-2096` | A missing `final_confirmed` is false. |
-| `sidecar/qorcap_match.py` `select_offline_final` `:2431-2445`, `_disputed_final_result` `:2457-2464`, `finalize` `:2887` | Same `decide`. A disputed menu signs the monotone prefix unconfirmed. A later lock that went down is not that score. Offline finalize does not reintroduce a timeline clock seed. |
-| `qor_receipt/review/media.py` `reread_final` `:179-201` | Keep "no laptop timeline seed". Do not break at the first `end_menu` (`:190-191`). Delete the `end_menu_fallback` call. Load OPTIONS rising edges from `inputs.jsonl` through `bundle.press_events`. `options_presses_ms` null fails a 6-item frame closed. `picture_since_ms` is required only when a measured press falls in the §4.2 window. |
+| `sidecar/qorcap_match.py` `select_offline_final` `:2431-2445`, `_disputed_final_result` `:2457-2464`, `finalize` `:2887` | Same `decide`. A disputed menu signs the last kept lock unconfirmed. A lock below the running maximum is not that score. A later kept lock still is. Offline finalize does not reintroduce a timeline clock seed. |
+| `qor_receipt/review/media.py` `reread_final` `:179-201` | Keep "no laptop timeline seed". Do not break at the first `end_menu` (`:190-191`). Delete the `end_menu_fallback` call. Load OPTIONS with `load_options_presses_ms`, not `bundle.press_events`. Null fails a 6-item frame closed. `picture_since_ms` is required only when a measured press falls in `(t - 16000, t + 500]`. |
 | `qor_receipt/review/media.py` `end_menu_fallback` `:236-298` | Remove. The reason switch at `:250` and the thresholds at `:205-207` are not the rule. `clock_s` is not read. A prior Q4 row is not required. |
 | `qor_receipt/review/engine.py` `_final_check` `:799-828` | A confirmed menu is `pass` when the claim equals the menu score, including a stall and a multi-play delta. A failed gate with a monotone lock is `partial` at that prefix. A note does not flip `pass` to `partial`. Score mismatch stays `fail` (`:807-809`). |
 | `qor_receipt/review/engine.py` `_result_from_reread` `:831-847` | Write `decide`'s boolean. The `:840` test `is not False` becomes that boolean. Missing is false. |
-| `qor_receipt/referee_ai/integrity.py` `check_final` `:189-202` | An adopted end menu more than one legal step past the last scorebug is not an error. `:201` is that error today, and `referee.py:184` and `:189` both append it. Leaving it in place would FAIL a multi-play menu and downgrade the verdict. `decide` does not adopt a menu below any lock. An unconfirmed backwards lock posts the monotone prefix, and that prefix is the `last_state` `check_final` sees, so the lower row is not a mismatch. A backward menu posted anyway still errors. |
-| `sidecar/qorcap_reader.py` `end_screen_evidence_cutoff_ms` `:1710-1733`, filter `:1703-1704` | Replaced by `decide`'s cutoff. The minimum is no longer the first end screen of the whole timeline. Only a monotone running-clock lock closes an episode, and only the screens strictly before it. A screen at the lock's timestamp opens the next episode. The cutoff does not fall back to an earlier episode. `cutoff_reason` distinguishes a null that counts nothing from a null that counts outside closed episodes. The test stays `t_ms >= cutoff_ms`. | 
+| `qor_receipt/referee_ai/integrity.py` `check_final` `:189-202` | An adopted end menu more than one legal step past the last scorebug is not an error. `:201` is that error today, and `referee.py:184` and `:189` both append it. Leaving it in place would FAIL a multi-play menu and downgrade the verdict. `decide` does not adopt a menu below any lock. An unconfirmed backwards lock posts the last kept lock, and that lock is the `last_state` `check_final` sees, so the dropped row is not a mismatch. A backward menu posted anyway still errors. |
+| `sidecar/qorcap_reader.py` `end_screen_evidence_cutoff_ms` `:1710-1733`, filter `:1703-1704` | Replaced by `decide`'s cutoff. The minimum is no longer the first end screen of the whole timeline. Only a kept running-clock lock closes an episode, and only the screens strictly before it. A screen at the lock's timestamp opens the next episode. An `ok: false` six-item picture is still an end screen. The cutoff does not fall back to an earlier episode. `cutoff_reason` distinguishes a null that counts nothing from a null that counts outside closed episodes. The test stays `t_ms >= cutoff_ms`. | 
 | `sidecar/qorcap_reader.py` `_post_agreed` `:1343-1344` | Still clears the running `_end_screen_earliest` pointer. Also clears the menu streak and the agreed score. Clearing the pointer does not remove `final_screen` rows, so it is not the episode rule. `decide` derives the episode from locks and end screens. | 
 | `qor_receipt/match_index/build.py`, `viewer_template.html` `paintFinal`, `publish.py` `_card` | Read `final.rule.json` and show `note` as in §4.5. Gold stays. |
 
@@ -713,7 +758,7 @@ This change adds no fixture file and no test. When `decide` is implemented, the 
 | QorTime | `tests/vectors/final_rule/v1.json` | `tests/test_final_rule.py`, calling `qor_receipt.final_rule.decide`, on the existing `pytest -q` job |
 | QorCap | `sidecar/fixtures/final_rule/v1.json` | `sidecar/test_final_rule.py`, importing that same function, on `python -m pytest sidecar` |
 
-A hash mismatch fails the test. The two pause cases also have pixel fixtures beside that JSON: `_menu(items=8)` and the OPTIONS short-hold on `_menu(items=6)` from `sidecar/test_final_screen_pause.py`. The 6-item picture alone must not be the pause case. `madden_final_screen` accepts it. In the JSON, `screen` is expanded onto each frame as `pixel` before `decide`. `pause-options-short-hold` keeps `pixel` `end_menu_6` and lists the OPTIONS press. `decide` labels the frame pause because the hold is under 12 s. `options_hold_ms: null` with the presses key absent means OPTIONS was measured and not pressed. `options_presses_ms: null` means `inputs.jsonl` was not read, and `decide` fails that frame closed.
+A hash mismatch fails the test. The two pause cases also have pixel fixtures beside that JSON: `_menu(items=8)` and the OPTIONS short-hold on `_menu(items=6)` from `sidecar/test_final_screen_pause.py`. The 6-item picture alone must not be the pause case. `madden_final_screen` accepts it. In the JSON, `screen` is expanded onto each frame as `pixel` before `decide`. `pause-options-short-hold` keeps `pixel` `end_menu_6` and lists the OPTIONS press. `decide` labels the frame pause because the hold is under 12 s. A vector with no `options_presses_ms` and no `inputs` is the well-formed `[]`: measured, pad connected, OPTIONS not pressed. `options_presses_ms: null` fails that frame closed. A vector that carries `inputs` derives that list with `load_options_presses_ms` before `decide`. There is no `options_hold_ms` field.
 
 `screen` is test sugar. `decide` does not take it. The expansion is:
 
@@ -749,7 +794,6 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
       "source": "match-20261024-135645 / qorcap#94",
       "synthetic": true,
       "screen": "end_menu",
-      "options_hold_ms": null,
       "locks": [
         {
           "t_ms": 800000,
@@ -809,7 +853,6 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
     {
       "id": "pause-8-item",
       "screen": "pause",
-      "options_hold_ms": null,
       "pixel_fixture": "test_final_screen_pause._menu(items=8)",
       "locks": [
         {
@@ -856,7 +899,6 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
     {
       "id": "pause-options-short-hold",
       "screen": "end_menu",
-      "options_hold_ms": 4000,
       "pixel_fixture": "test_final_screen_pause._menu(items=6), pixel end_menu_6, picture_since_ms 1000, OPTIONS press at 800, hold 4000 ms",
       "locks": [
         {
@@ -913,7 +955,6 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
     {
       "id": "halftime-faded-field",
       "screen": "halftime",
-      "options_hold_ms": null,
       "locks": [
         {
           "t_ms": 1000,
@@ -959,7 +1000,6 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
     {
       "id": "replay-not-end-menu",
       "screen": "replay",
-      "options_hold_ms": null,
       "locks": [
         {
           "t_ms": 1000,
@@ -1005,7 +1045,6 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
     {
       "id": "exact-at-0",
       "screen": "end_menu",
-      "options_hold_ms": null,
       "locks": [
         {
           "t_ms": 1000,
@@ -1052,7 +1091,6 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
     {
       "id": "one-legal-step",
       "screen": "end_menu",
-      "options_hold_ms": null,
       "locks": [
         {
           "t_ms": 1000,
@@ -1099,7 +1137,6 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
     {
       "id": "multi-play-menu-wins",
       "screen": "end_menu",
-      "options_hold_ms": null,
       "locks": [
         {
           "t_ms": 1000,
@@ -1153,7 +1190,6 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
     {
       "id": "no-scorebug-in-tail",
       "screen": "end_menu",
-      "options_hold_ms": null,
       "locks": [],
       "frames": [
         {
@@ -1192,7 +1228,6 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
     {
       "id": "conf-below-0-90-on-one-frame",
       "screen": "end_menu",
-      "options_hold_ms": null,
       "locks": [
         {
           "t_ms": 1000,
@@ -1238,7 +1273,6 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
     {
       "id": "two-frames",
       "screen": "end_menu",
-      "options_hold_ms": null,
       "locks": [
         {
           "t_ms": 1000,
@@ -1277,7 +1311,6 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
     {
       "id": "span-under-400",
       "screen": "end_menu",
-      "options_hold_ms": null,
       "locks": [
         {
           "t_ms": 1000,
@@ -1323,7 +1356,6 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
     {
       "id": "frames-disagree",
       "screen": "end_menu",
-      "options_hold_ms": null,
       "locks": [
         {
           "t_ms": 1000,
@@ -1369,7 +1401,6 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
     {
       "id": "later-contradicting-menu",
       "screen": "end_menu",
-      "options_hold_ms": null,
       "locks": [
         {
           "t_ms": 1000,
@@ -1438,7 +1469,6 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
     {
       "id": "later-live-play",
       "screen": "end_menu",
-      "options_hold_ms": null,
       "locks": [
         {
           "t_ms": 1000,
@@ -1495,7 +1525,7 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
         ],
         "cutoff_reason": "closed_episodes_only"
       },
-      "illustrates": "Both locks are 13–6, so the clock-45 lock at 9000 is in the monotone prefix and closes the episode. No end screen is at or after 9000. cutoff_ms is null and cutoff_reason is closed_episodes_only. Evidence before the episode and evidence after the closing lock count. Evidence inside the closed band does not.",
+      "illustrates": "Both locks are 13–6, so the clock-45 lock at 9000 is kept and closes the episode. No end screen is at or after 9000. cutoff_ms is null and cutoff_reason is closed_episodes_only. Evidence before the episode and evidence after the closing lock count. Evidence inside the closed band does not.",
       "evidence": [
         {
           "id": "before-episode",
@@ -1517,7 +1547,6 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
     {
       "id": "score-went-down",
       "screen": "end_menu",
-      "options_hold_ms": null,
       "locks": [
         {
           "t_ms": 1000,
@@ -1563,7 +1592,6 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
     {
       "id": "covered-panel",
       "screen": "end_menu",
-      "options_hold_ms": null,
       "locks": [
         {
           "t_ms": 1000,
@@ -1609,7 +1637,6 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
     {
       "id": "gates-fail-no-lock",
       "screen": "pause",
-      "options_hold_ms": null,
       "locks": [],
       "frames": [],
       "expect": {
@@ -1636,7 +1663,6 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
     {
       "id": "scorebug-return-resets-agreed-score",
       "screen": "end_menu",
-      "options_hold_ms": null,
       "locks": [
         {
           "t_ms": 10000,
@@ -1714,7 +1740,6 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
     {
       "id": "menu-frame-equal-to-scorebug-not-fresh",
       "screen": "end_menu",
-      "options_hold_ms": null,
       "locks": [
         {
           "t_ms": 5000,
@@ -1784,7 +1809,6 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
     {
       "id": "cutoff-dead-zone-and-inclusive-equal",
       "screen": "end_menu",
-      "options_hold_ms": null,
       "locks": [
         {
           "t_ms": 10000,
@@ -1882,7 +1906,6 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
     {
       "id": "cutoff-falls-back-to-earliest-end-screen",
       "screen": "end_menu",
-      "options_hold_ms": null,
       "locks": [
         {
           "t_ms": 10000,
@@ -1961,7 +1984,6 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
       "synthetic": true,
       "illustrates": "A touchdown lock is flushed at the same timestamp as a menu frame. Evidence is at that timestamp and 250 ms later. No end screen is strictly after the lock, so the cutoff falls back to 8000. Neither evidence row counts. The frame is not fresh. The case does not confirm.",
       "screen": "end_menu",
-      "options_hold_ms": null,
       "locks": [
         {
           "t_ms": 8000,
@@ -2013,7 +2035,6 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
     {
       "id": "duplicate-timestamps",
       "screen": "end_menu",
-      "options_hold_ms": null,
       "illustrates": "Rows 5000, 5000, 5400 are two instants. A duplicate adds no span and no frame.",
       "locks": [
         {
@@ -2061,7 +2082,6 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
     {
       "id": "backwards-timestamp",
       "screen": "end_menu",
-      "options_hold_ms": null,
       "illustrates": "Frames are listed 5000, 5800, 5400. Sorting them into 5000, 5400, 5800 would be a stable run. A backwards step fails the decision closed.",
       "locks": [
         {
@@ -2109,7 +2129,6 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
     {
       "id": "unreadable-frame-resets-run",
       "screen": "end_menu",
-      "options_hold_ms": null,
       "illustrates": "ok false resets the streak. The frame before it is dropped. Two frames after it do not confirm. Bridging across the unreadable frame would be three frames and must not confirm.",
       "locks": [
         {
@@ -2164,7 +2183,6 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
     {
       "id": "unreadable-then-new-run-confirms",
       "screen": "end_menu",
-      "options_hold_ms": null,
       "illustrates": "The same reset leaves a new run. Three fresh frames after ok false confirm. An unreadable frame does not fail the rest of the decision.",
       "locks": [
         {
@@ -2227,7 +2245,6 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
     {
       "id": "conf-0-75-resets-run",
       "screen": "end_menu",
-      "options_hold_ms": null,
       "illustrates": "Confidence 0.75 is readable and below 0.90. It resets the streak. Skipping it and keeping the earlier frame would be three frames and must not confirm.",
       "locks": [
         {
@@ -2282,7 +2299,6 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
     {
       "id": "conf-0-75-then-new-run-confirms",
       "screen": "end_menu",
-      "options_hold_ms": null,
       "illustrates": "Three frames at 0.95 after the 0.75 frame are a new run and confirm.",
       "locks": [
         {
@@ -2345,8 +2361,7 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
     {
       "id": "replay-lock-lower-after-menu",
       "screen": "end_menu",
-      "options_hold_ms": null,
-      "illustrates": "The later lock is 3–0 after 14–7. It is not the posted score, and it is not in the monotone prefix, so its running clock does not close the episode. The episode stays open at the menu's first frame, 5000. No screen is after the stale lock, so the cutoff falls back to 5000. Evidence after that lock does not count.",
+      "illustrates": "The later lock is 3–0 after 14–7. It is below the running maximum, so it is not the posted score and its running clock does not close the episode. Nothing after it is kept. The episode stays open at the menu's first frame, 5000. No screen is after the stale lock, so the cutoff falls back to 5000. Evidence after that lock does not count.",
       "locks": [
         {
           "t_ms": 1000,
@@ -2427,7 +2442,6 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
     {
       "id": "menu-below-an-earlier-lock",
       "screen": "end_menu",
-      "options_hold_ms": null,
       "illustrates": "The menu equals the later lock and is below the earlier lock. Scores never go down checks every lock. The posted score is 21-0, not 14-0.",
       "locks": [
         {
@@ -2491,7 +2505,6 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
     {
       "id": "tie-menu-stays-unconfirmed",
       "screen": "end_menu",
-      "options_hold_ms": null,
       "illustrates": "A tied menu stays refused. Open decision, §4.7. The owner has not signed off on removing the guard.",
       "locks": [
         {
@@ -2539,7 +2552,6 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
     {
       "id": "final-of-1-stays-unconfirmed",
       "screen": "end_menu",
-      "options_hold_ms": null,
       "illustrates": "A menu with either side equal to 1 stays refused. Open decision, §4.7.",
       "locks": [
         {
@@ -2588,7 +2600,6 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
       "id": "null-clock-long-gap",
       "synthetic": true,
       "screen": "end_menu",
-      "options_hold_ms": null,
       "illustrates": "decide reads the raw clock_s on the lock. Null stays null. A null clock and a wall gap of 19000 ms, at least 10000, fires the stall note. The note does not downgrade the verdict.",
       "locks": [
         {
@@ -2639,7 +2650,6 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
     {
       "id": "no-lock-contradicting-menus",
       "screen": "end_menu",
-      "options_hold_ms": null,
       "illustrates": "No lock, and two menus that disagree. Posted score is null. Neither menu is adopted. method is last_scorebug_read_unconfirmed. final_basis is absent. final_confirmed is false. final_reread is fail.",
       "locks": [],
       "frames": [
@@ -2756,7 +2766,6 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
       "id": "early-pause-then-final-menu",
       "synthetic": true,
       "screen": "end_menu",
-      "options_hold_ms": null,
       "illustrates": "A pause-like flash at 4000 is one end-screen frame, not a stable read. Live play resumes at 15000 with a running clock, which closes that episode. The real menu is at 22000. Evidence after the resume counts. Evidence from the flash through the resume lock does not. A cutoff stuck at 4000 would drop the later evidence and is the whole-capture bug.",
       "locks": [
         {
@@ -2872,7 +2881,6 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
       "id": "equal-ts-opens-new-episode",
       "synthetic": true,
       "screen": "end_menu",
-      "options_hold_ms": null,
       "locks": [
         {
           "t_ms": 8000,
@@ -2941,7 +2949,6 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
       "id": "later-readable-frame-blocks-confirm",
       "synthetic": true,
       "screen": "end_menu",
-      "options_hold_ms": null,
       "locks": [],
       "frames": [
         {
@@ -2992,7 +2999,6 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
       "id": "later-frame-below-readability-floor",
       "synthetic": true,
       "screen": "end_menu",
-      "options_hold_ms": null,
       "locks": [],
       "frames": [
         {
@@ -3044,7 +3050,6 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
       "id": "early-pause-then-final-menu-clock-zero",
       "synthetic": true,
       "screen": "end_menu",
-      "options_hold_ms": null,
       "illustrates": "Same flash and the same final menu as early-pause-then-final-menu, but the lock at 15000 is 0:00. A 0:00 lock does not close the episode, so the flash and the final menu stay one episode. episode_e0_ms is 4000. Evidence at 16000 is inside that episode's dead zone and does not count. The menu still confirms 13–6.",
       "locks": [
         {
@@ -3154,6 +3159,720 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
         ],
         "cutoff_reason": "open_episode"
       }
+    },
+    {
+      "id": "options-press-at-t-minus-16000-is-outside",
+      "synthetic": true,
+      "screen": "end_menu",
+      "locks": [
+        {
+          "t_ms": 1000,
+          "away": 13,
+          "home": 6,
+          "quarter": 4,
+          "clock_s": 0
+        }
+      ],
+      "frames": [
+        {
+          "t_ms": 20000,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 20400,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 20800,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        }
+      ],
+      "illustrates": "Press at exactly t-16000 for the first frame (4000). That boundary is outside the window, so picture_since_ms is not required and the frames confirm. Treating the boundary as inside fails the first frame closed and leaves only two frames.",
+      "options_presses_ms": [
+        4000
+      ],
+      "expect": {
+        "adopt_menu": true,
+        "final_confirmed": true,
+        "away": 13,
+        "home": 6,
+        "method": "end_menu_read",
+        "final_basis": "end_menu",
+        "review": "pass",
+        "note": null,
+        "downgrades_verdict": false,
+        "cutoff_ms": 20000,
+        "cutoff_reason": "open_episode",
+        "episode_e0_ms": 20000
+      }
+    },
+    {
+      "id": "options-press-at-t-minus-15999-is-pause",
+      "synthetic": true,
+      "screen": "end_menu",
+      "locks": [
+        {
+          "t_ms": 1000,
+          "away": 6,
+          "home": 3,
+          "quarter": 4,
+          "clock_s": 0
+        }
+      ],
+      "frames": [
+        {
+          "t_ms": 20000,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true,
+          "picture_since_ms": 8801
+        },
+        {
+          "t_ms": 20400,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true,
+          "picture_since_ms": 8801
+        },
+        {
+          "t_ms": 20800,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true,
+          "picture_since_ms": 8801
+        }
+      ],
+      "illustrates": "Press at 4801, which is t-15999 for the last frame at 20800. picture_since_ms is 4000 ms later (8801). The hold on that frame is 11999 ms, under 12000, and the press is inside (t-16000, t+500]. All three frames are pauses. The menu is not adopted. The posted score is the lock.",
+      "options_presses_ms": [
+        4801
+      ],
+      "expect": {
+        "adopt_menu": false,
+        "final_confirmed": false,
+        "away": 6,
+        "home": 3,
+        "method": "last_scorebug_read_unconfirmed",
+        "final_basis": "absent",
+        "review": "partial",
+        "note": null,
+        "cutoff_ms": null,
+        "cutoff_reason": "no_end_screen",
+        "episode_e0_ms": null
+      }
+    },
+    {
+      "id": "options-press-at-t-plus-500-is-pause",
+      "synthetic": true,
+      "screen": "end_menu",
+      "locks": [
+        {
+          "t_ms": 1000,
+          "away": 6,
+          "home": 3,
+          "quarter": 4,
+          "clock_s": 0
+        }
+      ],
+      "frames": [
+        {
+          "t_ms": 20000,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true,
+          "picture_since_ms": 20000
+        },
+        {
+          "t_ms": 20400,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true,
+          "picture_since_ms": 20000
+        },
+        {
+          "t_ms": 20800,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true,
+          "picture_since_ms": 20000
+        }
+      ],
+      "illustrates": "Press at exactly t+500 for the first frame (20500). picture_since_ms is 500 ms earlier (20000), the edge of the opened-by-OPTIONS test. The hold is under 12 s on every frame. The menu is not adopted.",
+      "options_presses_ms": [
+        20500
+      ],
+      "expect": {
+        "adopt_menu": false,
+        "final_confirmed": false,
+        "away": 6,
+        "home": 3,
+        "method": "last_scorebug_read_unconfirmed",
+        "final_basis": "absent",
+        "review": "partial",
+        "note": null,
+        "cutoff_ms": null,
+        "cutoff_reason": "no_end_screen",
+        "episode_e0_ms": null
+      }
+    },
+    {
+      "id": "inputs-no-wall-anchor",
+      "synthetic": true,
+      "screen": "end_menu",
+      "locks": [
+        {
+          "t_ms": 1000,
+          "away": 13,
+          "home": 6,
+          "quarter": 4,
+          "clock_s": 0
+        }
+      ],
+      "frames": [
+        {
+          "t_ms": 20000,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 20400,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 20800,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        }
+      ],
+      "illustrates": "No header, so there is no integer wall_anchor_ms. The loader returns null. bundle.press_events would use anchor 0 and return []. decide fails closed. The 13–6 menu is not adopted.",
+      "inputs": [
+        {
+          "type": "status",
+          "t_us": 0,
+          "state": "connected",
+          "detail": "DualSense (USB)"
+        },
+        {
+          "type": "in",
+          "t_us": 1000,
+          "b": 0
+        }
+      ],
+      "expect": {
+        "adopt_menu": false,
+        "final_confirmed": false,
+        "away": 13,
+        "home": 6,
+        "method": "last_scorebug_read_unconfirmed",
+        "final_basis": "absent",
+        "review": "partial",
+        "note": null,
+        "cutoff_ms": null,
+        "cutoff_reason": "no_end_screen",
+        "episode_e0_ms": null
+      }
+    },
+    {
+      "id": "inputs-wall-anchor-not-integer",
+      "synthetic": true,
+      "screen": "end_menu",
+      "locks": [
+        {
+          "t_ms": 1000,
+          "away": 13,
+          "home": 6,
+          "quarter": 4,
+          "clock_s": 0
+        }
+      ],
+      "frames": [
+        {
+          "t_ms": 20000,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 20400,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 20800,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        }
+      ],
+      "illustrates": "The header is present and wall_anchor_ms is a string. That is not an integer. The loader returns null and the menu is not adopted.",
+      "inputs": [
+        {
+          "type": "header",
+          "schema": "qorcap-inputs/v0",
+          "t_us": 0,
+          "wall_anchor_ms": "0"
+        },
+        {
+          "type": "status",
+          "t_us": 0,
+          "state": "connected",
+          "detail": "DualSense (USB)"
+        },
+        {
+          "type": "in",
+          "t_us": 1000,
+          "b": 0
+        }
+      ],
+      "expect": {
+        "adopt_menu": false,
+        "final_confirmed": false,
+        "away": 13,
+        "home": 6,
+        "method": "last_scorebug_read_unconfirmed",
+        "final_basis": "absent",
+        "review": "partial",
+        "note": null,
+        "cutoff_ms": null,
+        "cutoff_reason": "no_end_screen",
+        "episode_e0_ms": null
+      }
+    },
+    {
+      "id": "inputs-pad-not-connected",
+      "synthetic": true,
+      "screen": "end_menu",
+      "locks": [
+        {
+          "t_ms": 1000,
+          "away": 13,
+          "home": 6,
+          "quarter": 4,
+          "clock_s": 0
+        }
+      ],
+      "frames": [
+        {
+          "t_ms": 20000,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 20400,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 20800,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        }
+      ],
+      "illustrates": "The log is otherwise well-formed, and no status row shows the pad connected over the frame window. The loader returns null. An empty press list is not inferred.",
+      "inputs": [
+        {
+          "type": "header",
+          "schema": "qorcap-inputs/v0",
+          "t_us": 0,
+          "wall_anchor_ms": 0
+        },
+        {
+          "type": "status",
+          "t_us": 0,
+          "state": "unplugged",
+          "detail": "USB link dropped"
+        },
+        {
+          "type": "in",
+          "t_us": 1000,
+          "b": 0
+        }
+      ],
+      "expect": {
+        "adopt_menu": false,
+        "final_confirmed": false,
+        "away": 13,
+        "home": 6,
+        "method": "last_scorebug_read_unconfirmed",
+        "final_basis": "absent",
+        "review": "partial",
+        "note": null,
+        "cutoff_ms": null,
+        "cutoff_reason": "no_end_screen",
+        "episode_e0_ms": null
+      }
+    },
+    {
+      "id": "inputs-malformed-row",
+      "synthetic": true,
+      "screen": "end_menu",
+      "locks": [
+        {
+          "t_ms": 1000,
+          "away": 13,
+          "home": 6,
+          "quarter": 4,
+          "clock_s": 0
+        }
+      ],
+      "frames": [
+        {
+          "t_ms": 20000,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 20400,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 20800,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        }
+      ],
+      "illustrates": "One input row has no b and another has no t_us. The loader returns null for any malformed input row. It does not skip the row and return [].",
+      "inputs": [
+        {
+          "type": "header",
+          "schema": "qorcap-inputs/v0",
+          "t_us": 0,
+          "wall_anchor_ms": 0
+        },
+        {
+          "type": "status",
+          "t_us": 0,
+          "state": "connected",
+          "detail": "DualSense (USB)"
+        },
+        {
+          "type": "in",
+          "t_us": 1000,
+          "b": 0
+        },
+        {
+          "type": "in",
+          "t_us": 2000
+        },
+        {
+          "type": "in",
+          "b": 0
+        }
+      ],
+      "expect": {
+        "adopt_menu": false,
+        "final_confirmed": false,
+        "away": 13,
+        "home": 6,
+        "method": "last_scorebug_read_unconfirmed",
+        "final_basis": "absent",
+        "review": "partial",
+        "note": null,
+        "cutoff_ms": null,
+        "cutoff_reason": "no_end_screen",
+        "episode_e0_ms": null
+      }
+    },
+    {
+      "id": "inputs-well-formed-no-options-press",
+      "synthetic": true,
+      "screen": "end_menu",
+      "locks": [
+        {
+          "t_ms": 1000,
+          "away": 13,
+          "home": 6,
+          "quarter": 4,
+          "clock_s": 0
+        }
+      ],
+      "frames": [
+        {
+          "t_ms": 20000,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 20400,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 20800,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        }
+      ],
+      "illustrates": "Header anchor is an integer, a connected status covers the window, and the only input row has b 0. The loader returns []. The menu confirms. [] is this case only.",
+      "inputs": [
+        {
+          "type": "header",
+          "schema": "qorcap-inputs/v0",
+          "t_us": 0,
+          "wall_anchor_ms": 0
+        },
+        {
+          "type": "status",
+          "t_us": 0,
+          "state": "connected",
+          "detail": "DualSense (USB)"
+        },
+        {
+          "type": "in",
+          "t_us": 1000,
+          "b": 0
+        }
+      ],
+      "expect": {
+        "adopt_menu": true,
+        "final_confirmed": true,
+        "away": 13,
+        "home": 6,
+        "method": "end_menu_read",
+        "final_basis": "end_menu",
+        "review": "pass",
+        "note": null,
+        "downgrades_verdict": false,
+        "cutoff_ms": 20000,
+        "cutoff_reason": "open_episode",
+        "episode_e0_ms": 20000
+      }
+    },
+    {
+      "id": "stale-decrease-keeps-later-lock",
+      "synthetic": true,
+      "screen": "end_menu",
+      "illustrates": "early-pause-then-final-menu's locks plus a stale 3–3 at 8000, and no later stable menu. The 3–3 lock is below the running maximum, so it is dropped and cannot close. The 13–6 lock at 15000 still closes the flash. Evidence at 16000 counts. The unconfirmed posted score is 13–6. Stopping the walk at 3–3 would leave E0 at 4000, drop that evidence, and post 6–3.",
+      "locks": [
+        {
+          "t_ms": 1000,
+          "away": 6,
+          "home": 3,
+          "quarter": 2,
+          "clock_s": 120
+        },
+        {
+          "t_ms": 8000,
+          "away": 3,
+          "home": 3,
+          "quarter": 3,
+          "clock_s": 40
+        },
+        {
+          "t_ms": 15000,
+          "away": 13,
+          "home": 6,
+          "quarter": 4,
+          "clock_s": 35
+        },
+        {
+          "t_ms": 18000,
+          "away": 13,
+          "home": 6,
+          "quarter": 4,
+          "clock_s": 0
+        }
+      ],
+      "frames": [
+        {
+          "t_ms": 4000,
+          "away": 6,
+          "home": 3,
+          "conf": 0.95,
+          "ok": true
+        }
+      ],
+      "evidence": [
+        {
+          "id": "before-pause",
+          "t_ms": 2000,
+          "kind": "input_activity"
+        },
+        {
+          "id": "at-pause",
+          "t_ms": 4000,
+          "kind": "input_activity"
+        },
+        {
+          "id": "between-pause-and-resume",
+          "t_ms": 8000,
+          "kind": "haptic"
+        },
+        {
+          "id": "at-resume",
+          "t_ms": 15000,
+          "kind": "input_activity"
+        },
+        {
+          "id": "after-resume-before-zero",
+          "t_ms": 16000,
+          "kind": "input_activity"
+        },
+        {
+          "id": "after-zero-before-menu",
+          "t_ms": 19000,
+          "kind": "haptic"
+        },
+        {
+          "id": "at-menu",
+          "t_ms": 22000,
+          "kind": "input_activity"
+        }
+      ],
+      "expect": {
+        "adopt_menu": false,
+        "final_confirmed": false,
+        "away": 13,
+        "home": 6,
+        "method": "last_scorebug_read_unconfirmed",
+        "final_basis": "absent",
+        "review": "partial",
+        "note": null,
+        "cutoff_ms": null,
+        "cutoff_reason": "closed_episodes_only",
+        "episode_e0_ms": null,
+        "evidence_counts": [
+          "before-pause",
+          "after-resume-before-zero",
+          "after-zero-before-menu",
+          "at-menu"
+        ],
+        "backwards_lock": {
+          "away": 3,
+          "home": 3,
+          "t_ms": 8000
+        }
+      }
+    },
+    {
+      "id": "unreadable-menu-is-still-an-end-screen",
+      "synthetic": true,
+      "screen": "end_menu",
+      "locks": [
+        {
+          "t_ms": 1000,
+          "away": 6,
+          "home": 3,
+          "quarter": 4,
+          "clock_s": 0
+        },
+        {
+          "t_ms": 9000,
+          "away": 13,
+          "home": 6,
+          "quarter": 4,
+          "clock_s": 45
+        }
+      ],
+      "frames": [
+        {
+          "t_ms": 4000,
+          "away": 6,
+          "home": 3,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 12000,
+          "away": 4,
+          "home": 29,
+          "conf": 0.4,
+          "ok": false
+        },
+        {
+          "t_ms": 12500,
+          "away": 4,
+          "home": 29,
+          "conf": 0.4,
+          "ok": false
+        },
+        {
+          "t_ms": 13000,
+          "away": 4,
+          "home": 29,
+          "conf": 0.4,
+          "ok": false
+        }
+      ],
+      "evidence": [
+        {
+          "id": "before-screen",
+          "t_ms": 2000,
+          "kind": "input_activity"
+        },
+        {
+          "id": "inside-closed",
+          "t_ms": 5500,
+          "kind": "input_activity"
+        },
+        {
+          "id": "while-unreadable-menu",
+          "t_ms": 12250,
+          "kind": "input_activity"
+        }
+      ],
+      "expect": {
+        "adopt_menu": false,
+        "final_confirmed": false,
+        "away": 13,
+        "home": 6,
+        "method": "last_scorebug_read_unconfirmed",
+        "final_basis": "absent",
+        "review": "partial",
+        "note": null,
+        "cutoff_ms": 12000,
+        "cutoff_reason": "open_episode",
+        "episode_e0_ms": 12000,
+        "evidence_counts": [
+          "before-screen"
+        ],
+        "backwards_lock": null
+      },
+      "illustrates": "The frames at 12000 are ok false and read 4–29. m27_mnp_end_menu_online.jpg is this shape: madden_final_screen passes and the away digits are covered by name tags, so the read is ok false. An end screen is the picture and the hold. Those frames open the next episode, and evidence at 12250 does not count. Readability is not required for that label, and the 4–29 is not posted."
     }
   ]
 }
@@ -3167,17 +3886,23 @@ The stall case's three frames are the gate, at confidence 0.94 on invented times
 
 `qorcap-98-touchdown-lock-same-ts` is the qorcap#98 shape with synthetic scores away 13, home 6. The touchdown lock and the only menu frame share `t_ms` 8000. Nothing is strictly before that lock, so the episode stays open. The cutoff falls back to 8000. Evidence at 8000 and 8250 does not count. The frame is not fresh. The case does not confirm. The posted score is the lock, 13–6, and `final_reread` is partial. `equal-ts-opens-new-episode` adds a flash at 4000 in front of that same shared timestamp. The flash closes. The menu frame at 8000 opens the new episode. `cutoff_ms` is 8000, `cutoff_reason` is `open_episode`, and evidence at 8250 does not count.
 
-`later-live-play` has a lock at `t_ms` 9000 after the menu frames, with a running clock, and the same score as the earlier lock. `decide` reads that from `locks`. There is no `later_live_play` field. The frames are not fresh. The posted score is 13–6. That lock is in the monotone prefix, so it closes the episode. No end screen follows. `cutoff_ms` is null and `cutoff_reason` is `closed_episodes_only`. Evidence before the episode and evidence after the closing lock count. Evidence inside the closed band does not. `later-contradicting-menu` puts the second score in `frames` (17–7 after 10–7). Neither menu is posted. The receipt score is the lock. `no-lock-contradicting-menus` has no lock and two menus that disagree: posted score null, neither menu adopted, `method` `last_scorebug_read_unconfirmed`, `final_basis` absent, `final_confirmed` false, `final_reread` fail. `later-readable-frame-blocks-confirm` is a stable 6–3 read and then one 13–6 frame at 0.85, with no lock. 0.85 is readable. Neither score is posted, and review is fail. `later-frame-below-readability-floor` is that shape at 0.69 and still confirms 6–3.
+`later-live-play` has a lock at `t_ms` 9000 after the menu frames, with a running clock, and the same score as the earlier lock. `decide` reads that from `locks`. There is no `later_live_play` field. The frames are not fresh. The posted score is 13–6. That lock is kept, so it closes the episode. No end screen follows. `cutoff_ms` is null and `cutoff_reason` is `closed_episodes_only`. Evidence before the episode and evidence after the closing lock count. Evidence inside the closed band does not. `later-contradicting-menu` puts the second score in `frames` (17–7 after 10–7). Neither menu is posted. The receipt score is the lock. `no-lock-contradicting-menus` has no lock and two menus that disagree: posted score null, neither menu adopted, `method` `last_scorebug_read_unconfirmed`, `final_basis` absent, `final_confirmed` false, `final_reread` fail. `later-readable-frame-blocks-confirm` is a stable 6–3 read and then one 13–6 frame at 0.85, with no lock. 0.85 is readable. Neither score is posted, and review is fail. `later-frame-below-readability-floor` is that shape at 0.69 and still confirms 6–3.
 
-`replay-lock-lower-after-menu` posts 14–7, the last row of the monotone prefix, and does not post the later 3–0 lock. That lower lock is not allowed to close the episode. `cutoff_ms` falls back to 5000, the first menu frame, and evidence after the stale lock does not count. `menu-below-an-earlier-lock` posts 21–0. `tie-menu-stays-unconfirmed` and `final-of-1-stays-unconfirmed` stay unconfirmed (§4.7). `null-clock-long-gap` confirms 6–3 from a null raw `clock_s` and a 19000 ms wall gap. The stall note is on the sidecar and `downgrades_verdict` is false. `referee-cannot-measure-hold` has `options_presses_ms` null and does not pass. `cutoff_reason` is `no_end_screen`.
+`replay-lock-lower-after-menu` posts 14–7, the last kept lock, and does not post the later 3–0 lock. That lower lock is not allowed to close the episode. `cutoff_ms` falls back to 5000, the first menu frame, and evidence after the stale lock does not count. `menu-below-an-earlier-lock` posts 21–0. `tie-menu-stays-unconfirmed` and `final-of-1-stays-unconfirmed` stay unconfirmed (§4.7). `null-clock-long-gap` confirms 6–3 from a null raw `clock_s` and a 19000 ms wall gap. The stall note is on the sidecar and `downgrades_verdict` is false. `referee-cannot-measure-hold` has `options_presses_ms` null and does not pass. `cutoff_reason` is `no_end_screen`.
 
-`scorebug-return-resets-agreed-score` confirms 10–7 from the frames after the lock and drops the 3–0 run. The early screen is a frame at 2000. `cutoff-dead-zone-and-inclusive-equal` keeps evidence before the first end screen and evidence strictly between the scorebug and the fresh menu, and drops every timestamp from the first end screen through the scorebug, plus every timestamp `>= cutoff_ms`. That first screen is a frame at 2000. The lock is 0:00, so the early screen and the final menu are one episode. `cutoff-falls-back-to-earliest-end-screen` is also a 0:00 lock. Its first screen is a frame at 2000, no end screen is after the lock, so `cutoff_ms` stays 2000 and the menu frames before the lock do not confirm. `early-pause-then-final-menu` is a one-frame flash at 4000, then a running-clock lock at 15000, then a real menu at 22000. The flash's episode closes at 15000. `episode_e0_ms` is 22000. Evidence at 16000 and 19000 counts. Evidence from 4000 through 15000 does not. A cutoff stuck at 4000 would drop the later rows. `early-pause-then-final-menu-clock-zero` is the same capture with that 15000 lock at 0:00. The flash and the final menu stay one episode. `episode_e0_ms` is 4000. Evidence at 16000 does not count. The menu still confirms 13–6, and the cutoff is still 22000. `pause-options-short-hold` carries `pixel` `end_menu_6`, `picture_since_ms` 1000, and `options_presses_ms` `[800]`. The press at 800 is inside the window for the frame at 5000, the lock at 500 is still up, and the hold is 4000 ms. `decide` labels those frames pause.
+`scorebug-return-resets-agreed-score` confirms 10–7 from the frames after the lock and drops the 3–0 run. The early screen is a frame at 2000. `cutoff-dead-zone-and-inclusive-equal` keeps evidence before the first end screen and evidence strictly between the scorebug and the fresh menu, and drops every timestamp from the first end screen through the scorebug, plus every timestamp `>= cutoff_ms`. That first screen is a frame at 2000. The lock is 0:00, so the early screen and the final menu are one episode. `cutoff-falls-back-to-earliest-end-screen` is also a 0:00 lock. Its first screen is a frame at 2000, no end screen is after the lock, so `cutoff_ms` stays 2000 and the menu frames before the lock do not confirm. `early-pause-then-final-menu` is a one-frame flash at 4000, then a running-clock lock at 15000, then a real menu at 22000. The flash's episode closes at 15000. `episode_e0_ms` is 22000. Evidence at 16000 and 19000 counts. Evidence from 4000 through 15000 does not. A cutoff stuck at 4000 would drop the later rows. `early-pause-then-final-menu-clock-zero` is the same capture with that 15000 lock at 0:00. The flash and the final menu stay one episode. `episode_e0_ms` is 4000. Evidence at 16000 does not count. The menu still confirms 13–6, and the cutoff is still 22000. `pause-options-short-hold` carries `pixel` `end_menu_6`, `picture_since_ms` 1000, and `options_presses_ms` `[800]`. The press at 800 is inside `(t - 16000, t + 500]` for the frame at 5000, the lock at 500 is still up, and the hold is 4000 ms. `decide` labels those frames pause.
+
+`options-press-at-t-minus-16000-is-outside` confirms. The press is exactly 16000 ms before the first frame, so it is outside the window. `options-press-at-t-minus-15999-is-pause` puts the picture 4000 ms after a press at `t - 15999` on the last frame. The hold is 11999 ms. The menu is not adopted. `options-press-at-t-plus-500-is-pause` is the other edge, and it is a pause.
+
+`inputs-no-wall-anchor`, `inputs-wall-anchor-not-integer`, `inputs-pad-not-connected`, and `inputs-malformed-row` each make `load_options_presses_ms` return null. The same 13–6 frames would confirm on `[]`. They do not. `inputs-well-formed-no-options-press` is that `[]`, and it confirms.
+
+`stale-decrease-keeps-later-lock` adds a 3–3 lock at 8000 to the early-pause locks and leaves the final menu off, so the posted score is the lock. The 13–6 lock at 15000 still closes the flash. Evidence at 16000 counts. The posted score is 13–6. `unreadable-menu-is-still-an-end-screen` closes an episode on a readable flash, then shows `ok: false` frames at 4–29. Those frames are end screens. Evidence at 12250 does not count. The posted score stays 13–6.
 
 ## 8. Schema
 
 `receipt.v0` stays frozen. `schema/**` is not part of this change. Pages publishes `schema/**` (`.github/workflows/pages.yml`). No new `result` field, no new `final_basis`, no new method string. `end_menu_read` and `last_scorebug_read_unconfirmed` are already in the contract.
 
-`final.rule.json` is a sidecar, same class as `final.tail.json` and `device_attest.v0.json`. Its schema file is [`docs/design/final.rule.v1.schema.json`](final.rule.v1.schema.json), outside `schema/**`. Pages publishes `schema/**` and does not publish `docs/design`. The schema `$id` is `https://conwan30.github.io/qortime/design/final.rule.v1.schema.json`. That URI names the document. This change does not add a Pages route for it. Every final the new code produces writes that sidecar with `"rule": "final-rule/v1"`, including an unconfirmed final. `writer` is `client` or `referee`. `cutoff_reason` is `no_end_screen`, `closed_episodes_only`, or `open_episode`. The public note is copied out of `note` when the match page is built. `evidence_counted` stays on the file and is not rendered. The sidecar is not hashed into the receipt. An old bundle with no sidecar still verifies. The page shows no v1 note for it.
+`final.rule.json` is a sidecar, same class as `final.tail.json` and `device_attest.v0.json`. Its schema file is [`docs/design/final.rule.v1.schema.json`](final.rule.v1.schema.json), outside `schema/**`. Pages publishes `schema/**` and does not publish `docs/design`. The schema `$id` is the URN `urn:qortime:final.rule.v1` until that document is published. This change does not add a Pages route for it. Every final the new code produces writes that sidecar with `"rule": "final-rule/v1"`, including an unconfirmed final. `writer` is `client` or `referee`. `cutoff_reason` `open_episode` requires an integer `cutoff_ms`. `no_end_screen` and `closed_episodes_only` require `cutoff_ms` null. The public note is copied out of `note` when the match page is built. `evidence_counted` stays on the file and is not rendered. The sidecar is not hashed into the receipt. An old bundle with no sidecar still verifies. The page shows no v1 note for it. When a review wrote a sidecar, the page shows that referee file. Otherwise it shows the client's file. When both exist and the scores differ, the page shows the referee score and a visible note of the client's score.
 
 ## 9. Rollout and compatibility
 
@@ -3192,7 +3917,9 @@ When that re-review is actually run, the referee re-read is authoritative:
 * A new submission from an old client, whose claim is unconfirmed, cannot reach VERIFIED unless the referee's own `decide()` confirms (`final_confirmed` true). Passing on the numbers while `decide()` leaves the menu unconfirmed is not VERIFIED.
 * `check_final` no longer errors when an adopted end menu is more than one legal play past the last scorebug. That changes a future verification of a bundle signed under the old rule: an old integrity error of that one shape would not fire again. Other errors still fire. Published pages are not rebuilt by the merge.
 
-An old bundle whose `inputs.jsonl` has no OPTIONS rising-edge list is `options_presses_ms` null. A re-review fails closed: `partial` when a monotone lock exists, `fail` when it does not. Frozen receipts are not re-reviewed, so a published page does not flip to partial because that list is absent.
+An old bundle is fail-closed on a re-review because `load_options_presses_ms` returns null, not because a caller special-cases the filename. No header, a non-integer `wall_anchor_ms`, no `connected` status over the frame window, or a malformed input row each return null. `decide` then refuses every 6-item frame. Official review is `partial` when a kept lock exists, and `fail` when it does not. `inputs-no-wall-anchor` is that path. Frozen receipts are not re-reviewed, so a published page does not flip to partial because the log is old.
+
+The implementation PR does not merge until the §4.4 measurement is written down: blocking-flicker and streak-reset rates on 135645, 143212, 091651, 110028, and 162055. Those recordings are not vector templates, and the held-out set is not the measurement set.
 
 Two sidecars can exist. The page shows the referee's `final.rule.json` when the review wrote one. Otherwise it shows the client's file. When both exist and the scores differ, the page shows the referee score and a visible note of the client's score. It does not average them and it does not hide the difference.
 

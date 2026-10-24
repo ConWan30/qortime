@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://conwan30.github.io/qortime/design/final.rule.v1.schema.json",
+  "$id": "urn:qortime:final.rule.v1",
   "title": "final.rule.json",
-  "description": "Sidecar written beside a QorTime final. Not a receipt.v0 field. The file lives in docs/design and is not under schema/**. Pages does not publish docs/design. The publisher reads the sidecar when a review wrote one. Absence does not fail verification.",
+  "description": "Sidecar written beside a QorTime final. Not a receipt.v0 field and not under schema/**. Pages does not publish docs/design. The page shows the referee's file when the review wrote one, otherwise the client's file. When both exist and the scores differ, the page shows the referee score and a visible note of the client's score. Absence of both does not fail verification. $id is a URN until this schema is published.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema", "rule", "final_confirmed", "downgrades_verdict", "writer", "cutoff_reason"],
@@ -43,7 +43,7 @@
     },
     "posted_score": {
       "type": ["object", "null"],
-      "description": "Score written on an unconfirmed final. The last row of the monotone lock prefix, never a later lock that went down.",
+      "description": "Score written on an unconfirmed final. The last lock that is not below the running maximum. A dropped lock is not this score. A later kept lock is.",
       "additionalProperties": false,
       "properties": {
         "away": {"type": ["integer", "null"]},
@@ -91,5 +91,27 @@
       "description": "Audit list. The only consumer of the evidence cutoff. The publisher does not render it. It does not change final_confirmed.",
       "items": {"type": "object"}
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"cutoff_reason": {"const": "open_episode"}},
+        "required": ["cutoff_reason"]
+      },
+      "then": {
+        "properties": {"cutoff_ms": {"type": "integer"}},
+        "required": ["cutoff_ms"]
+      }
+    },
+    {
+      "if": {
+        "properties": {"cutoff_reason": {"enum": ["no_end_screen", "closed_episodes_only"]}},
+        "required": ["cutoff_reason"]
+      },
+      "then": {
+        "properties": {"cutoff_ms": {"type": "null"}},
+        "required": ["cutoff_ms"]
+      }
+    }
+  ]
 }
