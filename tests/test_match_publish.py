@@ -51,25 +51,89 @@ def test_publishes_page_index_and_never_raw_inputs(tmp_path):
     assert "first" not in idx.lower().replace("first-", "")
 
 
-def test_public_page_puts_a_challenge_refusal_at_the_top(tmp_path):
-    """A failed challenge check is FAIL on the page, with the reason above the checks. Not PARTIAL."""
+def _render_page(tmp_path, receipt):
+    """Write a page and return the headline and banner the browser actually shows."""
+    import os
+    import subprocess
+
     from qor_receipt.match_index.viewer import write_viewer
 
+    prefix = Path("/tmp/qortime-jsdom")
+    if not (prefix / "node_modules" / "jsdom").exists():
+        subprocess.check_call(["npm", "install", "--prefix", str(prefix), "jsdom@25.0.1"], timeout=180)
+    idx = {"match_id": "m", "events": [
+        {"kind": "kickoff", "recording_s": 12, "quarter": 1, "clock_s": 900, "score_after": {"away": 0, "home": 0}}],
+           "publish": {"receipt": receipt, "highlights": [], "advisory": "advisory evidence, not proof"}}
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    page = write_viewer(idx, tmp_path, embed=False, name="index.html")
+    env = os.environ.copy()
+    proc = subprocess.run(
+        ["node", str(Path(__file__).parent / "render_viewer.mjs"), str(page), str(prefix / "package.json")],
+        check=True, capture_output=True, text=True, env=env, timeout=30)
+    return json.loads(proc.stdout)
+
+
+def test_refusal_reason_requires_a_fail():
+    """A reason on a signed PARTIAL or VERIFIED receipt is not a headline. A fail check names itself."""
     reason = "home:kickoff:challenge_failed:pattern_mismatch"
-    idx = {"match_id": "m", "events": [], "publish": {
-        "receipt": {"status": "PARTIAL", "label": "PARTIAL · some checks not covered", "errors": [],
-                    "partial": ["review_partial:motion"], "reason": reason,
-                    "checks": [{"name": "challenges", "state": "fail", "line": "3 challenges, rule 2"},
-                               {"name": "motion", "state": "partial", "line": "low"}]},
-        "highlights": [], "advisory": "advisory evidence, not proof"}}
-    write_viewer(idx, tmp_path, embed=False, name="index.html")
-    html = (tmp_path / "index.html").read_text(encoding="utf-8")
-    assert f'"reason": "{reason}"' in html
-    assert '"state": "fail"' in html
-    assert '(CHECK_FAIL||REFUSAL)?"FAIL"' in html
-    # json.dumps writes the middle dot as an escape. The blob still carries the verifier's PARTIAL label.
-    assert "PARTIAL" in html and "some checks not covered" in html
-    assert "const STATUS=(CHECK_FAIL||REFUSAL)?\"FAIL\":(RCPT.status||\"\");" in html
+    stray = {"review": {"reason": reason, "checks": {"challenges": {"state": "partial"}, "motion": {"state": "pass"}}}}
+    for status in ("VERIFIED", "PARTIAL", "SELF_ATTESTED"):
+        assert P._refusal_reason(stray, {"status": status, "errors": []}) is None
+    assert P._refusal_reason(stray, {"status": "FAIL", "errors": ["home:cp[1]:gap_too_long"]}) == reason
+    bare = {"review": {"checks": {"input_integrity": {"state": "fail"}}}}
+    assert P._refusal_reason(bare, {"status": "PARTIAL", "errors": []}) == "review_check_failed:input_integrity"
+    from_errors = {"review": {"checks": {}}}
+    err = "home:kickoff:challenge_failed:pattern_mismatch"
+    assert P._refusal_reason(from_errors, {"status": "FAIL", "errors": ["home:cp[1]:gap_too_long", err]}) == err
+    assert P._refusal_reason(from_errors, {"status": "PARTIAL", "errors": [err]}) is None
+
+
+def test_public_page_puts_a_challenge_refusal_at_the_top(tmp_path):
+    """FAIL is the headline only for a fail check or a blocking reason. A plain partial stays Partial."""
+    reason = "home:kickoff:challenge_failed:pattern_mismatch"
+    phrase = "Challenge failed at kickoff (home): wrong button pattern"
+    failed = _render_page(tmp_path / "fail", {
+        "status": "PARTIAL", "label": "PARTIAL · some checks not covered", "errors": [],
+        "partial": ["review_partial:motion"], "reason": reason,
+        "checks": [{"name": "challenges", "state": "fail", "line": "3 challenges, rule 2"},
+                   {"name": "motion", "state": "partial", "line": "low"}]})
+    assert failed["role"] == "status"
+    assert phrase in failed["statusText"]
+    assert "Receipt FAIL" in failed["statusText"]
+    assert "fail" in failed["className"]
+    assert failed["title"] == reason
+    assert phrase in failed["banner"] and "pattern_mismatch" in failed["bannerHtml"]
+    assert "referee refused to sign because challenges failed" in failed["banner"]
+    assert "PARTIAL" in (tmp_path / "fail" / "index.html").read_text(encoding="utf-8")
+
+    plain = _render_page(tmp_path / "partial", {
+        "status": "PARTIAL", "label": "PARTIAL · some checks not covered", "errors": [],
+        "partial": ["review_partial:motion", "home:challenge_unanswered:kickoff"],
+        "checks": [{"name": "challenges", "state": "partial"}, {"name": "motion", "state": "partial"}]})
+    assert plain["statusText"] == "Partial · not a verified result"
+    assert "Receipt FAIL" not in plain["statusText"] and plain["banner"] == ""
+    assert "fail" not in plain["className"].split()
+
+    local = _render_page(tmp_path / "local", {
+        "status": "FAIL", "label": "FAIL · this receipt does not verify", "errors": [reason],
+        "partial": [], "reason": reason, "checks": []})
+    assert phrase in local["statusText"]
+    assert "Recorded on this receipt" in local["banner"]
+    assert "referee refused" not in local["banner"]
+
+    unknown = _render_page(tmp_path / "unknown", {
+        "status": "FAIL", "label": "FAIL", "errors": [], "partial": [],
+        "reason": "home:kickoff:challenge_failed:brand_new_code", "checks": []})
+    assert "<code>home:kickoff:challenge_failed:brand_new_code</code>" in unknown["statusHtml"]
+    assert "brand_new_code" in unknown["statusText"]
+
+    other = _render_page(tmp_path / "other", {
+        "status": "PARTIAL", "label": "PARTIAL · some checks not covered", "errors": [], "partial": [],
+        "checks": [{"name": "input_integrity", "state": "fail"}]})
+    assert "review_check_failed:input_integrity" in other["statusHtml"]
+    assert other["title"] == "review_check_failed:input_integrity"
+    assert "input integrity" in other["banner"] and "referee refused to sign" in other["banner"]
+    assert "challenges failed" not in other["banner"]
 
 
 def test_fail_receipt_needs_allow_fail_and_is_never_gold(tmp_path):

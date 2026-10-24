@@ -302,7 +302,7 @@ body.ready .meter i{transform:scaleX(var(--f,0));transition:transform .7s var(--
   <div class="side home" id="sideH"><span class="dg" id="tH"></span><span class="nm">HOME</span><i class="sweep" aria-hidden="true"></i></div>
   <span class="seal" id="seal" hidden>SEAL</span>
  </div>
- <div class="status" id="status"></div>
+ <div class="status" id="status" role="status"></div>
 </header>
 <div class="finalwrap enter d0"><div class="finalrow">
  <div><h1 class="finalsum" id="finalSum">QorTime match</h1><p class="finalwhy" id="finalWhy"></p></div>
@@ -392,12 +392,51 @@ const hx=s=>esc(human(s));
 const CODES={gap_too_long:"two checkpoints more than 10 s apart",clock_skew:"checkpoint time more than 3 s from its countersign",prev_mismatch:"does not link to the checkpoint before it",
  hash_mismatch:"hash does not recompute",seq_gap:"checkpoint numbers skip",bad_referee_sig:"countersignature does not check",chain_ends_before_match_end:"chain stops more than 10 s before the match ended",
  referee_key_not_pinned:"no referee key pinned",referee_not_on_allowlist:"signing key is not on QorTime's trusted list",referee_local_self_attested:"signed by a local key on the player's own PC, not the QorTime referee",
- challenge_missing:"no nonce challenge",challenge_failed:"the challenge answer failed and the referee refused to sign",
- pattern_mismatch:"the buttons did not match the issued pattern",motion_signal_missing:"no motion correlation",motion_correlation_low:"motion correlation below the floor",bad_referee_signature:"referee signature does not check"};
-function codeText(c){const s=String(c),p=s.split(":"),k=p.find(x=>CODES[x])||p[p.length-1];
- const where=p.filter(x=>x!==k).map(x=>x.replace(/^cp\[(\d+)\]$/,"checkpoint $1")).join(" ");
+ challenge_missing:"no nonce challenge",challenge_failed:"the challenge answer failed",
+ pattern_mismatch:"wrong button pattern",motion_signal_missing:"no motion correlation",motion_correlation_low:"motion correlation below the floor",bad_referee_signature:"referee signature does not check"};
+const REASON_WORDS={pattern_mismatch:"wrong button pattern",pattern_too_short:"the button pattern is too short",pattern_not_from_nonce:"the button pattern does not come from the nonce",
+ no_pause_press:"no pause press",pause_not_seen_on_video:"the pause was not on the video",video_before_input:"the pause appears before the press",
+ video_latency_too_high:"the pause is too late",challenge_anchor_not_in_manifest:"the challenge anchor is not in the manifest"};
+function codeText(c){const s=String(c),p=s.split(":"),known=p.filter(x=>CODES[x]),k=known.length?known[known.length-1]:p[p.length-1];
+ const where=p.filter(x=>x!==k&&!(k==="pattern_mismatch"&&x==="challenge_failed")).map(x=>x.replace(/^cp\[(\d+)\]$/,"checkpoint $1")).join(" ");
  const txt=CODES[k]?(where?`${where}: ${CODES[k]}`:CODES[k]):human(s.replace(/_/g," "));
  return /attest/i.test(s)?esc(txt):`${esc(txt)} <span class="code">${esc(s)}</span>`}
+function onePhrase(s){const p=String(s).split(":");
+ const role=(p[0]==="home"||p[0]==="away")?p[0]:"";
+ const phase=["kickoff","halftime","end"].includes(p[1])?p[1]:"";
+ const codes=p.filter(x=>REASON_WORDS[x]);
+ const code=codes.length?codes[codes.length-1]:"";
+ if(!code)return "";
+ const what=REASON_WORDS[code];
+ if(phase&&role)return `Challenge failed at ${phase} (${role}): ${what}`;
+ if(phase)return `Challenge failed at ${phase}: ${what}`;
+ return `Challenge failed: ${what}`}
+function reasonPhrase(raw){const s=String(raw||"").trim();if(!s)return "";
+ if(s.includes(";")){const parts=s.split(";").map(x=>x.trim()).filter(Boolean),phrases=parts.map(onePhrase);return phrases.length&&phrases.every(Boolean)?phrases.join("; "):""}
+ return onePhrase(s)}
+function failedChecks(){return CHECKS.filter(c=>c&&c.state==="fail")}
+function failedNames(){return failedChecks().map(c=>String(c.name||"check").replace(/_/g," "))}
+function statusLine(){const SHORT={FAIL:"Receipt FAIL · not a verified result",SELF_ATTESTED:"Self-signed · not referee-signed",PARTIAL:"Partial · not a verified result",VERIFIED:"Verified by the referee"};
+ const base=SHORT[STATUS]||human(STATUS)||"receipt status missing";
+ if(STATUS!=="FAIL")return {html:esc(base),title:human(RCPT.label||"")};
+ const phrase=REFUSAL?reasonPhrase(RCPT.reason):"";
+ const checks=failedChecks().map(c=>"review_check_failed:"+String(c.name||"check")).join("; ");
+ const title=REFUSAL?String(RCPT.reason):(checks||"FAIL");
+ const extra=phrase?esc(phrase):(REFUSAL?`<code>${esc(RCPT.reason)}</code>`:(checks?`<code>${esc(checks)}</code>`:""));
+ return {html:extra?`${esc(base)} · ${extra}`:esc(base),title}}
+function failBanner(){const names=failedNames();
+ const phrase=REFUSAL?reasonPhrase(RCPT.reason):"";
+ const detail=phrase?`${esc(phrase)} <span class="code">${esc(RCPT.reason)}</span>`:(REFUSAL?codeText(RCPT.reason):"");
+ if(CHECK_FAIL){const which=names.length?names.join(", "):"a review check";
+  const lead=detail||`<span class="code">${esc("review_check_failed:"+String((failedChecks()[0]||{}).name||"check"))}</span>`;
+  return `<div class="ind bad"><span class="tag x">FAIL</span> ${lead}. The referee refused to sign because ${esc(which)} failed.</div>`}
+ if(REFUSAL)return `<div class="ind bad"><span class="tag x">FAIL</span> ${detail}. Recorded on this receipt.</div>`;
+ return ""}
+function receiptFailPlain(){const phrase=REFUSAL?reasonPhrase(RCPT.reason):"";
+ const names=failedNames();
+ if(CHECK_FAIL){const which=names.length?names.join(", "):"a review check";return (phrase?phrase+". ":"")+`The referee refused to sign because ${which} failed.`}
+ if(REFUSAL)return phrase||String(RCPT.reason||"");
+ return RCPT.label||STATUS||"missing"}
 const EV=Array.isArray(D.events)?D.events:[];
 const P0=D.publish||{};
 const RCPT=P0.receipt||{};
@@ -666,7 +705,7 @@ function verifyHref(){const rel=/\/site\/matches\//.test(location.pathname)?"../
 function reviewBlock(){const rows=CHECKS;
  const np=(Array.isArray(RCPT.not_proven)?RCPT.not_proven:[]).filter(x=>typeof x==="string"&&x);
  let html="";
- if(REFUSAL||CHECK_FAIL)html+=`<div class="ind bad"><span class="tag x">FAIL</span> ${codeText(RCPT.reason||"review_check_failed:challenges")}</div>`;
+ if(REFUSAL||CHECK_FAIL)html+=failBanner();
  if(np.length)html+=`<div class="notproven"><div class="lbl">Not proven</div><ul>${np.map(x=>`<li>${esc(x)}</li>`).join("")}</ul></div>`;
  if(rows.length)html+=rows.map(c=>chk(c.state==="pass"?true:c.state==="fail"?false:null,hx(String(c.name||"").replace(/_/g," ")),c.line?esc(c.line):"")).join("");
  return html}
@@ -704,7 +743,7 @@ function rcCard(e){const ck=e.checkpoints||{},c=!nil(e.highlight)?CL[e.highlight
  ${RCPT.url?"":`<p class="sub">No receipt.json was published with this page, so the verifier opens without one preloaded.</p>`}</details>`;
  $("#rcCard").innerHTML=`<div class="h"><span class="lbl">Receipt &amp; verification</span><span class="tag ${STATUS==="FAIL"?"x":VERIFIED?"g":"w"}">${hx(STATUS||"missing")}</span></div>
  ${reviewBlock()}
- ${chk(VERIFIED?true:STATUS==="FAIL"?false:null,`Receipt: ${hx((CHECK_FAIL||REFUSAL)?"FAIL · a review check refused signing":(RCPT.label||STATUS||"missing"))}`,"")}
+ ${chk(VERIFIED?true:STATUS==="FAIL"?false:null,`Receipt: ${hx((CHECK_FAIL||REFUSAL)?receiptFailPlain():(RCPT.label||STATUS||"missing"))}`,"")}
  ${indicatorBlock()}
  ${(RCPT.errors||[]).length?`<ul class="errs">${RCPT.errors.map(x=>`<li>${codeText(x)}</li>`).join("")}</ul>`:""}
  ${chk(VERIFIED?true:false,"Referee countersignature",/referee/i.test(refNote)?codeText(refNote):esc(refNote))}
@@ -718,7 +757,7 @@ function sigRow(k,state,name,label,body){return `<div class="sigrow ${state}" st
 function sigCard(){const box=$("#sigCard");if(!box)return;
  const rows=[];
  const rstate=STATUS==="VERIFIED"?"pass":STATUS==="FAIL"?"fail":STATUS==="PARTIAL"?"partial":STATUS?"info":"absent";
- rows.push(sigRow(0,rstate,"Receipt",STATUS?hx(STATUS):"not provided",hx((CHECK_FAIL||REFUSAL)?(RCPT.reason||"FAIL · a review check refused signing"):(RCPT.label||(STATUS?"":"No receipt was published with this page.")))));
+ rows.push(sigRow(0,rstate,"Receipt",STATUS?hx(STATUS):"not provided",hx((CHECK_FAIL||REFUSAL)?receiptFailPlain():(RCPT.label||(STATUS?"":"No receipt was published with this page.")))));
  const c=RCPT.corroboration;
  if(c&&typeof c.status==="string"){const map={corroborated:["pass","corroborated"],disagreed:["fail","disagreed"],single_sided:["info","single-sided"]};
   const pair=map[c.status]||["info",hx(c.status)];
@@ -1018,8 +1057,8 @@ async function startProof(){if(proofRunning){showProofBtn("run");return}
  const job=runProof();if(S.clip&&S.armed)checkClip(S.clip);
  try{await job}finally{proofRunning=false;showProofBtn("done")}}
 function boot(){const st=$("#status");
- const SHORT={FAIL:"Receipt FAIL · not a verified result",SELF_ATTESTED:"Self-signed · not referee-signed",PARTIAL:"Partial · not a verified result",VERIFIED:"Verified by the referee"};
- st.textContent=(SHORT[STATUS]||human(STATUS)||"receipt status missing")+(REFUSAL?` · ${human(RCPT.reason).replace(/_/g," ")}`:"");st.title=human(REFUSAL?RCPT.reason:(RCPT.label||""));st.classList.add(STATUS==="FAIL"?"fail":VERIFIED?"ok":"warn");
+ const line=statusLine();
+ st.innerHTML=line.html;st.title=line.title;st.classList.add(STATUS==="FAIL"?"fail":VERIFIED?"ok":"warn");
  const pd=$("#padDev");if(pd)pd.textContent=(typeof IS.device==="string"&&IS.device?IS.device:"controller name not recorded")+" · "+pd.textContent;
  $("#mid").textContent=`${D.match_id||""} · qorcap ${D.qorcap_version||"?"}`;
  document.title=`QorTime · ${D.match_id||"match"}`;

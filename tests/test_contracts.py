@@ -181,7 +181,14 @@ def test_pattern_mismatch_stored_from_does_not_bump_current():
     assert versions["challenge_mismatch_stored_from"] == "0.3.34"
     text = COMPAT["challenge_rules"]["recorder_result"]
     assert "From recorder 0.3.34 a pattern_mismatch is stored as ok:false" in text
-    assert "All other non-ok results stay null" in text
+    assert "every non-empty line of inputs.jsonl parses" in text
+    assert "wall_anchor_ms + t_us//1000" in text
+    assert "deadline_ms+2500" in text
+    assert "no stalled, unplugged, or missing row" in text
+    assert "malformed status row" in text
+    assert "OPTIONS alone" in text
+    assert "Every other non-ok reason stays null" in text
+    assert "withheld controller_log" in text
 
 
 def test_stop_tail_rule_is_the_verifier_rule():

@@ -62,8 +62,14 @@ the security argument (no pre-knowledge, HID + video pause 0–600 ms after the 
 **Recorder result (QorCap ≥ 0.3.11).** At finalize QorCap re-runs each challenge on its own bundle
 (`qor_receipt.review.local`) and writes an ok `result` (`reverified_by: "recorder"`) into the receipt.
 From recorder 0.3.34 a `pattern_mismatch` is stored as `ok: false` (`reason: "pattern_mismatch"`,
-`reverified_by: "recorder"`). All other non-ok results stay `null`, with the reason in
-`challenge_results.jsonl`. The official referee re-runs everything itself.
+`reverified_by: "recorder"`, no `rule` field) only when every non-empty line of `inputs.jsonl` parses,
+a committed record (including a chunk row) is at or after `deadline_ms` using `wall_anchor_ms + t_us // 1000`,
+and status is `connected` from `issued_ms` through `deadline_ms + 2500` with no `stalled`, `unplugged`, or
+`missing` row in that span. A malformed status row (`t_us` not an integer, or `state` not a string) withholds
+it, including a drop that reconnects before the deadline. OPTIONS alone, and OPTIONS inside the window with
+the rest of the pattern after `deadline_ms`, are that stored mismatch when the log passes the gate. Every
+other non-ok reason stays `null`, with the reason in `challenge_results.jsonl`. A withheld mismatch is
+recorded there with `withheld: controller_log`. The official referee re-runs everything itself.
 
 ## 4. Checkpoint chain
 

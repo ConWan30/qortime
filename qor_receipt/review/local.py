@@ -12,11 +12,15 @@ on the laptop's bundle before the receipt is signed:
 * result: ``verify_response`` + ``hid_sha256`` of the window's presses + ``reverified_by: "recorder"``.
 
 An ``ok`` result is written into the receipt. From recorder 0.3.34 a ``pattern_mismatch`` is stored as
-``ok: false`` with ``reason: "pattern_mismatch"`` and ``reverified_by: "recorder"``. All other non-ok results
-stay ``result: null`` (the verifiers say ``challenge_unanswered``: never VERIFIED) and the reason goes to
-``challenge_results.jsonl``, so a controller glitch or a timeout does not turn the score receipt into FAIL on
-the player's own laptop. The official referee re-runs everything from raw bytes either way; nothing here is
-trusted by it.
+``ok: false`` with ``reason: "pattern_mismatch"`` and ``reverified_by: "recorder"`` only when the controller
+log can support it: every non-empty line of ``inputs.jsonl`` parses, a committed record (including a chunk
+row) has wall time at or after ``deadline_ms`` (``wall_anchor_ms + t_us // 1000``), and the pad is
+``connected`` from ``issued_ms`` through ``deadline_ms + 2500`` with no ``stalled``, ``unplugged``, or
+``missing`` row in that span. A malformed status row withholds it. OPTIONS alone, and OPTIONS inside the
+window with the rest of the pattern after the deadline, are that stored mismatch. Every other non-ok result
+stays ``result: null`` (the verifiers say ``challenge_unanswered``) and the reason goes to
+``challenge_results.jsonl``, with ``withheld: controller_log`` when a mismatch was withheld. The official
+referee re-runs everything from raw bytes either way; nothing here is trusted by it.
 
 The latency ceiling here stays 0..600 ms and the result carries no ``rule`` field. A menu at 1.6 s is still
 ``video_latency_too_high`` on this path. The official referee is what stamps rule v2 and its 2500 ms ceiling.
@@ -24,6 +28,7 @@ The latency ceiling here stays 0..600 ms and the result carries no ``rule`` fiel
 from __future__ import annotations
 
 import hashlib
+import json
 import statistics
 from pathlib import Path
 from typing import Any
@@ -35,6 +40,9 @@ from qor_receipt.review import bundle as B
 from qor_receipt.review import media as M
 
 SMALL = B.META_FILES
+# A stalled row is written only after 2 s with no HID reports, on the next read timeout. The check
+# therefore runs 2.5 s past the deadline. Same constant as the recorder.
+STALL_LAG_MS = 2_500
 
 
 def load_dir(d: Path) -> B.Bundle:
@@ -71,8 +79,84 @@ def wall_minus_mono(b: B.Bundle) -> int:
     return int(statistics.median(diffs)) if diffs else (B.wall_anchor(b) or 0)
 
 
-def rerun(c: dict[str, Any], presses: list[dict[str, Any]], onsets_for) -> dict[str, Any]:
-    """One challenge -> {"result": dict|None, "local": dict}. ``onsets_for(lo_wall, hi_wall)`` -> pause onsets (wall)."""
+def inputs_log_intact(path: str | Path) -> bool:
+    """False when ``inputs.jsonl`` is missing or any non-empty line does not parse.
+
+    The recheck's JSONL reader skips a corrupt line, so the presses that remain can look like a short
+    pattern. A torn line in the middle of the file does that too, not only a partial last line. That is
+    not a player failure.
+    """
+    try:
+        raw = Path(path).read_bytes()
+    except OSError:
+        return False
+    if not raw:
+        return True
+    for line in raw.decode("utf-8", "replace").splitlines():
+        if not line.strip():
+            continue
+        try:
+            json.loads(line)
+        except json.JSONDecodeError:
+            return False
+    return True
+
+
+def pad_connected_through(records: list, *, issued_ms: int, deadline_ms: int, anchor_ms: int) -> bool:
+    """True when status records show ``connected`` from issue through the stall lag.
+
+    ``stalled``, ``unplugged``, and ``missing`` anywhere in ``[issued_ms, deadline_ms + STALL_LAG_MS]``
+    fail the check, including an unplug that reconnects before the deadline. A status row whose ``t_us``
+    is not an integer, or whose ``state`` is not a string, fails closed. Times are the same wall clock
+    as ``press_events`` (header ``wall_anchor_ms`` plus ``t_us // 1000``).
+    """
+    events: list[tuple[int, str]] = []
+    for r in records:
+        if not isinstance(r, dict) or r.get("type") != "status":
+            continue
+        t_us, state = r.get("t_us"), r.get("state")
+        if isinstance(t_us, bool) or not isinstance(t_us, int) or not isinstance(state, str):
+            return False
+        events.append((anchor_ms + t_us // 1000, state))
+    events.sort()
+    state: str | None = None
+    i = 0
+    while i < len(events) and events[i][0] <= issued_ms:
+        state = events[i][1]
+        i += 1
+    if state != "connected":
+        return False
+    end = deadline_ms + STALL_LAG_MS
+    while i < len(events) and events[i][0] <= end:
+        if events[i][1] != "connected":
+            return False
+        i += 1
+    return True
+
+
+def log_covers(records: list, *, deadline_ms: int, anchor_ms: int) -> bool:
+    """Some committed record, including a chunk row, is stamped at or after the deadline."""
+    ts = [anchor_ms + r["t_us"] // 1000 for r in records
+          if isinstance(r, dict) and isinstance(r.get("t_us"), int) and not isinstance(r.get("t_us"), bool)]
+    return bool(ts) and max(ts) >= deadline_ms
+
+
+def mismatch_log_trustworthy(bundle: str | Path, records: list, *, issued_ms: int, deadline_ms: int,
+                             anchor_ms: int) -> bool:
+    """A pattern mismatch may be stored only when the controller log can support it."""
+    return (inputs_log_intact(Path(bundle) / "inputs.jsonl")
+            and pad_connected_through(records, issued_ms=issued_ms, deadline_ms=deadline_ms, anchor_ms=anchor_ms)
+            and log_covers(records, deadline_ms=deadline_ms, anchor_ms=anchor_ms))
+
+
+def rerun(c: dict[str, Any], presses: list[dict[str, Any]], onsets_for, *,
+          log_trustworthy: bool = False) -> dict[str, Any]:
+    """One challenge -> {"result": dict|None, "local": dict}. ``onsets_for(lo_wall, hi_wall)`` -> pause onsets (wall).
+
+    ``log_trustworthy`` defaults closed. A ``pattern_mismatch`` is stored only when the caller has
+    checked every line, deadline coverage, and the pad through the stall lag. Anything else with that
+    reason is withheld.
+    """
     from qor_receipt.review.engine import pause_seen_for
 
     try:
@@ -95,8 +179,13 @@ def rerun(c: dict[str, Any], presses: list[dict[str, Any]], onsets_for) -> dict[
     local = dict(res, phase=c.get("phase"), id=c.get("id"), presses_in_window=len(win))
     if note:
         local["note"] = note
-    # A wrong pattern is a stored failure. A glitch or a timeout stays null.
-    stored = res if res["ok"] or res.get("reason") == "pattern_mismatch" else None
+    stored = res if res.get("ok") else None
+    if not res.get("ok") and res.get("reason") == "pattern_mismatch":
+        if log_trustworthy:
+            stored = res
+        else:
+            stored = None
+            local["withheld"] = "controller_log"
     return {"result": stored, "local": local}
 
 
@@ -129,10 +218,17 @@ def challenge_results(d: str | Path, challenges: list[dict[str, Any]], *, decode
             raise RuntimeError(scan.error)
         return list(scan.onsets)
 
+    anchor = B.wall_anchor(b) or 0
     out = []
     for c in challenges:
         holder.clear()
-        row = rerun(c, presses, onsets_for)
+        try:
+            issued, deadline = int(c["issued_ms"]), int(c["deadline_ms"])
+            trust = mismatch_log_trustworthy(
+                d, b.inputs + b.input_chunks, issued_ms=issued, deadline_ms=deadline, anchor_ms=anchor)
+        except (KeyError, TypeError, ValueError):
+            trust = False
+        row = rerun(c, presses, onsets_for, log_trustworthy=trust)
         local = row["local"]
         if local.get("reason") == "pause_not_seen_on_video":
             local["note"] = M.pause_not_seen_note(str(local.get("phase") or "challenge"), holder.get("scan"),

@@ -117,7 +117,10 @@ class Submission:
                "bytes_required": sum(int(self.bundle.segments[s]["bytes"]) for s in self.required),
                "review": self.review, "verify": self.verify}
         reason = self.review.get("reason") if isinstance(self.review, dict) else None
-        if isinstance(reason, str) and reason:
+        checks = self.review.get("checks") if isinstance(self.review, dict) else None
+        blocked = isinstance(checks, dict) and any(
+            isinstance(c, dict) and c.get("state") == FAIL_CHECK for c in checks.values())
+        if isinstance(reason, str) and reason and blocked:
             out["reason"] = reason
         if self.corroboration:
             out["corroboration"] = self.corroboration
@@ -296,7 +299,11 @@ class Referee:
             errs.append("only single-console bundles are supported by the review service")
         # The laptop's own receipt must be internally sound under its own keys (signatures, chain timing, result).
         v = R.verify_receipt(r, referee_pub=ref.get("pubkey"))
-        errs += [f"local_receipt:{x}" for x in v.get("errors", [])]
+        local_errors = [x for x in (v.get("errors") or []) if isinstance(x, str)]
+        # The referee re-runs every challenge from the raw log. A laptop that already stored
+        # challenge_failed is not a reason to refuse the upload. Any other local error still is.
+        if not _only_challenge_failed(local_errors):
+            errs += [f"local_receipt:{x}" for x in local_errors]
         return errs
 
     def _wall_minus_mono(self, b: B.Bundle) -> int:
@@ -480,6 +487,9 @@ class Referee:
         sub.review = review
         sub.corroboration = corroboration
         if any(c["state"] == FAIL_CHECK for c in checks.values()):
+            # Nothing was signed, so this is not a post-sign error. verify_receipt never ran.
+            # The blocking reason is review.reason (and public().reason). post_sign_errors stays
+            # empty here; that list is only for a receipt that was built and then refused.
             sub.state = "refused"
             self._publish_pair(sub, corroboration)
             return sub.public()
@@ -598,6 +608,10 @@ class Referee:
                 blocking.extend(R.blocking_challenge_errors(out, role))
         state, reason = challenge_check_state(
             blocking=blocking, anchor_bad=bad, phases_passed=all(p in phases for p in PHASES))
+        if state != FAIL_CHECK:
+            # A partial or a pass never carries a reason. A reason on those states would
+            # headline a signed receipt as FAIL.
+            reason = None
         if state == PARTIAL_CHECK:
             missing = [p for p in PHASES if p not in phases]
             notes.append(f"official challenges passed for {sorted(phases) or 'none'}; missing/failed: {missing}")
@@ -729,6 +743,21 @@ def _end_menu_hit(reader, img) -> bool:
 
 def _final_screen_hit(fn, img) -> bool:
     return bool(fn(img))
+
+
+def _only_challenge_failed(errors: list[str]) -> bool:
+    """True when every local-receipt error is a challenge_failed and there is at least one.
+
+    ``home:kickoff:challenge_failed:pattern_mismatch`` is that shape. A pattern problem, a chain
+    error, or an empty list is not. Empty means the receipt had no errors, which is not this case.
+    """
+    if not errors:
+        return False
+    for err in errors:
+        parts = err.split(":")
+        if len(parts) < 3 or parts[2] != "challenge_failed":
+            return False
+    return True
 
 
 def challenge_check_state(*, blocking: list[str], anchor_bad: bool, phases_passed: bool) -> tuple[str, str | None]:

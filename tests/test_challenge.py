@@ -106,10 +106,14 @@ def test_recorder_rerun_stores_ok_and_pattern_mismatch():
     assert len(out["result"]["hid_sha256"]) == 64
     wrong = [dict(e, mono_ms=e["t_ms"]) for e in perform(
         [PAUSE] + list(reversed(p[1:])) if p[1:] != p[:0:-1] else [PAUSE] + ["CROSS"] * 4, 40_000)]
-    mismatch = rerun(c, wrong, lambda lo, hi: [40_200])
+    mismatch = rerun(c, wrong, lambda lo, hi: [40_200], log_trustworthy=True)
     assert mismatch["result"]["ok"] is False
     assert mismatch["result"]["reason"] == "pattern_mismatch"
     assert mismatch["result"]["reverified_by"] == "recorder"
+    assert "rule" not in mismatch["result"]
+    closed = rerun(c, wrong, lambda lo, hi: [40_200])
+    assert closed["result"] is None and closed["local"]["withheld"] == "controller_log"
+    assert closed["local"]["reason"] == "pattern_mismatch"
     miss = rerun(c, presses, lambda lo, hi: [])
     assert miss["result"] is None and miss["local"]["reason"] == "pause_not_seen_on_video"
 
@@ -138,3 +142,238 @@ def test_recorder_challenge_results_on_bundle_dir(tmp_path):
     out = challenge_results(tmp_path, [c], decode=False)
     assert out[0]["result"] is None and out[0]["local"]["pause_press_ms"] == 1_050_000
     assert out[0]["local"]["presses_in_window"] == 5 and "ffmpeg" in out[0]["local"]["note"]
+
+
+def _bits():
+    from qor_receipt.review.bundle import BUTTON_BITS
+
+    return {name: bit for name, bit in BUTTON_BITS}
+
+
+def _challenge(nonce: str, phase: str, issued: int) -> dict:
+    return {"id": nonce[:8], "role": "home", "phase": phase, "nonce": nonce,
+            "pattern": pattern_for(nonce), "issued_ms": issued, "deadline_ms": issued + 90_000, "result": None}
+
+
+def _header(anchor_ms: int = 0) -> dict:
+    return {"type": "header", "schema": "qorcap-inputs/v0", "t_us": 0, "seg": 0, "wall_anchor_ms": anchor_ms}
+
+
+def _press(t_ms: int, button: str) -> dict:
+    return {"type": "in", "t_us": t_ms * 1000, "b": 1 << _bits()[button], "seg": 0}
+
+
+def _status(t_ms: int, state: str) -> dict:
+    return {"type": "status", "t_us": t_ms * 1000, "state": state, "detail": state, "seg": 0}
+
+
+def _chunk(t_ms: int) -> dict:
+    return {"type": "chunk", "seq": 1, "seg": 0, "n": 1, "sha256": "ab" * 32,
+            "prev": "cd" * 32, "head": "ef" * 32, "t_us": t_ms * 1000}
+
+
+def _kickoff():
+    return _challenge("00112233445566778899aabbccddeeff", "kickoff", 1_000_000)
+
+
+def _phases(kick: dict) -> list[dict]:
+    return [kick,
+            _challenge("ffeeddccbbaa99887766554433221100", "halftime", 2_000_000),
+            _challenge("0123456789abcdef0123456789abcdef", "end", 3_000_000)]
+
+
+def _wrong_button(pattern: list[str]) -> str:
+    return next(b for b in ("CROSS", "CIRCLE", "SQUARE", "TRIANGLE", "UP", "DOWN", "LEFT", "RIGHT") if b != pattern[1])
+
+
+def _fill(bundle, rows, challenges, *, chop: int = 0, tear_after: int | None = None):
+    import json as _j
+
+    from qor_receipt.review.local import challenge_results
+
+    bundle.mkdir(parents=True)
+    lines = [_j.dumps(r) for r in rows]
+    if tear_after is not None:
+        lines.insert(tear_after, '{"type": "in", "t_us":')
+    raw = ("\n".join(lines) + "\n").encode()
+    if chop:
+        raw = raw[:-chop]
+    (bundle / "inputs.jsonl").write_bytes(raw)
+    return challenge_results(bundle, challenges, decode=False)
+
+
+def _boundary(tmp_path, name, rows):
+    out = _fill(tmp_path / name, rows, _phases(_kickoff()))
+    return out[0]["result"], out[0]["local"]
+
+
+def test_pattern_mismatch_is_stored_when_the_log_can_support_it(tmp_path):
+    """A wrong button on a connected pad that covers the deadline is a stored mismatch."""
+    from qor_receipt.review.local import STALL_LAG_MS
+
+    assert STALL_LAG_MS == 2_500
+    kick = _kickoff()
+    t0 = kick["issued_ms"] + 1_000
+    out = _fill(tmp_path / "bundle", [
+        _header(), _status(0, "connected"), _press(t0, "OPTIONS"),
+        _press(t0 + 400, _wrong_button(kick["pattern"])), _chunk(kick["deadline_ms"]),
+    ], _phases(kick))
+    stored = out[0]["result"]
+    assert stored["ok"] is False and stored["reason"] == "pattern_mismatch"
+    assert stored["reverified_by"] == "recorder" and "rule" not in stored
+    assert isinstance(stored["hid_sha256"], str) and len(stored["hid_sha256"]) == 64
+    assert stored["done_ms"] is None and stored["latency_ms"] is None
+    assert isinstance(stored["pause_press_ms"], int)
+    assert "withheld" not in out[0]["local"]
+    assert out[1]["result"] is None and out[1]["local"]["reason"] == "no_pause_press"
+    assert out[2]["result"] is None and "withheld" not in out[2]["local"]
+
+
+def test_options_alone_and_late_rest_are_stored_mismatches(tmp_path):
+    """OPTIONS alone, and OPTIONS in the window with the rest after the deadline, are pattern_mismatch."""
+    kick = _kickoff()
+    t0 = kick["issued_ms"] + 1_000
+    header = _header()
+    tail = _chunk(kick["deadline_ms"])
+    alone = _fill(tmp_path / "alone", [header, _status(0, "connected"), _press(t0, "OPTIONS"), tail], _phases(kick))
+    assert alone[0]["result"]["reason"] == "pattern_mismatch" and "withheld" not in alone[0]["local"]
+    late_rows = [header, _status(0, "connected"), _press(t0, "OPTIONS")]
+    for i, button in enumerate(kick["pattern"][1:]):
+        late_rows.append(_press(kick["deadline_ms"] + 1_000 + i * 400, button))
+    late_rows.append(_chunk(kick["deadline_ms"] + 5_000))
+    late = _fill(tmp_path / "late", late_rows, _phases(kick))
+    assert late[0]["result"]["reason"] == "pattern_mismatch" and "withheld" not in late[0]["local"]
+
+
+def _glitch_rows(kind: str):
+    kick = _kickoff()
+    t0 = kick["issued_ms"] + 1_000
+    header, connected = _header(), _status(0, "connected")
+    options = _press(t0, "OPTIONS")
+    wrong = _press(t0 + 400, _wrong_button(kick["pattern"]))
+    tail = _chunk(kick["deadline_ms"])
+    if kind == "stall":
+        return [header, connected, options, _press(t0 + 400, kick["pattern"][1]),
+                _status(t0 + 800, "stalled"), tail], 0, None
+    if kind == "unplug":
+        return [header, connected, options, _status(t0 + 200, "unplugged"), tail], 0, None
+    if kind == "missing":
+        return [header, connected, options, _status(t0 + 200, "missing"), tail], 0, None
+    if kind == "reconnect":
+        return [header, connected, options, _status(t0 + 200, "unplugged"),
+                _status(t0 + 800, "connected"), _press(t0 + 1_200, _wrong_button(kick["pattern"])), tail], 0, None
+    if kind == "truncated":
+        return [header, connected, options, wrong], 12, None
+    if kind == "stall_after":
+        return [header, connected, options, wrong, _status(kick["deadline_ms"] + 500, "stalled")], 0, None
+    if kind == "clean_cut":
+        return [header, connected, options, wrong], 0, None
+    if kind == "torn":
+        return [header, connected, options, wrong, tail], 0, 3
+    raise AssertionError(kind)
+
+
+@pytest.mark.parametrize("kind", ["stall", "unplug", "missing", "reconnect", "truncated", "stall_after", "clean_cut", "torn"])
+def test_controller_glitch_withholds_the_mismatch(tmp_path, kind):
+    """A recorder or controller gap is not stored as a player failure."""
+    import json as _j
+
+    from qor_receipt.review.local import inputs_log_intact
+
+    rows, chop, tear_after = _glitch_rows(kind)
+    out = _fill(tmp_path / "bundle", rows, _phases(_kickoff()), chop=chop, tear_after=tear_after)
+    assert out[0]["result"] is None
+    assert out[0]["local"]["reason"] == "pattern_mismatch" and out[0]["local"]["withheld"] == "controller_log"
+    path = tmp_path / "bundle" / "inputs.jsonl"
+    if kind in {"truncated", "torn"}:
+        assert inputs_log_intact(path) is False
+    if kind == "torn":
+        lines = [ln for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+        _j.loads(lines[-1])
+        with pytest.raises(_j.JSONDecodeError):
+            _j.loads(lines[3])
+    if kind == "clean_cut":
+        assert inputs_log_intact(path) is True
+
+
+def test_ignoring_the_controller_log_stores_the_glitch(tmp_path, monkeypatch):
+    """Trusting every pattern_mismatch would store a stall as a player failure."""
+    from qor_receipt.review import local
+
+    monkeypatch.setattr(local, "mismatch_log_trustworthy", lambda *a, **k: True)
+    rows, chop, tear_after = _glitch_rows("stall")
+    out = _fill(tmp_path / "bundle", rows, _phases(_kickoff()), chop=chop, tear_after=tear_after)
+    assert out[0]["result"]["reason"] == "pattern_mismatch"
+    assert "withheld" not in out[0]["local"]
+
+
+def test_window_boundaries_and_the_stall_lag(tmp_path):
+    from qor_receipt.review.local import STALL_LAG_MS
+
+    kick = _kickoff()
+    issued, deadline = kick["issued_ms"], kick["deadline_ms"]
+    t0 = issued + 1_000
+    presses = [_press(t0, "OPTIONS"), _press(t0 + 400, _wrong_button(kick["pattern"]))]
+    stored, local = _boundary(tmp_path, "at-issued", [_header(), _status(issued, "connected"), *presses, _chunk(deadline)])
+    assert stored["reason"] == "pattern_mismatch" and "withheld" not in local
+    for name, stall_at in (("stall-issued", issued), ("stall-deadline", deadline), ("stall-lag", deadline + STALL_LAG_MS)):
+        stored, local = _boundary(
+            tmp_path, name,
+            [_header(), _status(0, "connected"), *presses, _status(stall_at, "stalled"), _chunk(deadline + STALL_LAG_MS + 1)])
+        assert stored is None and local["withheld"] == "controller_log", name
+    stored, local = _boundary(
+        tmp_path, "after-lag",
+        [_header(), _status(0, "connected"), *presses, _status(deadline + STALL_LAG_MS + 1, "stalled"),
+         _chunk(deadline)])
+    assert stored["reason"] == "pattern_mismatch" and "withheld" not in local
+
+
+def test_no_status_rows_withhold_the_mismatch(tmp_path):
+    kick = _kickoff()
+    t0 = kick["issued_ms"] + 1_000
+    stored, local = _boundary(tmp_path, "bundle", [
+        _header(), _press(t0, "OPTIONS"), _press(t0 + 400, _wrong_button(kick["pattern"])), _chunk(kick["deadline_ms"])])
+    assert stored is None and local["reason"] == "pattern_mismatch" and local["withheld"] == "controller_log"
+
+
+def test_status_rows_are_sorted_before_the_window_check(tmp_path):
+    kick = _kickoff()
+    issued, deadline = kick["issued_ms"], kick["deadline_ms"]
+    t0 = issued + 1_000
+    presses = [_press(t0, "OPTIONS"), _press(t0 + 400, _wrong_button(kick["pattern"]))]
+    stored, local = _boundary(tmp_path, "late-first", [
+        _header(), _status(deadline + 10_000, "stalled"), _status(issued, "connected"), *presses, _chunk(deadline)])
+    assert stored["reason"] == "pattern_mismatch" and "withheld" not in local
+    stored, local = _boundary(tmp_path, "stall-first", [
+        _header(), _status(t0 + 800, "stalled"), _status(0, "connected"), *presses, _chunk(deadline)])
+    assert stored is None and local["withheld"] == "controller_log"
+
+
+def test_nonzero_wall_anchor_is_applied(tmp_path):
+    anchor = 5_000_000
+    kick = _challenge("00112233445566778899aabbccddeeff", "kickoff", anchor)
+    wrong = _wrong_button(kick["pattern"])
+    stored = _fill(tmp_path / "store", [
+        _header(anchor), _status(0, "connected"), _press(1_000, "OPTIONS"), _press(1_400, wrong), _chunk(90_000),
+    ], [kick])
+    assert stored[0]["result"]["reason"] == "pattern_mismatch"
+    withheld = _fill(tmp_path / "stall", [
+        _header(anchor), _status(0, "connected"), _press(1_000, "OPTIONS"), _press(1_400, wrong),
+        _status(1_000, "stalled"), _chunk(90_000 + 2_501),
+    ], [kick])
+    assert withheld[0]["result"] is None and withheld[0]["local"]["withheld"] == "controller_log"
+
+
+def test_malformed_status_withholds_the_mismatch(tmp_path):
+    kick = _kickoff()
+    t0 = kick["issued_ms"] + 1_000
+    bad_time = {"type": "status", "t_us": float((t0 + 800) * 1000), "state": "stalled", "detail": "stalled", "seg": 0}
+    stored, local = _boundary(tmp_path, "time", [
+        _header(), _status(0, "connected"), _press(t0, "OPTIONS"),
+        _press(t0 + 400, _wrong_button(kick["pattern"])), bad_time, _chunk(kick["deadline_ms"])])
+    assert stored is None and local["withheld"] == "controller_log"
+    bad_state = {"type": "status", "t_us": (t0 + 800) * 1000, "state": 1, "seg": 0}
+    stored, local = _boundary(tmp_path, "state", [
+        _header(), _status(0, "connected"), _press(t0, "OPTIONS"),
+        _press(t0 + 400, _wrong_button(kick["pattern"])), bad_state, _chunk(kick["deadline_ms"])])
+    assert stored is None and local["withheld"] == "controller_log"

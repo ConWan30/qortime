@@ -236,18 +236,35 @@ def _check_line(name: str, check: dict) -> str | None:
     return None
 
 
+def _review_check_failed(receipt: dict) -> list[str]:
+    """Names of review checks whose state is fail. Empty when the review did not fail a check."""
+    review = receipt.get("review") if isinstance(receipt.get("review"), dict) else {}
+    checks = review.get("checks") if isinstance(review, dict) else None
+    if not isinstance(checks, dict):
+        return []
+    return [name for name, check in checks.items()
+            if isinstance(check, dict) and check.get("state") == "fail"]
+
+
 def _refusal_reason(receipt: dict, ver: dict) -> str | None:
-    """Reason a refused challenge carries onto the public page. Absent unless signing was blocked."""
+    """Reason a blocked challenge carries onto the public page.
+
+    A reason is returned only when the verifier said FAIL or a review check is fail. A reason field
+    on a VERIFIED or PARTIAL receipt is ignored, so that page cannot headline FAIL.
+    """
+    failed_checks = _review_check_failed(receipt)
+    if ver.get("status") != FAIL and not failed_checks:
+        return None
     review = receipt.get("review") if isinstance(receipt.get("review"), dict) else {}
     raw = review.get("reason") if isinstance(review, dict) else None
     if isinstance(raw, str) and raw.strip():
         return raw.strip()
-    if ver.get("status") != FAIL:
+    if ver.get("status") == FAIL:
+        for err in ver.get("errors") or []:
+            if isinstance(err, str) and ("challenge_failed:" in err or err.startswith("review_check_failed:")):
+                return err
         return None
-    for err in ver.get("errors") or []:
-        if isinstance(err, str) and ("challenge_failed:" in err or err.startswith("review_check_failed:challenges")):
-            return err
-    return None
+    return "review_check_failed:" + failed_checks[0]
 
 
 def _public_corroboration(co: dict) -> dict:

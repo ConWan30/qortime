@@ -85,6 +85,7 @@ def test_spot_check_review_countersigns_and_verifies(tmp_path):
     assert v["status"] == "VERIFIED", v
     assert v["verification_basis"] == "official-post-hoc-review"
     assert v["review"]["video_method"] == SPOT
+    assert "reason" not in out and "reason" not in out["review"]
     # Default (real) allowlist does not know this test key -> never VERIFIED.
     clear_cache()
     assert R.verify_receipt(final["receipt"], referee_pub=e.key.pubkey_hex)["status"] == "SELF_ATTESTED"
@@ -218,7 +219,58 @@ def _assert_mismatch_refused(out: dict) -> None:
 
 def test_pattern_mismatch_is_fail_with_a_top_level_reason(tmp_path):
     """A challenge failure that blocks signing is fail, and the reason is not only in post_sign_errors."""
-    _assert_mismatch_refused(_mismatch_review(tmp_path))
+    out = _mismatch_review(tmp_path)
+    _assert_mismatch_refused(out)
+    assert out["review"].get("post_sign_errors") in (None, [])
+
+
+def _receipt_with_stored_mismatch(e):
+    """A #97 receipt: the kickoff result is a recorder pattern_mismatch, and the jsonl may say withheld."""
+    files = dict(e.fx["files"])
+    rec = json.loads(files["receipt.json"])
+    for challenge in rec["challenges"]:
+        if challenge["phase"] == "kickoff":
+            challenge["result"] = {"ok": False, "reason": "pattern_mismatch", "reverified_by": "recorder",
+                                   "pause_press_ms": None, "done_ms": None, "latency_ms": None}
+    signed = R.sign_player(R.sign_referee(rec, e.fx["capture"]), "home", e.fx["device"])
+    files["receipt.json"] = json.dumps(signed).encode()
+    files["challenge_results.jsonl"] = (json.dumps({
+        "phase": "kickoff", "ok": False, "reason": "pattern_mismatch", "withheld": "controller_log"}) + "\n").encode()
+    return files
+
+
+def test_qorcap97_bundle_is_accepted_and_published_as_fail(tmp_path):
+    """Intake keeps a bundle whose only local errors are challenge_failed. The referee's own re-run decides."""
+    e = Env(tmp_path, tail_ms=8_000, k=1)
+    sub = e.submit(files=_receipt_with_stored_mismatch(e))
+    assert sub.state == "awaiting_segments", sub.errors
+    assert not any(str(x).startswith("local_receipt:") for x in sub.errors)
+    _flip_kickoff_pattern(sub)
+    e.upload_all(sub)
+    out = e.ref.review(sub)
+    _assert_mismatch_refused(out)
+    assert out.get("receipt") is None and sub.receipt is None
+    from test_match_publish import _render_page
+
+    shown = _render_page(tmp_path / "page", {
+        "status": "FAIL", "label": "FAIL · this receipt does not verify", "errors": [out["reason"]],
+        "partial": [], "reason": out["reason"],
+        "checks": [{"name": "challenges", "state": "fail"}]})
+    assert "Challenge failed at kickoff (home): wrong button pattern" in shown["statusText"]
+    assert shown["role"] == "status"
+
+
+def test_mixed_local_errors_still_reject_the_upload(tmp_path):
+    """challenge_failed does not excuse a broken signature or any other local error."""
+    e = Env(tmp_path, tail_ms=8_000, k=1)
+    files = _receipt_with_stored_mismatch(e)
+    rec = json.loads(files["receipt.json"])
+    rec["result"]["home_score"] = 99
+    files["receipt.json"] = json.dumps(rec).encode()
+    sub = e.submit(files=files)
+    assert sub.state == "rejected"
+    assert any(x.startswith("local_receipt:") and "challenge_failed" not in x for x in sub.errors)
+    assert any("challenge_failed" in x for x in sub.errors)
 
 
 def test_reverting_the_challenge_mapping_fails_that_check(tmp_path, monkeypatch):
@@ -248,6 +300,7 @@ def test_no_official_challenges_is_partial(tmp_path):
     assert v["status"] == "PARTIAL"
     assert "review_partial:challenges" in v["partial"]
     assert any(p.endswith("challenge_nonce_not_official") for p in v["partial"])
+    assert "reason" not in out and "reason" not in out["review"]
 
 
 def test_unreadable_final_fails_closed_without_reader(tmp_path):
