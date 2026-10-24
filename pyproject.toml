@@ -29,6 +29,9 @@ include = ["qor_receipt*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "known_gap: documents a current detection gap; assertions match today's rule and stay green in CI",
+]
 
 [tool.ruff]
 line-length = 130
