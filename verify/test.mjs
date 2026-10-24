@@ -139,7 +139,7 @@ ok((await verifyReceipt(rv.receipt, rv.referee_pub, { allowlist: rv.allowlist })
    "a review receipt with no device sidecar stays VERIFIED");
 
 // ---- verifier page display model: explains verifyReceipt, never re-decides it ----
-const { buildPanels, buildSteps, describeSidecar, explainCode, goldAllowed, verdictLabel } = await import("./receipt-view.js");
+const { buildPanels, buildSteps, describeSidecar, explainCode, goldAllowed, publicDevice, verdictLabel } = await import("./receipt-view.js");
 const { readdirSync } = await import("node:fs");
 const fxDir = new URL("../tests/vectors/viewer/", import.meta.url);
 const fixtures = readdirSync(fxDir).filter((f) => f.endsWith(".json")).sort();
@@ -223,5 +223,27 @@ ok(fr && fr.state === "pass" && fr.value && fr.value.away === 7 && fr.value.home
 ok(panelOf(vp, "result").gold === true && untouched.status === "VERIFIED", "gold on this fixture still comes from VERIFIED");
 ok(panelOf(buildPanels(withValue, { ...untouched, status: "FAIL" }, {}), "result").gold === false,
    "a structured re-read does not mint gold when the verifier said FAIL");
+const live170123 = JSON.parse(readFileSync(new URL("../site/matches/170123/receipt.json", import.meta.url)));
+const liveBare = await verifyReceipt(live170123, null);
+ok(liveBare.status === "PARTIAL" && liveBare.errors.length === 0 && liveBare.partial.length === 1 && liveBare.partial[0] === "referee_key_not_pinned",
+   "match 170123 with no pinned key is PARTIAL only because the key is not pinned");
+const livePin = await verifyReceipt(live170123, live170123.referee.pubkey);
+ok(livePin.status === "VERIFIED" && livePin.errors.length === 0 && livePin.partial.length === 0, "match 170123 with its referee key pinned is VERIFIED");
+ok(livePin.referee_id === "qortime-online-s2" && livePin.delegation && livePin.delegation.serial === 2 && livePin.delegation.delegated_by === "qortime-v1",
+   "match 170123 delegation serial 2 from qortime-v1");
+ok(livePin.review && livePin.review.segments_verified === 166 && livePin.review.segments_total === 525 && livePin.review.video_method === "spot-check",
+   "match 170123 spot-check is 166/525");
+ok(Array.isArray(livePin.review.not_proven) && livePin.review.not_proven.length === 4, "match 170123 keeps the receipt not_proven list");
+const livePanels = buildPanels(live170123, livePin, {});
+const liveReview = panelOf(livePanels, "review");
+ok(liveReview && liveReview.state === "pass" && liveReview.not_proven.length === 4 && liveReview.checks.every((c) => c.state === "pass") && liveReview.checks.length === 7,
+   "match 170123 review panel is pass with 7 passing checks and the not_proven list");
+ok(panelOf(livePanels, "result").gold === true, "match 170123 result panel is gold only from VERIFIED");
+ok(publicDevice("DualSense Edge (USB) id=instance:\\\\?\\HID#VID_054C") === "DualSense Edge (USB)", "a controller instance id is not shown");
+ok(publicDevice("C:\\Users\\player\\pad") === null, "a local path is not shown as a controller name");
+ok(panelOf(livePanels, "input").device === "DualSense Edge (USB)", "match 170123 shows the controller product name only");
+const liveCtrl = panelOf(livePanels, "capture").facts.find((row) => row[0] === "controller");
+ok(liveCtrl && liveCtrl[1] === "DualSense Edge (USB)" && !String(liveCtrl[1]).includes("HID#") && !String(liveCtrl[1]).includes("\\"),
+   "match 170123 capture panel does not show the instance id");
 process.exit(fails ? 1 : 0);
 

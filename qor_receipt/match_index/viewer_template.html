@@ -82,8 +82,9 @@ body.ready .d1{transition-delay:80ms}body.ready .d2{transition-delay:160ms}body.
 .ticker.gold .tstate{color:var(--gold)}
 .status{justify-self:end;font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:7px 10px;border-radius:10px;border:1px solid rgba(240,160,106,.55);color:var(--warn);max-width:280px;text-align:right}
 .status.fail{border-color:rgba(255,109,109,.6);color:var(--bad)}.status.ok{border-color:rgba(240,201,92,.6);color:var(--gold)}
-.seal{position:absolute;right:8px;top:6px;z-index:2;font-size:9px;letter-spacing:.16em;color:var(--gold);border:1px solid rgba(240,201,92,.7);background:#140f04;border-radius:99px;padding:2px 6px;opacity:0}
-.seal.go{animation:stamp 520ms var(--spring) forwards}
+/* id, not .seal: the verified rail used to share that class and was pulled out of the grid */
+#seal{position:absolute;right:8px;top:6px;z-index:2;font-size:9px;letter-spacing:.16em;color:var(--gold);border:1px solid rgba(240,201,92,.7);background:#140f04;border-radius:99px;padding:2px 6px;opacity:0}
+#seal.go{animation:stamp 520ms var(--spring) forwards}
 @keyframes stamp{0%{opacity:0;transform:scale(1.4) rotate(-8deg)}100%{opacity:1;transform:none}}
 .col{display:inline-block;height:1em;overflow:hidden;line-height:1}
 .col i{display:block;font-style:normal;transition:transform 560ms var(--ease);will-change:transform}
@@ -98,7 +99,13 @@ body.ready .d1{transition-delay:80ms}body.ready .d2{transition-delay:160ms}body.
 .grid{display:grid;gap:14px;max-width:1440px;margin:0 auto;padding:14px clamp(12px,2.2vw,28px) 36px;min-width:0;
  grid-template-columns:minmax(0,1fr) 372px;grid-template-areas:"stage side" "rail side" "clips clips" "foot foot"}
 .stage-card{grid-area:stage;position:relative;background:transparent;border:0;padding:0;box-shadow:none;min-width:0}
+.footage-card{display:none;padding:14px 16px;border:1px solid var(--line);border-radius:12px;background:rgba(8,16,30,.65)}
+.footage-card p{margin:6px 0 0;color:var(--mute);max-width:62ch}
+.stage-card.nofootage .footage-card{display:block}
+.stage-card.nofootage .stage,.stage-card.nofootage .ctl,.stage-card.nofootage .clipstat,.stage-card.nofootage .aisaw,.stage-card.nofootage .bleed{display:none}
 .rail-card{grid-area:rail;min-width:0}.side-col{grid-area:side;display:flex;flex-direction:column;gap:12px;min-width:0}
+.main-col{grid-area:main;display:flex;flex-direction:column;gap:14px;min-width:0;align-self:start}
+.grid.nofootage{grid-template-areas:"main side" "clips clips" "foot foot"}
 .clips-card{grid-area:clips;min-width:0}.foot{grid-area:foot;min-width:0}
 .bleed{position:absolute;z-index:0;left:6%;right:6%;top:8%;height:62%;pointer-events:none;
  background:radial-gradient(55% 70% at 50% 40%, var(--bleed, transparent), transparent 72%)}
@@ -106,6 +113,7 @@ body.ready .d1{transition-delay:80ms}body.ready .d2{transition-delay:160ms}body.
 .stage{position:relative;aspect-ratio:16/9;border-radius:12px;overflow:hidden;background:#02050a;border:1px solid var(--line);contain:layout paint;touch-action:pan-y}
 .stage .fr,.stage video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000;display:block}
 .stage .fr{opacity:0;transition:opacity 160ms linear}.stage .fr.on{opacity:1}
+.stage .fr:not([src]),.stage .fr[src=""]{display:none}
 .burn{position:absolute;z-index:4;left:0.8%;top:1.4%;width:56%;min-height:20%;background:#081122;border-left:2px solid var(--aqua);
  display:flex;flex-direction:column;gap:1px;padding:4px 8px 5px;pointer-events:none}
 .burn b{font-size:9px;letter-spacing:.14em;color:var(--aqua);font-weight:700}
@@ -159,8 +167,8 @@ body.ready .d1{transition-delay:80ms}body.ready .d2{transition-delay:160ms}body.
 .link.crack{color:var(--bad)}
 .link.crack .bar{background:linear-gradient(90deg,currentColor 0 34%,transparent 34% 66%,currentColor 66%);transform:rotate(-16deg) scaleX(.55)}
 .link.pad{opacity:0}
-.rail-card.seal .link.past{color:var(--aqua)}
-.rail-card.seal .link.crack{color:var(--bad)}
+.rail-card.sealed .link.past{color:var(--aqua)}
+.rail-card.sealed .link.crack{color:var(--bad)}
 .tl{position:relative;margin-top:2px;min-width:0;max-width:100%}
 .macro{position:relative;height:28px}
 .crackbtns{position:absolute;inset:0;z-index:3}
@@ -190,7 +198,7 @@ body.ready .d1{transition-delay:80ms}body.ready .d2{transition-delay:160ms}body.
 .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--mute);margin-top:2px}
 .legend i{display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:5px;vertical-align:middle}
 .legend .la{background:var(--steel)}.legend .lh{background:var(--aqua)}.legend .lg{background:var(--gold)}.legend .lc{background:var(--bad)}.legend .lk{background:var(--aqua);box-shadow:0 0 0 1px rgba(63,224,208,.45)}
-.proofnote{margin-top:8px;display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--mute)}
+.proofnote{margin-top:8px;display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--mute);min-width:0;max-width:100%;overflow-wrap:anywhere}
 .proofnote .ok{color:var(--aqua)}.proofnote .bad{color:var(--bad)}
 .pad{margin-top:10px}
 .padstage{position:relative;height:56px;border-radius:8px;overflow:hidden;background:rgba(0,0,0,.28);border:1px solid var(--line)}
@@ -217,6 +225,10 @@ body.ready .d1{transition-delay:80ms}body.ready .d2{transition-delay:160ms}body.
 .chk .hx{font:11px var(--mono);color:#c5d2e4;word-break:break-all}
 .errs{margin:4px 0 0;padding-left:16px;font:11px var(--mono);color:var(--bad)}
 .note{font-size:12px;color:var(--mute);border-left:2px solid var(--aqua2);padding:2px 0 2px 10px;margin-top:8px}
+.notproven{margin:0 0 10px;padding:10px 12px;border:1px solid var(--line2);border-radius:12px;background:rgba(0,0,0,.28)}
+.notproven .lbl{color:var(--ink)}
+.notproven ul{margin:6px 0 0;padding-left:18px;color:var(--ink)}
+.notproven li{margin:4px 0}
 details.scope-card summary{cursor:pointer;list-style:none;min-height:44px;display:flex;align-items:center}
 details.scope-card summary::-webkit-details-marker{display:none}
 #scope{width:100%;height:120px;display:block;margin-top:6px}
@@ -243,13 +255,14 @@ h1.finalsum.gold{color:var(--gold)}
 .howto ol{margin:4px 0 8px;padding-left:18px;color:var(--mute);font-size:12.5px}
 .howto pre{margin:0;white-space:pre-wrap;font:11.5px var(--mono);color:#c5d2e4}
 .clip .dl{display:inline-flex;align-items:center;min-height:44px;margin:0 10px 8px;font-size:12px}
-@media (max-width:1060px){.grid{grid-template-columns:1fr;grid-template-areas:"stage" "rail" "side" "clips" "foot"}}
+@media (max-width:1060px){.grid{grid-template-columns:1fr;grid-template-areas:"stage" "rail" "side" "clips" "foot"}
+ .grid.nofootage{grid-template-columns:1fr;grid-template-areas:"main" "side" "clips" "foot"}}
 @media (max-width:720px){
  .top{grid-template-columns:1fr;gap:6px;padding:8px 10px 10px}
  .brand-row{justify-content:space-between}.mid{display:none}
  .ticker{min-width:0;justify-self:stretch}.ticker .dg{font-size:34px}.ticker .side{padding:6px 10px 8px}
  .status{justify-self:stretch;text-align:center;max-width:none}
- .grid{padding:10px 10px 28px;gap:10px}
+ .grid{padding:10px 10px 28px;gap:10px}.main-col{gap:10px}
  .worm-wrap{height:112px}.big{font-size:52px}.padstage,#padcv{height:48px}.kv{grid-template-columns:92px minmax(0,1fr)}
  .strip button{width:96px;min-height:44px}
  .finalrow{align-items:stretch;flex-direction:column}
@@ -297,6 +310,7 @@ body.ready .meter i{transform:scaleX(var(--f,0));transition:transform .7s var(--
 </div></div>
 <main class="grid">
  <section class="stage-card enter d1" aria-label="Footage">
+  <div class="footage-card" id="footageCard"><div class="lbl">Footage not published</div><p id="footageLine">Footage stays on the player's PC.</p></div>
   <div class="bleed" id="bleed" aria-hidden="true"></div>
   <div class="stage" id="stage">
    <img class="fr" id="frA" alt=""><img class="fr" id="frB" alt="">
@@ -600,9 +614,11 @@ function load(mode,first){pause();S.mode=mode;S.shown=false;const e=S.ev;const c
   if(S.wantClip){const sk=S.wantSeek;S.wantClip=false;S.wantSeek=null;armClip(c,sk);if(!RM)vid.play().then(loopV).catch(()=>{})}
   if(S.flip){const from=S.flip;S.flip=null;requestAnimationFrame(()=>flip(from))}}
  else{vid.pause();vid.hidden=true;burn(null);const fr=(e.frames||[]).filter(f=>f.src);S.fr=fr;
-  if(!fr.length){md.className="mode";md.textContent="no burst frames";$("#empty").hidden=false;
-   $("#empty").innerHTML=`<div><div class="lbl">no frames</div><span class="miss">${esc(e.frames_missing_reason||"missing in bundle")}</span></div>`;
-   setRec(e.recording_s,true);return}
+  if(!fr.length){md.className="mode";md.textContent="no footage";$("#empty").hidden=false;frA.removeAttribute("src");frB.removeAttribute("src");
+   const line=P0.footage_note||e.frames_missing_reason||"Footage is not published.";
+   $("#empty").innerHTML=`<div><div class="lbl">Footage not published</div><span>${esc(line)}</span></div>`;
+   if(noFootage()&&e.kind==="end_of_game"&&e.score_after){ticker(e.score_after,e,false);tstate(e,true);S.shown=true}
+   setRec(e.recording_s,true);$("#pos").textContent="";$("#progFill").style.transform="scaleX(0)";return}
   const span=(fr[fr.length-1].video_s||0)-(fr[0].video_s||0);
   md.className="mode";md.innerHTML=`Burst stills · ${fr.length} frames / ${Math.max(0,span).toFixed(0)}s<span class="lng"> · not continuous video</span>`;
   const z=zeroIdx(fr);S.z=z;$("#lockPin").style.left=(z/Math.max(1,fr.length-1)*100)+"%";$("#lockPin").classList.toggle("g",false);
@@ -619,7 +635,8 @@ function bleedFrom(src){try{sx.drawImage(src,0,0,8,8);const d=sx.getImageData(0,
  for(let i=0;i<d.length;i+=4){if(d[i]+d[i+1]+d[i+2]<48)continue;r+=d[i];g+=d[i+1];b+=d[i+2];n++}
  if(!n)return;document.documentElement.style.setProperty("--bleed",`rgba(${r/n|0},${g/n|0},${b/n|0},.5)`)}catch(e){}}
 function strip(e){const fr=(e.frames||[]).filter(f=>f.src);const z=zeroIdx(fr);
- $("#aiSub").textContent=fr.length?`${fr.length} frames the score reader looked at${e.reads_agreeing?` · new score held ${e.reads_agreeing} consecutive reads`:""}. Per-frame digits are not in this bundle.`:"no burst frames in this bundle";
+ $("#aiSub").textContent=fr.length?`${fr.length} frames the score reader looked at${e.reads_agreeing?` · new score held ${e.reads_agreeing} consecutive reads`:""}. Per-frame digits are not in this bundle.`:
+  (P0.footage_note?"footage is not published":"no burst frames in this bundle");
  $("#strip").innerHTML=fr.map((f,k)=>`<button class="${k===z?"z":""}" data-k="${k}" aria-label="frame ${k+1}, ${f.dt_s}s from the read"><img loading="lazy" decoding="async" alt="" src="${esc(f.thumb||f.src)}"><span>${f.dt_s>=0?"+":""}${(+f.dt_s).toFixed(1)}</span></button>`).join("");
  $("#strip").querySelectorAll("button").forEach(b=>b.onclick=()=>{if(S.mode!=="burst")load("burst",false);pause();showFrame(+b.dataset.k,true)})}
 function preloadNext(i){const k=NAV.indexOf(i);const n=EV[NAV[k+1]];const f=n&&(n.frames||[]).find(x=>x.src);if(f){const im=new Image();im.decoding="async";im.src=f.thumb||f.src}}
@@ -640,7 +657,14 @@ function chk(ok,title,body){const mark=ok===true&&VERIFIED?"✓":ok===true?"●"
 function cpLine(x,label){if(!x)return chk(null,label+" checkpoint",MISS);
  const ok=x.frames_hash_matches_evidence;return chk(ok===true?true:ok===false?false:null,`${label} checkpoint #${esc(x.seq)} · frames_hash ${ok?"matches evidence":ok===false?"does not match":"unchecked"}`,`hash ${short(x.hash)}`)}
 function verifyHref(){const rel=/\/site\/matches\//.test(location.pathname)?"../../../verify/":(RCPT.verify_url||"../../verify/");
- const u=new URL(rel,location.href);if(RCPT.url)u.searchParams.set("receipt",new URL(RCPT.url,location.href).href);return u.href}
+ const u=new URL(rel,location.href);if(RCPT.url)u.searchParams.set("receipt",new URL(RCPT.url,location.href).href);
+ if(RCPT.referee_pub&&!u.searchParams.get("referee"))u.searchParams.set("referee",RCPT.referee_pub);return u.href}
+function reviewBlock(){const rows=Array.isArray(RCPT.checks)?RCPT.checks:[];
+ const np=(Array.isArray(RCPT.not_proven)?RCPT.not_proven:[]).filter(x=>typeof x==="string"&&x);
+ let html="";
+ if(np.length)html+=`<div class="notproven"><div class="lbl">Not proven</div><ul>${np.map(x=>`<li>${esc(x)}</li>`).join("")}</ul></div>`;
+ if(rows.length)html+=rows.map(c=>chk(c.state==="pass"?true:c.state==="fail"?false:null,hx(String(c.name||"").replace(/_/g," ")),c.line?esc(c.line):"")).join("");
+ return html}
 function indicatorBlock(){const c=RCPT.corroboration,d=RCPT.device_key,bits=[];
  if(c&&typeof c==="object"&&typeof c.status==="string"){
   const labels={corroborated:"CORROBORATED",disagreed:"DISAGREED",single_sided:"SINGLE-SIDED"};
@@ -674,6 +698,7 @@ function rcCard(e){const ck=e.checkpoints||{},c=!nil(e.highlight)?CL[e.highlight
  <pre>qorcap highlights --check manifest.json --bundle BUNDLE</pre>
  ${RCPT.url?"":`<p class="sub">No receipt.json was published with this page, so the verifier opens without one preloaded.</p>`}</details>`;
  $("#rcCard").innerHTML=`<div class="h"><span class="lbl">Receipt &amp; verification</span><span class="tag ${STATUS==="FAIL"?"x":VERIFIED?"g":"w"}">${hx(STATUS||"missing")}</span></div>
+ ${reviewBlock()}
  ${chk(VERIFIED?true:STATUS==="FAIL"?false:null,`Receipt: ${hx(RCPT.label||STATUS||"missing")}`,"")}
  ${indicatorBlock()}
  ${(RCPT.errors||[]).length?`<ul class="errs">${RCPT.errors.map(x=>`<li>${codeText(x)}</li>`).join("")}</ul>`:""}
@@ -968,8 +993,14 @@ function paintFinal(){const R=D.result||{},fin=R.final,h=$("#finalSum"),w=$("#fi
   sentence="No confirmed final."}
  if(w&&P0.recorded)w.textContent=(w.textContent?w.textContent+" ":"")+P0.recorded;
  const sub=$("#railSub");if(sub&&sentence&&!(sub.textContent||"").includes(sentence))sub.textContent=sub.textContent?`${sub.textContent} · ${sentence}`:sentence}
-function pickStart(){const ht=hashParts();const first=NAV.find(i=>EV[i].kind==="score_change");
- let i=nil(first)?(NAV[0]||0):first;
+function noFootage(){return !CL.length&&EV.every(e=>!(e.frames||[]).some(f=>f&&f.src))}
+function pickStart(){const ht=hashParts();
+ const confirmed=!!(D.result&&D.result.final&&D.result.final_confirmed);
+ let i;
+ if(noFootage()&&confirmed&&!ht.event&&ht.t==null){
+  const end=EV.findIndex(e=>e.kind==="end_of_game"&&e.score_after);
+  i=end>=0?end:(NAV.length?NAV[NAV.length-1]:0);
+ }else{const first=NAV.find(k=>EV[k].kind==="score_change");i=nil(first)?(NAV[0]||0):first}
  if(ht.event){const j=EV.findIndex(e=>String(e.id)===ht.event);if(j>=0)i=j}
  else if(ht.t!=null){let b=i,bd=1e15;EV.forEach((e,k)=>{if(nil(e.recording_s))return;const d=Math.abs(e.recording_s-ht.t);if(d<bd){bd=d;b=k}});i=b}
  const e=EV[i];
@@ -987,8 +1018,12 @@ function boot(){const st=$("#status");
  const pd=$("#padDev");if(pd)pd.textContent=(typeof IS.device==="string"&&IS.device?IS.device:"controller name not recorded")+" · "+pd.textContent;
  $("#mid").textContent=`${D.match_id||""} · qorcap ${D.qorcap_version||"?"}`;
  document.title=`QorTime · ${D.match_id||"match"}`;
+ if(noFootage()){const card=document.querySelector(".stage-card");if(card)card.classList.add("nofootage");
+  const grid=document.querySelector(".grid"),rail=$("#railCard");
+  if(grid&&card&&rail){const wrap=document.createElement("div");wrap.className="main-col";grid.insertBefore(wrap,card);wrap.append(card,rail);grid.classList.add("nofootage")}
+  const line=$("#footageLine");if(line)line.textContent=P0.footage_note||"Footage stays on the player's PC."}
  if(!RAIL)RAIL=sparseRail();
- if(RAIL){CRACKS=new Set((RAIL.cracks||[]).map(c=>c.i));$("#railCard").classList.toggle("seal",!!RAIL.seal);
+ if(RAIL){CRACKS=new Set((RAIL.cracks||[]).map(c=>c.i));$("#railCard").classList.toggle("sealed",!!RAIL.seal);
   const why=(RAIL.cracks||[]).map(c=>`#${c.i} ${c.why}`).join(" · ");
   $("#railSub").textContent=`${RAIL.n} links${RAIL.dt_s?` · ~${RAIL.dt_s}s each`:""} · ${human(RAIL.note||"")}${why?` · cracked ${why}`:""}`}
  sigCard();

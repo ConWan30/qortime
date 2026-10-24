@@ -256,3 +256,59 @@ def test_receipt_with_on_screen_names_needs_explicit_opt_in(tmp_path):
     # opting in gets past the name guard (this edited receipt then FAILs verification, which is refused on its own)
     with pytest.raises(P.PublishRefused, match="does not verify"):
         P.publish(b, tmp_path / "site", frames=False, slug="101500", include_names=True)
+
+
+OFFICIAL_170123_SHA256 = "69480a406d1621409cf03dc98eadcb9020c384a368d9fb0fcab63b61c9f12bb0"
+
+
+def test_published_match_170123_verifies_and_stays_public():
+    """The first referee-verified page. The signed receipt is byte-for-byte; the page does not copy instance ids."""
+    root = Path(__file__).resolve().parents[1]
+    folder = root / "site/matches/170123"
+    raw = (folder / "receipt.json").read_bytes()
+    assert hashlib.sha256(raw).hexdigest() == OFFICIAL_170123_SHA256
+    body = json.loads(raw)
+    bare = verify_receipt(body)
+    assert bare["status"] == "PARTIAL" and bare["errors"] == [] and bare["partial"] == ["referee_key_not_pinned"]
+    pinned = verify_receipt(body, referee_pub=body["referee"]["pubkey"])
+    assert pinned["status"] == "VERIFIED" and pinned["errors"] == [] and pinned["partial"] == []
+    assert pinned["referee_id"] == "qortime-online-s2"
+    deleg = pinned["delegation"]
+    assert deleg["serial"] == 2 and deleg["delegated_by"] == "qortime-v1"
+    checks = body["review"]["checks"]
+    video = checks["video_bytes"]["detail"]
+    motion = checks["motion"]["detail"]
+    challenges = checks["challenges"]["detail"]
+    assert video["method"] == "spot-check" and video["segments_verified"] == 166 and video["segments_total"] == 525
+    assert motion["rule"] == 3 and motion["motion_permille"] == 521 and motion["bins"] == 63
+    assert challenges["count"] == 3 and challenges["rule"] == 2
+    assert body["result"]["away_score"] == 10 and body["result"]["home_score"] == 0
+    assert body["result"]["method"] == "end_menu_read" and body["result"]["final_confirmed"] is True
+    assert all(checks[name]["state"] == "pass" for name in (
+        "bundle_structure", "capture_chain", "video_bytes", "final_reread", "challenges", "motion", "input_integrity"))
+    page = (folder / "index.html").read_text(encoding="utf-8")
+    assert '"status": "VERIFIED"' in page
+    for line in body["review"]["not_proven"]:
+        assert line in page
+    assert "Footage is not published" in page
+    assert "nofootage" in page and "#seal{" in page and ".seal{position:absolute" not in page
+    assert ".grid.nofootage" in page and "main-col" in page
+    assert 'grid-template-areas:"main side"' in page
+    assert "Footage stays on the player's PC." in page
+    assert "Recorded Oct 23, 2026, 5:01 PM" in page and "5:18 PM CT." in page
+    assert "qortime-online-s2" in page and "delegation serial 2" in page
+    assert "hardware-verified" not in page.lower() and "attestation" not in page.lower()
+    assert "id=instance:" not in page and "HID#" not in page and "@device" not in page
+    assert "DualSense Edge (USB)" in page
+    assert P.privacy_problems(page) == []
+    assert not list(folder.rglob("*.mp4")) and not list(folder.rglob("*.jpg"))
+    assert (folder / "og.png").read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+    summary = json.loads((folder / "match.json").read_text(encoding="utf-8"))
+    assert summary["receipt_status"] == "VERIFIED" and summary["final"] == {"away": 10, "home": 0}
+    assert summary["receipt_result"] == {"away": 10, "home": 0, "method": "end_menu_read"}
+    assert summary["clips"] == 0
+    index = (root / "site/matches/index.html").read_text(encoding="utf-8")
+    assert index.find('href="170123/"') < index.find('href="021003/"') < index.find('href="125430/"')
+    assert 'class="lockg"' in index and "n = 1" in index
+    assert "SELF-SIGNED" in index and ">FAIL<" in index
+    assert "No page here is referee-verified" not in index
