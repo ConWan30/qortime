@@ -4,3 +4,7 @@ onnx==1.23.2
 onnxruntime==1.31.0
 opencv-python-headless==5.0.0.93
 pytest==9.1.1
+# Only so tests/conftest.py imports (the spike tests use none of its fixtures); not part of the reader identity.
+fastapi==0.162.0
+httpx==0.28.1
+cryptography==50.0.2
