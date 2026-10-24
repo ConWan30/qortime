@@ -4,6 +4,7 @@ import { canonicalize, sha256Hex, verifyReceipt, challengeEvidenceErrors, challe
          corroborationView,
          deviceKeyView,
          revocationsProblem, receiptBodyHash, verifyInclusion, verifyLogEntries, verifyLogHead, loadAllowlist } from "./verify.js";
+import { runAdversarial } from "./adversarial.test.mjs";
 import { REFEREE_REVOCATIONS } from "./referee_revocations.inc.js";
 const v = JSON.parse(readFileSync(new URL("../tests/vectors/jcs_vector.json", import.meta.url)));
 let fails = 0;
@@ -191,6 +192,15 @@ for (const c of ["referee_local_self_attested", "home:key_kind_claim_unverified:
   const x = explainCode(c);
   ok(!/attest/i.test(x.text) && (x.code === null || !/attest/i.test(x.code)), `explanation for ${c} avoids attested wording`);
 }
+const early = buildSteps(null, { status: "FAIL", trust_tier: null, errors: ["noncanonical_json"], partial: [], referee_trust: "unknown" });
+ok(early.stopped, "an early noncanonical FAIL stops the checklist");
+ok(early.steps.find((s) => s.id === "schema").state === "fail", "the format step is the one that failed");
+ok(early.steps.filter((s) => !["schema", "review", "dual"].includes(s.id)).every((s) => s.state === "unchecked"),
+   "checks that never ran stay unchecked");
+for (const code of ["noncanonical_json", "noncanonical_number", "noncanonical_surrogate", "noncanonical_duplicate_key", "noncanonical_hex", "noncanonical_signatures"]) {
+  const explained = explainCode(code);
+  ok(explained.text && explained.text !== "Verifier code.", `${code} has plain-language text`);
+}
 ok(explainCode("no_haptic_events").text === "No haptic events were recorded.", "missing IMU bursts are labeled haptic events");
 ok(explainCode("haptic_low_confidence_only").text === "Haptic events were recorded, but none with high confidence.",
    "low-confidence IMU bursts are labeled haptic events");
@@ -250,5 +260,6 @@ ok(panelOf(livePanels, "input").device === "DualSense Edge (USB)", "match 170123
 const liveCtrl = panelOf(livePanels, "capture").facts.find((row) => row[0] === "controller");
 ok(liveCtrl && liveCtrl[1] === "DualSense Edge (USB)" && !String(liveCtrl[1]).includes("HID#") && !String(liveCtrl[1]).includes("\\"),
    "match 170123 capture panel does not show the instance id");
+await runAdversarial(ok);
 process.exit(fails ? 1 : 0);
 

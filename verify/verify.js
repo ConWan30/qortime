@@ -2,6 +2,9 @@
 import * as ed from "./vendor/noble-ed25519.js";
 import { TRUSTED_REFEREES } from "./trusted_referees.inc.js";
 import { REFEREE_REVOCATIONS } from "./referee_revocations.inc.js";
+import { MAX_DEPTH, MAX_RECEIPT_BYTES, parseCanonical, structuralErrors } from "./canonical.js";
+
+export { parseCanonical, structuralErrors, MAX_RECEIPT_BYTES, MAX_DEPTH };
 
 export const SCHEMA = "qor-receipt/v0";
 export const SELF_ATTESTED = "SELF_ATTESTED";
@@ -154,13 +157,34 @@ export function canonicalize(v) {
   throw new Error("unsupported type");
 }
 const hex = (b) => Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
-const unhex = (h) => Uint8Array.from(h.match(/../g) || [], (x) => parseInt(x, 16));
+// Fixed-length lowercase hex only. Pair-slicing dropped a trailing nibble and
+// parseInt accepted uppercase and non-hex (NaN became 0), so a tampered signature still verified.
+const unhex = (h) => {
+  if (typeof h !== "string" || h.length % 2 !== 0) return null;
+  const out = new Uint8Array(h.length / 2);
+  for (let i = 0; i < out.length; i++) {
+    const c0 = h.charCodeAt(i * 2), c1 = h.charCodeAt(i * 2 + 1);
+    const n0 = c0 >= 48 && c0 <= 57 ? c0 - 48 : c0 >= 97 && c0 <= 102 ? c0 - 87 : -1;
+    const n1 = c1 >= 48 && c1 <= 57 ? c1 - 48 : c1 >= 97 && c1 <= 102 ? c1 - 87 : -1;
+    if (n0 < 0 || n1 < 0) return null;
+    out[i] = (n0 << 4) | n1;
+  }
+  return out;
+};
 async function sha256(bytes) { return new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)); }
 export async function sha256Hex(v) { return hex(await sha256(enc.encode(canonicalize(v)))); }
 async function edVerify(pub, sig, msgBytes) {
-  try { return await ed.verifyAsync(unhex(sig), msgBytes, unhex(pub), { zip215: false }); } catch { return false; }
+  try {
+    const s = unhex(sig), p = unhex(pub);
+    if (!s || !p || s.length !== 64 || p.length !== 32) return false;
+    return await ed.verifyAsync(s, msgBytes, p, { zip215: false });
+  } catch { return false; }
 }
-const kid = async (pub) => hex(await sha256(unhex(pub))).slice(0, 16);
+const kid = async (pub) => {
+  const raw = unhex(pub);
+  if (!raw || raw.length !== 32) throw new Error("bad pubkey");
+  return hex(await sha256(raw)).slice(0, 16);
+};
 const without = (o, k) => Object.fromEntries(Object.entries(o).filter(([x]) => x !== k));
 
 export async function patternFor(nonce, length = 4) {
@@ -405,7 +429,25 @@ export function inputProofAdvisory(signals) {
            claims: "advisory evidence only — not cryptographic proof of a human player" };
 }
 
+function failClosed(errors) {
+  return { status: "FAIL", trust_tier: null, errors, partial: [], referee_trust: "unknown" };
+}
+
+function own(obj, key) {
+  if (!obj || typeof obj !== "object") return undefined;
+  const desc = Object.getOwnPropertyDescriptor(obj, key);
+  return desc && "value" in desc ? desc.value : undefined;
+}
+
 export async function verifyReceipt(r, refereePub = null, opts = {}) {
+  if (typeof r === "string") {
+    const parsed = parseCanonical(r);
+    if (!parsed.ok) return failClosed(parsed.errors);
+    r = parsed.value;
+  }
+  if (!r || typeof r !== "object" || Array.isArray(r)) return failClosed(["noncanonical_json"]);
+  const structural = structuralErrors(r);
+  if (structural.includes("noncanonical_number") || structural.includes("noncanonical_surrogate") || structural.includes("noncanonical_json")) return failClosed(structural);
   const allowlist = (opts && opts.allowlist) || TRUSTED_REFEREES;
   const revocations = opts && "revocations" in opts ? opts.revocations : REFEREE_REVOCATIONS;
   let reviewMode = false;
@@ -418,6 +460,7 @@ export async function verifyReceipt(r, refereePub = null, opts = {}) {
   let refereeEntry = null;
   try {
     if (r.schema !== SCHEMA) return { status: "FAIL", trust_tier: null, errors: ["schema"], partial: [], referee_trust: "unknown" };
+    errors.push(...structural);
     const msg = enc.encode(canonicalize(without(r, "signatures")));
     const sigs = r.signatures || {}, ref = r.referee;
     if (!refereePub) partial.push("referee_key_not_pinned");
@@ -513,7 +556,7 @@ export async function verifyReceipt(r, refereePub = null, opts = {}) {
         }
       }
       partial.push(...challengeConsistencyPartials(r.challenges, role));
-      const mp = ((r.signals || {}).motion_permille || {})[role];
+      const mp = own(own(own(r, "signals"), "motion_permille"), role);
       if (mp == null) partial.push(`${role}:motion_signal_missing`);
       else if (mp < MOTION_MIN) partial.push(`${role}:motion_correlation_low`);
     }

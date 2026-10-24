@@ -14,6 +14,7 @@ from typing import Any
 
 from qor_receipt import SCHEMA
 from qor_receipt import delegation as D
+from qor_receipt.canonical import parse_canonical, structural_errors
 from qor_receipt.challenge import (
     DEFAULT_LEN,
     MAX_WINDOW_MS,
@@ -313,9 +314,33 @@ def _input_proof_advisory(signals: dict[str, Any] | None) -> dict[str, Any] | No
     }
 
 
-def verify_receipt(r: dict[str, Any], *, referee_pub: str | None = None,
+def _fail_closed(errors: list[str]) -> dict[str, Any]:
+    return {"status": FAIL, "trust_tier": None, "errors": errors, "partial": [], "referee_trust": "unknown"}
+
+
+def verify_receipt(r: dict[str, Any] | str | bytes, *, referee_pub: str | None = None,
                    allowlist_path: str | None = None, revocations_path: str | None = None,
                    now_ms: int | None = None) -> dict[str, Any]:
+    if isinstance(r, (bytes, bytearray)):
+        try:
+            r = bytes(r).decode("utf-8")
+        except UnicodeDecodeError:
+            return _fail_closed(["noncanonical_json"])
+    if isinstance(r, str):
+        parsed, perr = parse_canonical(r)
+        if perr:
+            return _fail_closed(perr)
+        r = parsed
+    if not isinstance(r, dict):
+        return _fail_closed(["noncanonical_json"])
+    try:
+        structural = structural_errors(r)
+    except (RecursionError, MemoryError):
+        return _fail_closed(["noncanonical_json"])
+    # Floats, lone surrogates, and prototype-key objects make JCS raise or, in JS,
+    # disagree with the signature. Reject them before signing bytes are built.
+    if any(e in ("noncanonical_number", "noncanonical_surrogate", "noncanonical_json") for e in structural):
+        return _fail_closed(structural)
     errors: list[str] = []
     partial: list[str] = []
     trusted_ref = False
@@ -328,6 +353,7 @@ def verify_receipt(r: dict[str, Any], *, referee_pub: str | None = None,
         if r.get("schema") != SCHEMA:
             return {"status": FAIL, "trust_tier": None, "errors": ["schema"], "partial": [],
                     "referee_trust": "unknown"}
+        errors.extend(structural)
         msg = signing_bytes(r)
         sigs = r.get("signatures") or {}
         ref = r["referee"]

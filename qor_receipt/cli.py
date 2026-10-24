@@ -135,8 +135,12 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"frames_dir": s["frames_dir"], "hid_log": s["hid_log"]}))
         return 0
     if a.cmd == "verify":
-        with open(a.receipt, encoding="utf-8") as fh:
-            out = verify_receipt(json.load(fh), referee_pub=a.referee_pub)
+        try:
+            with open(a.receipt, encoding="utf-8", newline="") as fh:
+                out = verify_receipt(fh.read(), referee_pub=a.referee_pub)
+        except Exception:
+            out = {"status": FAIL, "trust_tier": None, "errors": ["noncanonical_json"], "partial": [],
+                   "referee_trust": "unknown"}
         print(json.dumps(out, indent=2))
         return {FAIL: 2, PARTIAL: 1}.get(out["status"], 0)  # VERIFIED|SELF_ATTESTED -> 0
     if a.cmd == "emit":

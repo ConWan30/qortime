@@ -1,0 +1,98 @@
+{
+  "021003": {
+    "unpinned": {
+      "status": "SELF_ATTESTED",
+      "trust_tier": "single-attested",
+      "errors": [],
+      "partial": [
+        "referee_key_not_pinned",
+        "referee_not_on_allowlist",
+        "referee_local_self_attested",
+        "away:challenge_missing:kickoff",
+        "away:challenge_missing:halftime",
+        "away:challenge_missing:end",
+        "away:motion_signal_missing"
+      ],
+      "referee_trust": "untrusted",
+      "referee_id": null
+    },
+    "pinned": {
+      "status": "SELF_ATTESTED",
+      "trust_tier": "single-attested",
+      "errors": [],
+      "partial": [
+        "referee_not_on_allowlist",
+        "referee_local_self_attested",
+        "referee_pin_not_allowlisted",
+        "away:challenge_missing:kickoff",
+        "away:challenge_missing:halftime",
+        "away:challenge_missing:end",
+        "away:motion_signal_missing"
+      ],
+      "referee_trust": "untrusted",
+      "referee_id": null
+    }
+  },
+  "125430": {
+    "unpinned": {
+      "status": "FAIL",
+      "trust_tier": "single-attested",
+      "errors": [
+        "home:cp[0]:gap_too_long",
+        "home:cp[591]:gap_too_long",
+        "home:cp[591]:clock_skew",
+        "home:cp[592]:clock_skew"
+      ],
+      "partial": [
+        "referee_key_not_pinned",
+        "referee_not_on_allowlist",
+        "referee_local_self_attested",
+        "home:challenge_missing:kickoff",
+        "home:challenge_missing:halftime",
+        "home:challenge_missing:end",
+        "home:motion_signal_missing"
+      ],
+      "referee_trust": "untrusted",
+      "referee_id": null
+    },
+    "pinned": {
+      "status": "FAIL",
+      "trust_tier": "single-attested",
+      "errors": [
+        "home:cp[0]:gap_too_long",
+        "home:cp[591]:gap_too_long",
+        "home:cp[591]:clock_skew",
+        "home:cp[592]:clock_skew"
+      ],
+      "partial": [
+        "referee_not_on_allowlist",
+        "referee_local_self_attested",
+        "referee_pin_not_allowlisted",
+        "home:challenge_missing:kickoff",
+        "home:challenge_missing:halftime",
+        "home:challenge_missing:end",
+        "home:motion_signal_missing"
+      ],
+      "referee_trust": "untrusted",
+      "referee_id": null
+    }
+  },
+  "170123": {
+    "unpinned": {
+      "status": "PARTIAL",
+      "trust_tier": "single-attested",
+      "errors": [],
+      "partial": ["referee_key_not_pinned"],
+      "referee_trust": "active",
+      "referee_id": "qortime-online-s2"
+    },
+    "pinned": {
+      "status": "VERIFIED",
+      "trust_tier": "single-attested",
+      "errors": [],
+      "partial": [],
+      "referee_trust": "active",
+      "referee_id": "qortime-online-s2"
+    }
+  }
+}

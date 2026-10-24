@@ -180,11 +180,16 @@ function paintAttached() {
   }));
 }
 
+// Keep a leading U+FEFF. Blob/Response text() strips it, and the verifier rejects it.
+async function decodeKeptBom(buf) {
+  return new TextDecoder("utf-8", { ignoreBOM: true }).decode(buf);
+}
+
 /** A receipt goes in the box; every other file is listed as an evidence file. Files are read locally and never uploaded. */
 async function ingest(files) {
   const list = [...files];
   if (!list.length) return;
-  const read = await Promise.all(list.map(async (f) => ({ name: f.name, text: await f.text() })));
+  const read = await Promise.all(list.map(async (f) => ({ name: f.name, text: await decodeKeptBom(await f.arrayBuffer()) })));
   const isReceipt = (x) => { try { const d = JSON.parse(x.text); return d && d.schema === "qor-receipt/v0"; } catch { return false; } };
   const receipt = read.find((x) => x.name === "receipt.json" && isReceipt(x)) || read.find(isReceipt);
   sidecars = read.filter((x) => x !== receipt).map((x) => describeSidecar(x.name, x.text));
@@ -237,7 +242,7 @@ $("sample").onclick = async () => {
     const res = await fetch("./sample-receipt.json");
     if (!res.ok) throw new Error("Demo receipt failed to load");
     sigStatus = null;
-    $("json").value = await res.text();
+    $("json").value = await decodeKeptBom(await res.arrayBuffer());
     await check();
   } catch (err) {
     $("vm-err").textContent = err instanceof Error ? err.message : "Demo receipt failed to load";
@@ -265,7 +270,7 @@ const preloaded = sameOriginReceipt(q.get("receipt"));
 if (preloaded) {
   fetch(preloaded).then((res) => {
     if (!res.ok) throw new Error("receipt");
-    return res.text();
+    return decodeKeptBom(await res.arrayBuffer());
   }).then((text) => {
     sigStatus = null;
     $("json").value = text;
