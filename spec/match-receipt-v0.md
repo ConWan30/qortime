@@ -110,6 +110,9 @@ sidecars stay valid. `frames.jsonl` and `readers.json` are optional bundle membe
 required files.
 
 `frames.jsonl` (`qorcap-frame-bind/v0`) is one RFC 8785 JCS object per line, LF, no CR. The newline is not hashed.
+Each line is at most 4096 bytes. It contains no `[`, at most 24 `:`, and at most 4 `{`. A line outside those
+limits is broken before it is parsed.
+
 `head_0` is 64 `0` characters. `head_n = SHA-256(JCS({prev, sha256}))`, where `sha256` is the hex SHA-256 of line
 n's exact bytes. A bound checkpoint carries `qorcap.frame_bind = {schema, n, head}` for a prefix of that chain.
 The last checkpoint's `n` is the line count. Every checkpoint carries it, or none of them do.
@@ -198,9 +201,10 @@ not a limit.
 `read_meta_zip` (`MAX_META_BYTES`). At about 150–200 bytes a frame and 30 frames a second, that is about 20 MB per
 hour. A long capture can cross that budget and be refused before a receipt verdict. `verify_frame_bind` caps the
 bundle at that same 96 MiB, read with a bounded stream so a declared or inflated member cannot grow past it.
-`frames.jsonl` itself is capped at 64 MiB. A frame line over 4 KiB is broken before it is parsed, as is a line that
-contains `[` or more than 24 colons: a real row is a flat object under 300 bytes, and a wide array must not be
-expanded. `checkpoints.jsonl` is capped at 4 MiB and `readers.json` at 64 KiB. Those caps are enforced
+`frames.jsonl` itself is capped at 64 MiB. At about 20 MB per hour that cap is roughly 3.5–4 h of frames, and a
+longer capture comes back broken. Each frames line is at most 4096 bytes, contains no `[`, at most 24 `:`, and at
+most 4 `{`. A line outside those limits is broken before it is parsed. A real row is a flat object under 300 bytes.
+`checkpoints.jsonl` is capped at 4 MiB and `readers.json` at 64 KiB. Those caps are enforced
 while the member is read, before it is parsed. A checkpoints or readers line over 1 MiB, more than 1,000,000 rows
 (counted from newlines, without splitting the member into a line list), or more than 64 zip members is broken. A
 directory member that is a symlink is broken. None of these caps is a receipt verdict.

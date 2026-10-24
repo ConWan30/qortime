@@ -73,8 +73,8 @@ PATH_PATTERN = (
     r"^(?!.*\.(?:[Kk][Ee][Yy]|[Pp][Ee][Mm]|[Pp]12|[Pp][Ff][Xx]|[Jj][Ww][Kk]|[Pp][Pp][Kk]|[Jj][Kk][Ss])$)"
     r"(?!.*(?:^|/)[Kk][Ee][Yy][Ss](?:/|$))"
     r"(?!.*(?:^|/)[Ss][Ee][Cc][Rr][Ee][Tt][Ss]?(?:/|$))"
-    r"(?!.*(?:^|/)[^/]*_[Kk][Ee][Yy](?:\.[^/]+)?(?:/|$))"
-    r"(?!.*(?:^|/)[Ii][Dd]_(?:[Rr][Ss][Aa]|[Dd][Ss][Aa]|[Ee][Cc][Dd][Ss][Aa](?:_[Ss][Kk])?|[Ee][Dd]25519(?:_[Ss][Kk])?|[Ee][Dd]448(?:_[Ss][Kk])?)(?:\.[^/]+)?(?:/|$))"
+    r"(?!.*(?:^|/)[^/]*_[Kk][Ee][Yy](?:\.[^/]*)?(?:/|$))"
+    r"(?!.*(?:^|/)[Ii][Dd]_(?:[Rr][Ss][Aa]|[Dd][Ss][Aa]|[Ee][Cc][Dd][Ss][Aa](?:_[Ss][Kk])?|[Ee][Dd]25519(?:_[Ss][Kk])?|[Ee][Dd]448(?:_[Ss][Kk])?)(?:\.[^/]*)?(?:/|$))"
     r"(?:[A-Za-z0-9_][A-Za-z0-9_.+-]*/)*[A-Za-z0-9_][A-Za-z0-9_.+-]*$"
 )
 _FORBIDDEN_SEGMENTS = frozenset({"keys", "secret", "secrets"})
@@ -929,9 +929,35 @@ def _frame_line_hostile(line: bytes) -> bool:
     )
 
 
+def _accept_frame_row(obj: dict[str, Any], *, index: int, gaps: set[int],
+                      prev_pts: int | None, prev_frame: int | None, prev_seg: int | None) -> bool:
+    """Per-row checks that can fail as soon as the row is parsed.
+
+    Cross-row coverage still runs in ``_rows_ok`` after a file of well-formed rows.
+    """
+    if index == 0:
+        return _header_ok(obj)
+    kind = obj.get("type")
+    if kind == "frame":
+        if not _frame_ok(obj):
+            return False
+        if prev_pts is not None and obj["pts"] <= prev_pts:
+            return False
+        if prev_frame is not None and obj["frame"] <= prev_frame:
+            return False
+        return prev_seg is None or obj["seg"] >= prev_seg
+    if kind == "align_gap":
+        return _gap_ok(obj) and obj["seg"] not in gaps
+    return False
+
+
 def _canonical_objects(lines: list[bytes], *, frame: bool = False) -> list[dict[str, Any]] | None:
     out: list[dict[str, Any]] = []
-    for line in lines:
+    gaps: set[int] = set()
+    prev_pts: int | None = None
+    prev_frame: int | None = None
+    prev_seg: int | None = None
+    for index, line in enumerate(lines):
         if frame and _frame_line_hostile(line):
             return None
         try:
@@ -940,6 +966,14 @@ def _canonical_objects(lines: list[bytes], *, frame: bool = False) -> list[dict[
             return None
         if not isinstance(obj, dict) or canonicalize(obj) != line:
             return None
+        if frame and not _accept_frame_row(
+            obj, index=index, gaps=gaps, prev_pts=prev_pts, prev_frame=prev_frame, prev_seg=prev_seg,
+        ):
+            return None
+        if frame and index > 0 and obj.get("type") == "frame":
+            prev_pts, prev_frame, prev_seg = obj["pts"], obj["frame"], obj["seg"]
+        elif frame and index > 0 and obj.get("type") == "align_gap":
+            gaps.add(obj["seg"])
         out.append(obj)
     return out
 

@@ -10,6 +10,7 @@ import hashlib
 import io
 import json
 import os
+import random
 import re
 import shutil
 import subprocess
@@ -232,6 +233,12 @@ def test_status_words_are_written_once_and_match_the_spec():
     assert "A frames.jsonl with no frame row is broken" in flat
     assert "about 20 MB per hour" in flat
     assert "96 MiB" in spec
+    assert "at most 4096 bytes" in flat
+    assert "contains no `[`" in spec
+    assert "at most 24 `:`" in spec
+    assert "at most 4 `{`" in spec
+    assert "roughly 3.5–4 h" in flat
+    assert "longer capture comes back broken" in flat
     compat = json.loads((CONTRACTS / "compat.json").read_text(encoding="utf-8"))
     assert tuple(compat["frame_bind"]["statuses"]) == FRAME_BIND_STATUSES
     assert compat["frame_bind"]["verified"] == FRAME_BIND_VERIFIED
@@ -630,6 +637,7 @@ def test_key_like_reader_paths_are_rejected():
         "id_ed25519", "id_rsa", "ID_ED25519", "a/id_rsa.pub", "id_ecdsa_sk", "x.jwk", "a_key.tar.gz",
         "api_key/x.py", "id_rsa/x.py", "id_ed448", "id_ed448_sk", "a/id_ed448.pub", "id_ed448/x.py",
         "wallet.ppk", "store.jks", "DIR.PPK",
+        "id_rsa.", "a_key.", "x/id_ed448./y",
     )
     allowed = ("secretary", "foo_keyish.py", "key.json", "monkey_keyboard.py", "sidecar/qorcap_standard.py")
     for path in rejected:
@@ -651,6 +659,38 @@ def test_key_like_reader_paths_are_rejected():
         heads = _chain(lines)
         cps = [_cp(0, len(lines), heads[-1], {"schema": READERS_SCHEMA, "sha256": hashlib.sha256(raw).hexdigest()})]
         assert frame_bind_status(_bundle(lines, cps, raw)) == VERIFIED
+
+
+def test_reader_path_pattern_matches_the_python_check():
+    """G1: the schema pattern and the Python segment check accept the same paths.
+
+    A trailing dot used to miss `(?:\\.[^/]+)?` and pass only the schema.
+    """
+    from qor_receipt.review.frame_bind import _PATH_RE, _reader_file_ok
+
+    digest = "ab" * 32
+    names = (
+        "reader", "secretary", "foo_keyish", "key", "monkey_keyboard", "a_key", "api_key",
+        "id_rsa", "id_ed448", "id_ed25519", "ID_ED25519", "id_ecdsa_sk",
+    )
+    tails = ("", ".", ".py", ".pub", ".tar.gz", "/", "/y", "./y", ".jks", ".ppk")
+    samples = ["id_rsa.", "a_key.", "x/id_ed448./y", "id_ed25519.", "A_KEY.", "file.", "secretary."]
+    for name in names:
+        for tail in tails:
+            samples.append(name + tail)
+            samples.append("x/" + name + tail)
+            samples.append(name + "./y.py")
+    rng = random.Random(0)
+    alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_./+-"
+    for _ in range(300):
+        samples.append("".join(rng.choice(alphabet) for _ in range(rng.randint(1, 48))))
+    for path in samples:
+        schema_ok = len(path) <= 240 and _PATH_RE.fullmatch(path) is not None
+        python_ok = _reader_file_ok({"kind": "code", "path": path, "sha256": digest})
+        assert schema_ok == python_ok, path
+    for path in ("id_rsa.", "a_key.", "x/id_ed448./y"):
+        assert _PATH_RE.fullmatch(path) is None
+        assert not _reader_file_ok({"kind": "code", "path": path, "sha256": digest})
 
 
 def _sealed(lines: list[bytes], readers: bytes | None = None) -> dict[str, bytes]:
@@ -922,6 +962,26 @@ def test_a_verified_bundle_parses_each_sidecar_once(monkeypatch):
     assert got.status == VERIFIED
     assert loads["n"] == len(lines) + len(cps) + 1
     assert chains["n"] == 1
+
+
+def test_a_bad_frame_row_stops_the_parse(monkeypatch):
+    """A row that is not a frame is rejected when it is parsed, and later lines are not."""
+    import qor_receipt.review.frame_bind as fb
+
+    bad = canonicalize({"type": "frame"})
+    later = [_frame(0, 0, 0, 1000), _frame(0, 1, 3003, 1100)]
+    lines = [_header(), bad, *later]
+    seen: list[str] = []
+    real_loads = fb.json.loads
+
+    def counting_loads(text, *args, **kwargs):
+        seen.append(text)
+        return real_loads(text, *args, **kwargs)
+
+    monkeypatch.setattr(fb.json, "loads", counting_loads)
+    assert frame_bind_status(_sealed(lines)) == BROKEN
+    assert bad.decode() in seen
+    assert all(row.decode() not in seen for row in later)
 
 
 def test_frame_lines_over_4kib_or_with_an_array_are_broken():
