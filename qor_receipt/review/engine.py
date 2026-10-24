@@ -25,7 +25,6 @@ from qor_receipt.challenge import (
     challenge_rule_of,
     latency_ceiling_ms,
     menu_safe_nonce,
-    motion_correlation_permille,
     pattern_for,
     response_press_ms,
     verify_response,
@@ -34,7 +33,7 @@ from qor_receipt.jcs import canonicalize, sha256_hex
 from qor_receipt.keys import KeyProvider, kid, verify
 from qor_receipt.review import bundle as B
 from qor_receipt.review import media as M
-from qor_receipt.review.clock import capture_clock, fragment_pts0_ms, frame_mono_ms
+from qor_receipt.review.clock import capture_clock, fragment_pts0_ms, frame_mono_ms, motion_mono_ms
 from qor_receipt.review.corroboration import (
     SCORE_EVENT_TOLERANCE_MS,
     accept_pairing_token,
@@ -44,6 +43,15 @@ from qor_receipt.review.corroboration import (
     side_from_bundle,
 )
 from qor_receipt.review.device_attest import DEVICE_ATTEST_SCHEMA, device_key_for_bundle
+from qor_receipt.review.motion import (
+    MOTION_BASIS_V3,
+    MOTION_HZ,
+    MOTION_RULE,
+    MOTION_SAMPLE_MAX_SEGMENTS,
+    MOTION_SIZE,
+    motion_sample_seqs,
+    score_motion,
+)
 from qor_receipt.review.policy import (
     ANCHOR_TYPE,
     CHALLENGE_TOKEN_TYPE,
@@ -61,7 +69,6 @@ from qor_receipt.review.policy import (
 
 SPOT, FULL = "spot-check", "full"
 TAIL_HZ = 2.0
-MOTION_HZ = 10.0
 ANCHOR_SLACK_MS = 5_000
 
 
@@ -93,6 +100,7 @@ class Submission:
     required: list[int] = field(default_factory=list)
     decode: set[int] = field(default_factory=set)       # segments kept on disk for decoding
     random_sample: list[int] = field(default_factory=list)
+    motion_sample: list[int] = field(default_factory=list)
     received: dict[int, int] = field(default_factory=dict)  # seq -> bytes verified
     bad: dict[int, str] = field(default_factory=dict)
     review: dict[str, Any] | None = None
@@ -307,15 +315,20 @@ class Referee:
         presses = B.press_events(b)
         for c in b.receipt.get("challenges") or []:
             chal |= set(_challenge_seqs(b, c, presses, wmm))
-        fixed = inits | tail | chal
+        # Both draws happen only now, after the manifest/checkpoints/inputs are committed (sub.commit),
+        # from the referee's RNG. The motion sample is one segment per time stratum, so the client
+        # cannot know which fragments will be scored before this commit.
+        sub.motion_sample = motion_sample_seqs(segs, self.rng)
+        motion = sub.motion_sample
+        fixed = inits | tail | chal | set(motion)
         pool = [int(m["seq"]) for m in segs if int(m["seq"]) not in fixed]
-        # Drawn only now, after the manifest/checkpoints/inputs are committed (sub.commit), from the referee's RNG.
         sub.random_sample = sorted(self.rng.sample(pool, min(self.random_segments, len(pool))))
         sub.decode = fixed | set(sub.random_sample)
         sub.required = sorted(range(len(segs))) if sub.mode == FULL else sorted(sub.decode)
         (sub.dir / "plan.json").write_text(json.dumps({"commit": sub.commit, "required": sub.required,
                                                        "random": sub.random_sample, "tail": sorted(tail),
-                                                       "challenge": sorted(chal), "init": sorted(inits)}))
+                                                       "challenge": sorted(chal), "init": sorted(inits),
+                                                       "motion": motion}))
 
     def put_segment(self, sub: Submission, seq: int, chunks) -> dict[str, Any]:
         """Stream one segment's bytes; hash against the committed manifest. ``chunks`` is an iterable of bytes."""
@@ -420,11 +433,11 @@ class Referee:
                 final = None
                 checks["final_reread"] = {"state": FAIL_CHECK, "detail": f"decode/read error: {type(e).__name__}: {e}"}
         # ---- challenges (official nonce tokens, raw HID re-run, pause seen on the referee's decode)
-        ch_out, ch_check = self._challenges(sub, rd, wmm)
+        ch_out, ch_check, pause_spans = self._challenges(sub, rd, wmm)
         checks["challenges"] = ch_check
-        # ---- motion (referee-computed over every segment it decoded)
+        # ---- motion rule v3: a spread across the match, not the final-reread tail
         try:
-            mp, mdetail = self._motion(sub, rd)
+            mp, mdetail = self._motion(sub, rd, pause_spans, wmm)
         except Exception as e:
             mp, mdetail = None, {"note": f"motion not computed: {type(e).__name__}: {e}"}
         checks["motion"] = {"state": PASS if mp is not None and mp >= R.MOTION_MIN_PERMILLE else PARTIAL_CHECK,
@@ -451,7 +464,8 @@ class Referee:
                   "scope": ("post-hoc review of an uploaded QorCap bundle by the QorTime official referee: "
                             + ("every video byte hashed against the committed manifest" if sub.mode == FULL else
                                f"spot-check of {len(sub.received)}/{len(b.segments)} segments (init, recorded tail, "
-                               f"challenge windows, {k} random segments drawn after commit)")),
+                               f"challenge windows, a stratified random spread of at most {MOTION_SAMPLE_MAX_SEGMENTS} "
+                               f"media segments for motion drawn after commit, {k} random segments drawn after commit)")),
                   "not_proven": NOT_PROVEN}
         device_key = device_key_for_bundle(b)
         if device_key is not None:
@@ -492,7 +506,7 @@ class Referee:
             out["log_entry"] = sub.log_entry
         return out
 
-    def _challenges(self, sub: Submission, rd, wmm: int) -> tuple[list[dict], dict[str, Any]]:
+    def _challenges(self, sub: Submission, rd, wmm: int) -> tuple[list[dict], dict[str, Any], list[tuple[int, int]]]:
         b = sub.bundle
         toks = {t.get("nonce"): t for t in b.jsonl("official_challenges.jsonl")}
         presses = B.press_events(b)
@@ -501,6 +515,7 @@ class Referee:
         ceiling = latency_ceiling_ms(rule)
         hz = 30.0
         out, notes, bad = [], [], False
+        pause_spans: list[tuple[int, int]] = []
         for c in b.receipt.get("challenges") or []:
             c2 = {k: c.get(k) for k in ("id", "role", "phase", "nonce", "pattern", "issued_ms", "deadline_ms")}
             tok = toks.get(c.get("nonce"))
@@ -549,6 +564,8 @@ class Referee:
                             mono = t if pts0 is None else frame_mono_ms(clock, pts0, n, hz)
                             yield mono + wmm, img
                 scan = M.scan_pause(frames() if present else iter(()), det)
+            if scan is not None and scan.error is None:
+                pause_spans.extend(scan.spans)
             pause_seen = pause_seen_for(pp, scan.onsets) if scan is not None and scan.error is None else None
             res = verify_response(c2["pattern"] or [], [{"t_ms": p["t_ms"], "button": p["button"], "down": True} for p in win],
                                   issued_ms=issued, deadline_ms=deadline, pause_seen_ms=pause_seen,
@@ -576,26 +593,58 @@ class Referee:
             state = PARTIAL_CHECK
             missing = [p for p in PHASES if p not in phases]
             notes.append(f"official challenges passed for {sorted(phases) or 'none'}; missing/failed: {missing}")
-        return out, {"state": state, "detail": {"count": len(out), "rule": rule, "notes": notes}}
+        return out, {"state": state, "detail": {"count": len(out), "rule": rule, "notes": notes}}, pause_spans
 
-    def _motion(self, sub: Submission, rd) -> tuple[int | None, dict[str, Any]]:
+    def _motion(self, sub: Submission, rd, pause_spans_wall: list[tuple[int, int]],
+                wmm: int) -> tuple[int | None, dict[str, Any]]:
+        """Motion rule v3 over the stratified sample drawn in ``_plan``.
+
+        Decode budget: at most ``MOTION_SAMPLE_MAX_SEGMENTS`` media fragments (about 48 s when a
+        fragment is ~2 s), at ``MOTION_HZ`` and ``MOTION_SIZE``. That is the whole budget for this
+        check. The recorded tail is decoded separately for the final re-read and is not added here.
+        Frame time is the fragment PTS clock. A fragment with no ``tfdt`` keeps ``segment_ranges``.
+        The sample is the one already drawn from the referee RNG after commit. It is not redrawn.
+        """
         b = sub.bundle
         if not M.ffmpeg_bin() or not b.inputs:
-            return None, {"note": "not computed (no ffmpeg or no controller log)"}
+            return None, {"rule": MOTION_RULE, "note": "not computed (no ffmpeg or no controller log)"}
+        sample = list(sub.motion_sample)
+        present = [s for s in sample if s in sub.received]
+        if not present:
+            return None, {"rule": MOTION_RULE, "basis": MOTION_BASIS_V3, "bins": 0, "sample_segments": sample,
+                          "note": "motion sample was not received"}
         energy = M.input_energy_series(b)
-        xs, ys = [], []
-        media = [s for s in sub.decode if s in sub.received]
-        for run in M.runs(media, b):
-            mot = M.motion_series(M.decode_run(b, run, rd, hz=MOTION_HZ, size=(96, 54), gray=True))
-            for k2 in sorted(mot):
-                xs.append(energy.get(k2, 0))
-                ys.append(mot[k2])
-        if len(xs) < 20:
-            return None, {"bins": len(xs), "note": "too few decoded seconds for a motion correlation"}
-        mp = motion_correlation_permille(xs, ys)
-        return mp, {"bins": len(xs), "motion_permille": mp,
-                    "basis": "referee-computed: controller report rate vs frame-difference energy per second over the "
-                             "segments the referee decoded"}
+        clock = capture_clock(b.segments)
+        scorebug = M.sidecar_standard_reader(self.sidecar_dir)()
+        end_reader, final_fn = M.motion_screen_detectors(self.sidecar_dir)
+        reasons: list[tuple[int, str]] = []
+        end_hits: list[tuple[int, bool]] = []
+        final_hits: list[tuple[int, bool]] = []
+        motion: dict[int, int] = {}
+        fallbacks = 0
+        for run in M.runs(present, b):
+            pts0 = None
+            init = M.init_seq_for(b, run[0])
+            if init is not None:
+                pts0 = fragment_pts0_ms(rd(init) or b"", rd(run[0]) or b"")
+            if pts0 is None:
+                fallbacks += 1
+
+            def frames(run=run, pts0=pts0):
+                for n, (t, img) in enumerate(M.decode_run(b, run, rd, hz=MOTION_HZ, size=MOTION_SIZE)):
+                    mono = t if pts0 is None else motion_mono_ms(clock, pts0, n, MOTION_HZ)
+                    reasons.append((mono, _scorebug_reason(scorebug, img)))
+                    if end_reader is not None:
+                        end_hits.append((mono, _end_menu_hit(end_reader, img)))
+                    if final_fn is not None:
+                        final_hits.append((mono, _final_screen_hit(final_fn, img)))
+                    yield mono, img
+
+            motion.update(M.motion_series(frames()))
+        spans_mono = [(a - wmm, z - wmm) for a, z in pause_spans_wall]
+        return score_motion(energy, motion, scorebug_reasons=reasons, end_menu=end_hits, final_screen=final_hits,
+                            pause_spans_mono=spans_mono, sample_segments=sample, clock_fallbacks=fallbacks,
+                            screen_readers=end_reader is not None)
 
     def _anchors(self, sub: Submission) -> dict[str, Any]:
         b = sub.bundle
@@ -656,6 +705,22 @@ class Referee:
                 del self.subs[sid]
                 n += 1
         return n
+
+
+def _scorebug_reason(reader, img) -> str:
+    read = reader.read(img)
+    if getattr(read, "ok", False):
+        return "ok"
+    return str(getattr(read, "reason", "") or "")
+
+
+def _end_menu_hit(reader, img) -> bool:
+    read = reader.read(img)
+    return bool(getattr(read, "ok", False))
+
+
+def _final_screen_hit(fn, img) -> bool:
+    return bool(fn(img))
 
 
 def pause_seen_for(press_ms: int | None, onsets: list[int]) -> int | None:
