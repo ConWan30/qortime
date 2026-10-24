@@ -29,7 +29,6 @@ from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 import qor_receipt
-from qor_receipt.receipt import MOTION_MIN_PERMILLE
 from qor_receipt.review.media import input_energy_series
 from qor_receipt.review.motion import score_motion
 from qor_receipt.review.policy import PARTIAL_CHECK, PASS
@@ -43,6 +42,29 @@ BUTTON_ACTION = "button_action"
 EVENT_KINDS = frozenset({STICK_ACTION, BUTTON_ACTION})
 LABELS = ("attack", "benign")
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _motion_min_permille() -> int:
+    """The shipped floor, read from ``qor_receipt/receipt.py`` without importing it.
+
+    Importing that module also imports ``qor_receipt.trusted_referees``. This harness
+    scores ``score_motion`` directly and does not load the trust root.
+    """
+    path = REPO_ROOT / "qor_receipt" / "receipt.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        for target in node.targets:
+            if not isinstance(target, ast.Name) or target.id != "MOTION_MIN_PERMILLE":
+                continue
+            value = node.value.value if isinstance(node.value, ast.Constant) else None
+            if isinstance(value, int) and not isinstance(value, bool):
+                return value
+    raise RuntimeError("MOTION_MIN_PERMILLE is not an integer assignment in qor_receipt/receipt.py")
+
+
+MOTION_MIN_PERMILLE = _motion_min_permille()
 
 
 @dataclass(frozen=True)

@@ -2,7 +2,7 @@
 
 Test-only harness under `tests/redteam/`. It scores controller logs by calling `input_energy_series`, `score_motion`, `check_inputs`, `check_checkpoints`, and `check_input_files` in process. It does not sign a receipt, does not hold a referee key, and does not open a network connection. Nothing here is a submission.
 
-Harness `redteam-aimbot/v2` for package `qor-receipt==0.1.0`. Harness sha256 `eddafd17630910abfe52e386ffdfa90438497168ede2704d4b0f9da1552cf233` over 25 files.
+Harness `redteam-aimbot/v2` for package `qor-receipt==0.1.0`. Harness sha256 `68114ad11b9f1aaaae08ac86ab882b1d540eba7fe00cd6b09171ed5f3d03ae33` over 16 files.
 
 ## Headline: honest USB log, assisted screen
 
@@ -71,11 +71,15 @@ Catch rate is flagged attacks divided by decided attacks. False-alarm rate is fl
 
 Each scorer sha256 is the hash of `qor-receipt==0.1.0`, the scorer and estimator version strings, and the sorted repo-relative path plus bytes of the scorer module and its transitive in-repo imports.
 
+**SYNTHETIC-DATA CAVEAT:** these rates come from synthetic data with only one benign sample (n=1 control) and are NOT real-world or measured detection/false-alarm rates; '0/1 false alarms' is not a false-alarm rate.
+
+The event matcher's 150 ms window is valid only on synthetic data with a shared clock; on real footage, events closer than 719 ms are no-claim until per-frame binding lands (see #68's `within_clock_skew()`). That window sits inside the measured 120–719 ms clip-vs-capture clock skew.
+
 | scorer | version | package | estimator | file set | sha256 | headline catch rate | headline false-alarm rate | abstained |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| motion-rule-v3 | motion-rule/v3 | 0.1.0 | — | 24 files | 1bc0c4f7bf12798ceeab5d59ef8f04ff3633795113f5cf2523a379eb40bc349b | 1/6 (0.17) | 0/1 (0.00) | 0/7 |
-| pan-agreement | pan-agreement/v0 | 0.1.0 | example-no-claim/v0 | 24 files | 8b79baaaec5b07275bf2fdd88d72cf0f0a04f0a523b58946bcc6b58f4fa5c2e5 | n/a (0/6 decided) | n/a (0/1 decided) | 7/7 |
-| event-press-agreement | event-press-agreement/v0 | 0.1.0 | example-no-claim-events/v0 | 24 files | e9eea631f81ac8d0fb7fce9a692db5b74f3e54595bd372955132b6a2b1a9e869 | n/a (0/6 decided) | n/a (0/1 decided) | 7/7 |
+| motion-rule-v3 | motion-rule/v3 | 0.1.0 | — | 15 files | c5f4e48700e91cede7ae778b4ac54924bf986b2bf684b1fe013df7060d1ff7a3 | 1/6 (0.17) | 0/1 (0.00) | 0/7 |
+| pan-agreement | pan-agreement/v0 | 0.1.0 | example-no-claim/v0 | 15 files | c0fb69ffcbae8a9921b8ae7c3beb1248b8df597c1e9c2a6eb155d35cb54f8d21 | n/a (0/6 decided) | n/a (0/1 decided) | 7/7 |
+| event-press-agreement | event-press-agreement/v0 | 0.1.0 | example-no-claim-events/v0 | 15 files | 1a024dd53a081ae4e980882e9b8804dfc5c4aaf58fe530ceff4fdb625b164bc6 | n/a (0/6 decided) | n/a (0/1 decided) | 7/7 |
 
 | variant | cohort | motion-rule-v3 | pan-agreement | event-press-agreement |
 | --- | --- | --- | --- | --- |
@@ -116,32 +120,23 @@ report = evaluate(scorers=[PanAgreementScorer(MyPanEstimator()), EventPressAgree
     "files": [
       "qor_receipt/__init__.py",
       "qor_receipt/_vendor/qoresence/sync/digit_integrity.py",
-      "qor_receipt/_vendor/qoresence/truth/signing.py",
       "qor_receipt/_vendor/qoresence/vision/local_scorebug/agreement.py",
       "qor_receipt/_vendor/qoresence/vision/local_scorebug/glyphs.py",
       "qor_receipt/_vendor/qoresence/vision/local_scorebug/profile.py",
       "qor_receipt/_vendor/qoresence/vision/local_scorebug/reader.py",
       "qor_receipt/agent/pause_detect.py",
       "qor_receipt/challenge.py",
-      "qor_receipt/checkpoints.py",
-      "qor_receipt/delegation.py",
       "qor_receipt/final_detect.py",
       "qor_receipt/jcs.py",
-      "qor_receipt/keys.py",
-      "qor_receipt/receipt.py",
       "qor_receipt/review/bundle.py",
-      "qor_receipt/review/corroboration.py",
-      "qor_receipt/review/device_attest.py",
       "qor_receipt/review/media.py",
       "qor_receipt/review/motion.py",
       "qor_receipt/review/policy.py",
-      "qor_receipt/review/score_timeline.py",
-      "qor_receipt/trusted_referees.py",
       "tests/redteam/aimbot_harness.py",
       "tests/redteam/scorers.py"
     ],
     "package_version": "0.1.0",
-    "sha256": "eddafd17630910abfe52e386ffdfa90438497168ede2704d4b0f9da1552cf233",
+    "sha256": "68114ad11b9f1aaaae08ac86ab882b1d540eba7fe00cd6b09171ed5f3d03ae33",
     "version": "redteam-aimbot/v2"
   },
   "headline_stick_aimbots": {
@@ -160,27 +155,18 @@ report = evaluate(scorers=[PanAgreementScorer(MyPanEstimator()), EventPressAgree
       "files": [
         "qor_receipt/__init__.py",
         "qor_receipt/_vendor/qoresence/sync/digit_integrity.py",
-        "qor_receipt/_vendor/qoresence/truth/signing.py",
         "qor_receipt/_vendor/qoresence/vision/local_scorebug/agreement.py",
         "qor_receipt/_vendor/qoresence/vision/local_scorebug/glyphs.py",
         "qor_receipt/_vendor/qoresence/vision/local_scorebug/profile.py",
         "qor_receipt/_vendor/qoresence/vision/local_scorebug/reader.py",
         "qor_receipt/agent/pause_detect.py",
         "qor_receipt/challenge.py",
-        "qor_receipt/checkpoints.py",
-        "qor_receipt/delegation.py",
         "qor_receipt/final_detect.py",
         "qor_receipt/jcs.py",
-        "qor_receipt/keys.py",
-        "qor_receipt/receipt.py",
         "qor_receipt/review/bundle.py",
-        "qor_receipt/review/corroboration.py",
-        "qor_receipt/review/device_attest.py",
         "qor_receipt/review/media.py",
         "qor_receipt/review/motion.py",
         "qor_receipt/review/policy.py",
-        "qor_receipt/review/score_timeline.py",
-        "qor_receipt/trusted_referees.py",
         "tests/redteam/scorers.py"
       ],
       "headline_abstained": 0,
@@ -194,7 +180,7 @@ report = evaluate(scorers=[PanAgreementScorer(MyPanEstimator()), EventPressAgree
       "log_tamper_true_positives": 1,
       "name": "motion-rule-v3",
       "package_version": "0.1.0",
-      "sha256": "1bc0c4f7bf12798ceeab5d59ef8f04ff3633795113f5cf2523a379eb40bc349b",
+      "sha256": "c5f4e48700e91cede7ae778b4ac54924bf986b2bf684b1fe013df7060d1ff7a3",
       "version": "motion-rule/v3"
     },
     {
@@ -203,27 +189,18 @@ report = evaluate(scorers=[PanAgreementScorer(MyPanEstimator()), EventPressAgree
       "files": [
         "qor_receipt/__init__.py",
         "qor_receipt/_vendor/qoresence/sync/digit_integrity.py",
-        "qor_receipt/_vendor/qoresence/truth/signing.py",
         "qor_receipt/_vendor/qoresence/vision/local_scorebug/agreement.py",
         "qor_receipt/_vendor/qoresence/vision/local_scorebug/glyphs.py",
         "qor_receipt/_vendor/qoresence/vision/local_scorebug/profile.py",
         "qor_receipt/_vendor/qoresence/vision/local_scorebug/reader.py",
         "qor_receipt/agent/pause_detect.py",
         "qor_receipt/challenge.py",
-        "qor_receipt/checkpoints.py",
-        "qor_receipt/delegation.py",
         "qor_receipt/final_detect.py",
         "qor_receipt/jcs.py",
-        "qor_receipt/keys.py",
-        "qor_receipt/receipt.py",
         "qor_receipt/review/bundle.py",
-        "qor_receipt/review/corroboration.py",
-        "qor_receipt/review/device_attest.py",
         "qor_receipt/review/media.py",
         "qor_receipt/review/motion.py",
         "qor_receipt/review/policy.py",
-        "qor_receipt/review/score_timeline.py",
-        "qor_receipt/trusted_referees.py",
         "tests/redteam/scorers.py"
       ],
       "headline_abstained": 7,
@@ -237,7 +214,7 @@ report = evaluate(scorers=[PanAgreementScorer(MyPanEstimator()), EventPressAgree
       "log_tamper_true_positives": 0,
       "name": "pan-agreement",
       "package_version": "0.1.0",
-      "sha256": "8b79baaaec5b07275bf2fdd88d72cf0f0a04f0a523b58946bcc6b58f4fa5c2e5",
+      "sha256": "c0fb69ffcbae8a9921b8ae7c3beb1248b8df597c1e9c2a6eb155d35cb54f8d21",
       "version": "pan-agreement/v0"
     },
     {
@@ -246,27 +223,18 @@ report = evaluate(scorers=[PanAgreementScorer(MyPanEstimator()), EventPressAgree
       "files": [
         "qor_receipt/__init__.py",
         "qor_receipt/_vendor/qoresence/sync/digit_integrity.py",
-        "qor_receipt/_vendor/qoresence/truth/signing.py",
         "qor_receipt/_vendor/qoresence/vision/local_scorebug/agreement.py",
         "qor_receipt/_vendor/qoresence/vision/local_scorebug/glyphs.py",
         "qor_receipt/_vendor/qoresence/vision/local_scorebug/profile.py",
         "qor_receipt/_vendor/qoresence/vision/local_scorebug/reader.py",
         "qor_receipt/agent/pause_detect.py",
         "qor_receipt/challenge.py",
-        "qor_receipt/checkpoints.py",
-        "qor_receipt/delegation.py",
         "qor_receipt/final_detect.py",
         "qor_receipt/jcs.py",
-        "qor_receipt/keys.py",
-        "qor_receipt/receipt.py",
         "qor_receipt/review/bundle.py",
-        "qor_receipt/review/corroboration.py",
-        "qor_receipt/review/device_attest.py",
         "qor_receipt/review/media.py",
         "qor_receipt/review/motion.py",
         "qor_receipt/review/policy.py",
-        "qor_receipt/review/score_timeline.py",
-        "qor_receipt/trusted_referees.py",
         "tests/redteam/scorers.py"
       ],
       "headline_abstained": 7,
@@ -280,7 +248,7 @@ report = evaluate(scorers=[PanAgreementScorer(MyPanEstimator()), EventPressAgree
       "log_tamper_true_positives": 0,
       "name": "event-press-agreement",
       "package_version": "0.1.0",
-      "sha256": "e9eea631f81ac8d0fb7fce9a692db5b74f3e54595bd372955132b6a2b1a9e869",
+      "sha256": "1a024dd53a081ae4e980882e9b8804dfc5c4aaf58fe530ceff4fdb625b164bc6",
       "version": "event-press-agreement/v0"
     }
   ],

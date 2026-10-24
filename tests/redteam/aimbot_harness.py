@@ -744,6 +744,10 @@ def render_report(report: Report | None = None) -> str:
         "",
         f"Each scorer sha256 is the hash of `qor-receipt=={report.package_version}`, the scorer and estimator version strings, and the sorted repo-relative path plus bytes of the scorer module and its transitive in-repo imports.",
         "",
+        "**SYNTHETIC-DATA CAVEAT:** these rates come from synthetic data with only one benign sample (n=1 control) and are NOT real-world or measured detection/false-alarm rates; '0/1 false alarms' is not a false-alarm rate.",
+        "",
+        "The event matcher's 150 ms window is valid only on synthetic data with a shared clock; on real footage, events closer than 719 ms are no-claim until per-frame binding lands (see #68's `within_clock_skew()`). That window sits inside the measured 120–719 ms clip-vs-capture clock skew.",
+        "",
         _md_table(
             ["scorer", "version", "package", "estimator", "file set", "sha256", "headline catch rate", "headline false-alarm rate", "abstained"],
             scorer_rows,
