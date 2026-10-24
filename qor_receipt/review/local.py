@@ -125,8 +125,9 @@ def inputs_log_intact(path: str | Path) -> bool:
 def pad_connected_through(records: list, *, issued_ms: int, deadline_ms: int, anchor_ms: int) -> bool:
     """True when status records show ``connected`` from issue through the stall lag.
 
-    ``stalled``, ``unplugged``, and ``missing`` anywhere in ``[issued_ms, deadline_ms + STALL_LAG_MS]``
-    fail the check, including an unplug that reconnects before the deadline. A status row whose ``t_us``
+    Any status other than ``connected`` in ``[issued_ms, deadline_ms + STALL_LAG_MS]`` fails the check.
+    ``stalled``, ``unplugged``, and ``missing`` are examples, and so is an unplug that reconnects before
+    the deadline. A status row whose ``t_us``
     is not an integer, or whose ``state`` is not a string, fails closed. Times are the same wall clock
     as ``press_events`` (header ``wall_anchor_ms`` plus ``t_us // 1000``).
     """

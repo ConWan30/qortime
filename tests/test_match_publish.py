@@ -51,16 +51,37 @@ def test_publishes_page_index_and_never_raw_inputs(tmp_path):
     assert "first" not in idx.lower().replace("first-", "")
 
 
+def _jsdom_prefix() -> Path:
+    """Install the pinned jsdom tree. Skip when npm or the network cannot provide it."""
+    import shutil
+    import subprocess
+
+    prefix = Path(__file__).resolve().parent / "jsdom"
+    if (prefix / "node_modules" / "jsdom").exists():
+        return prefix
+    npm = shutil.which("npm")
+    if not npm:
+        pytest.skip("npm is not available")
+    try:
+        subprocess.check_call([npm, "ci", "--ignore-scripts"], cwd=prefix, timeout=180)
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        pytest.skip("jsdom dependencies could not be installed")
+    if not (prefix / "node_modules" / "jsdom").exists():
+        pytest.skip("jsdom is not installed")
+    return prefix
+
+
 def _render_page(tmp_path, receipt):
     """Write a page and return the headline and banner the browser actually shows."""
     import os
+    import shutil
     import subprocess
 
     from qor_receipt.match_index.viewer import write_viewer
 
-    prefix = Path("/tmp/qortime-jsdom")
-    if not (prefix / "node_modules" / "jsdom").exists():
-        subprocess.check_call(["npm", "install", "--prefix", str(prefix), "jsdom@25.0.1"], timeout=180)
+    if not shutil.which("node"):
+        pytest.skip("node is not installed")
+    prefix = _jsdom_prefix()
     idx = {"match_id": "m", "events": [
         {"kind": "kickoff", "recording_s": 12, "quarter": 1, "clock_s": 900, "score_after": {"away": 0, "home": 0}}],
            "publish": {"receipt": receipt, "highlights": [], "advisory": "advisory evidence, not proof"}}
@@ -101,7 +122,7 @@ def test_public_page_puts_a_challenge_refusal_at_the_top(tmp_path):
     assert phrase in failed["statusText"]
     assert "Receipt FAIL" in failed["statusText"]
     assert "fail" in failed["className"]
-    assert failed["title"] == reason
+    assert failed["title"] == "PARTIAL · some checks not covered"
     assert phrase in failed["banner"] and "pattern_mismatch" in failed["bannerHtml"]
     assert "referee refused to sign because challenges failed" in failed["banner"]
     assert "PARTIAL" in (tmp_path / "fail" / "index.html").read_text(encoding="utf-8")
@@ -131,9 +152,20 @@ def test_public_page_puts_a_challenge_refusal_at_the_top(tmp_path):
         "status": "PARTIAL", "label": "PARTIAL · some checks not covered", "errors": [], "partial": [],
         "checks": [{"name": "input_integrity", "state": "fail"}]})
     assert "review_check_failed:input_integrity" in other["statusHtml"]
-    assert other["title"] == "review_check_failed:input_integrity"
+    assert other["title"] == "PARTIAL · some checks not covered"
     assert "input integrity" in other["banner"] and "referee refused to sign" in other["banner"]
     assert "challenges failed" not in other["banner"]
+
+    label = "FAIL · this receipt does not verify; nothing on this page is a verified result"
+    card = _render_page(tmp_path / "card", {
+        "status": "FAIL", "label": label,
+        "errors": ["home:cp[0]:gap_too_long", "home:cp[1]:clock_skew", reason],
+        "partial": [], "checks": []})
+    assert card["title"] == label
+    assert "two checkpoints more than 10 s apart" in card["errsText"]
+    assert "checkpoint time more than 3 s from its countersign" in card["errsText"]
+    assert "wrong button pattern" in card["errsText"]
+    assert reason in card["errsHtml"]
 
 
 def test_fail_receipt_needs_allow_fail_and_is_never_gold(tmp_path):

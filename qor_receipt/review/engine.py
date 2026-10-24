@@ -443,7 +443,7 @@ class Referee:
                 final = None
                 checks["final_reread"] = {"state": FAIL_CHECK, "detail": f"decode/read error: {type(e).__name__}: {e}"}
         # ---- challenges (official nonce tokens, raw HID re-run, pause seen on the referee's decode)
-        ch_out, ch_check, pause_spans, challenge_reason = self._challenges(sub, rd, wmm)
+        ch_out, ch_check, pause_spans, challenge_reason, challenge_blocking = self._challenges(sub, rd, wmm)
         checks["challenges"] = ch_check
         # ---- motion rule v3: a spread across the match, not the final-reread tail
         try:
@@ -487,9 +487,13 @@ class Referee:
         sub.review = review
         sub.corroboration = corroboration
         if any(c["state"] == FAIL_CHECK for c in checks.values()):
-            # Nothing was signed, so this is not a post-sign error. verify_receipt never ran.
-            # The blocking reason is review.reason (and public().reason). post_sign_errors stays
-            # empty here; that list is only for a receipt that was built and then refused.
+            # Nothing was signed. qorcap submit prints refusal lines from post_sign_errors, so the
+            # same blocking list that built review.reason is copied there. A video or final failure
+            # with no challenge block leaves the list empty.
+            if challenge_blocking:
+                sub.review["post_sign_errors"] = list(challenge_blocking)
+            elif challenge_reason:
+                sub.review["post_sign_errors"] = [challenge_reason]
             sub.state = "refused"
             self._publish_pair(sub, corroboration)
             return sub.public()
@@ -523,7 +527,7 @@ class Referee:
         return out
 
     def _challenges(self, sub: Submission, rd, wmm: int
-                    ) -> tuple[list[dict], dict[str, Any], list[tuple[int, int]], str | None]:
+                    ) -> tuple[list[dict], dict[str, Any], list[tuple[int, int]], str | None, list[str]]:
         b = sub.bundle
         toks = {t.get("nonce"): t for t in b.jsonl("official_challenges.jsonl")}
         presses = B.press_events(b)
@@ -590,6 +594,18 @@ class Referee:
             res["rule"] = rule
             res["hid_sha256"] = sha256_hex(win)
             res["reverified_by"] = "official-referee"
+            # Same gate as the recorder. A mismatch the controller log cannot support is unanswered,
+            # not a player failure. Old bundles without chunk times withhold and stay partial.
+            if res.get("ok") is False and res.get("reason") == "pattern_mismatch":
+                from qor_receipt.review.local import mismatch_log_trustworthy
+
+                anchor = B.wall_anchor(b) or 0
+                if not mismatch_log_trustworthy(
+                        sub.dir / "meta", b.inputs + b.input_chunks,
+                        issued_ms=issued, deadline_ms=deadline, anchor_ms=anchor):
+                    out.append(dict(c2, result=None))
+                    notes.append(f"{c.get('phase')}: pattern_mismatch withheld; controller log cannot support it")
+                    continue
             out.append(dict(c2, result=res))
             if not res["ok"] and res["reason"] == "pause_not_seen_on_video":
                 notes.append(M.pause_not_seen_note(str(c.get("phase")), scan, pp, missing=missing or None,
@@ -615,7 +631,7 @@ class Referee:
         if state == PARTIAL_CHECK:
             missing = [p for p in PHASES if p not in phases]
             notes.append(f"official challenges passed for {sorted(phases) or 'none'}; missing/failed: {missing}")
-        return out, {"state": state, "detail": {"count": len(out), "rule": rule, "notes": notes}}, pause_spans, reason
+        return out, {"state": state, "detail": {"count": len(out), "rule": rule, "notes": notes}}, pause_spans, reason, blocking
 
     def _motion(self, sub: Submission, rd, pause_spans_wall: list[tuple[int, int]],
                 wmm: int) -> tuple[int | None, dict[str, Any]]:

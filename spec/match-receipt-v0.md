@@ -72,13 +72,15 @@ each next chunk is at most 3000 ms later until a chunk at or after `deadline_ms`
 deadline does not cover it, even when `deadline_ms` minus that chunk is at most 3000. A single chunk
 after the deadline does not cover the window, and neither does a crash gap followed by rows after the
 deadline. Wall time is header `wall_anchor_ms` plus `t_us // 1000`. Status is `connected` at `issued_ms`
-and remains `connected` through `deadline_ms + 2500` with no `stalled`, `unplugged`, or `missing` row in
-that span, including a drop that reconnects before the deadline. A status row whose `t_us` is not an
-integer, or whose `state` is not a string, withholds it. OPTIONS alone, and OPTIONS inside the window with
-the rest of the pattern after `deadline_ms`, are that stored mismatch when the log passes the gate. Every
-other non-ok reason stays `null`. A withheld mismatch stays in `challenge_results.jsonl` as
-`reason: pattern_mismatch` with `withheld: controller_log` (bundle metadata, not in `receipt.v0`). The
-official referee re-runs everything itself.
+and remains `connected` through `deadline_ms + 2500`. Any status other than `connected` in that span
+withholds the result, including `stalled`, `unplugged`, and `missing`, and including a drop that reconnects
+before the deadline. A status row whose `t_us` is not an integer, or whose `state` is not a string,
+withholds it. OPTIONS alone, and OPTIONS inside the window with the rest of the pattern after `deadline_ms`,
+are that stored mismatch when the log passes the gate. Every other non-ok reason stays `null`. A withheld
+mismatch stays in `challenge_results.jsonl` as `reason: pattern_mismatch` with `withheld: controller_log`
+(bundle metadata, not in `receipt.v0`). The official referee applies the same gate: a `pattern_mismatch` on
+a log that fails it is `challenge_unanswered` (partial, never VERIFIED, never FAIL). Only a gate-passing
+mismatch is `challenge_failed`.
 
 ## 4. Checkpoint chain
 

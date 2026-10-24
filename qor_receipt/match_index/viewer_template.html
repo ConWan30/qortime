@@ -421,9 +421,9 @@ function statusLine(){const SHORT={FAIL:"Receipt FAIL · not a verified result",
  if(STATUS!=="FAIL")return {html:esc(base),title:human(RCPT.label||"")};
  const phrase=REFUSAL?reasonPhrase(RCPT.reason):"";
  const checks=failedChecks().map(c=>"review_check_failed:"+String(c.name||"check")).join("; ");
- const title=REFUSAL?String(RCPT.reason):(checks||"FAIL");
  const extra=phrase?esc(phrase):(REFUSAL?`<code>${esc(RCPT.reason)}</code>`:(checks?`<code>${esc(checks)}</code>`:""));
- return {html:extra?`${esc(base)} · ${extra}`:esc(base),title}}
+ const label=human(RCPT.label||"");
+ return {html:extra?`${esc(base)} · ${extra}`:esc(base),title:label}}
 function failBanner(){const names=failedNames();
  const phrase=REFUSAL?reasonPhrase(RCPT.reason):"";
  const detail=phrase?`${esc(phrase)} <span class="code">${esc(RCPT.reason)}</span>`:(REFUSAL?codeText(RCPT.reason):"");

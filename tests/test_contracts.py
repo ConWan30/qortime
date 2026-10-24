@@ -192,8 +192,11 @@ def test_pattern_mismatch_stored_from_does_not_bump_current():
     assert "deadline_ms minus that chunk is <= 3000" in text
     assert "wall_anchor_ms + t_us//1000" in text
     assert "deadline_ms+2500" in text
-    assert "no stalled, unplugged, or missing row" in text
+    assert "Any status other than connected" in text
+    assert "including stalled, unplugged, and missing" in text
     assert "t_us is not an integer, or whose state is not a string" in text
+    assert "The official referee applies the same gate" in text
+    assert "Only a gate-passing mismatch is challenge_failed" in text
     assert "OPTIONS alone" in text
     assert "Every other non-ok reason stays null" in text
     assert "withheld controller_log" in text

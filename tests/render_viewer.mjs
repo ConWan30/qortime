@@ -34,10 +34,13 @@ await new Promise((resolve) => setTimeout(resolve, 100));
 const doc = dom.window.document;
 const st = doc.querySelector("#status");
 const banner = doc.querySelector("#rcCard .ind.bad");
+const errs = doc.querySelector("#rcCard .errs");
 const out = {
   statusText: st ? st.textContent : "",
   statusHtml: st ? st.innerHTML : "",
   title: st ? (st.getAttribute("title") || "") : "",
+  errsText: errs ? errs.textContent : "",
+  errsHtml: errs ? errs.innerHTML : "",
   role: st ? (st.getAttribute("role") || "") : "",
   className: st ? st.className : "",
   banner: banner ? banner.textContent : "",

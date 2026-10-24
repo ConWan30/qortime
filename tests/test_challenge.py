@@ -398,6 +398,24 @@ def test_malformed_status_withholds_the_mismatch(tmp_path):
         _header(), _status(0, "connected"), _press(t0, "OPTIONS"),
         _press(t0 + 400, _wrong_button(kick["pattern"])), bad_state, *span])
     assert stored is None and local["withheld"] == "controller_log"
+    bad_bool = {"type": "status", "t_us": True, "state": "connected", "seg": 0}
+    stored, local = _boundary(tmp_path, "bool", [
+        _header(), _status(0, "connected"), _press(t0, "OPTIONS"),
+        _press(t0 + 400, _wrong_button(kick["pattern"])), bad_bool, *span])
+    assert stored is None and local["withheld"] == "controller_log"
+
+
+def test_missing_inputs_jsonl_withholds_the_mismatch(tmp_path):
+    """A bundle with no inputs.jsonl cannot support a stored mismatch."""
+    from qor_receipt.review.local import inputs_log_intact, mismatch_log_trustworthy
+
+    missing = tmp_path / "empty" / "inputs.jsonl"
+    assert inputs_log_intact(missing) is False
+    kick = _kickoff()
+    records = [_header(), _status(0, "connected"), *_chunk_span(kick["issued_ms"], kick["deadline_ms"])]
+    assert mismatch_log_trustworthy(
+        tmp_path / "empty", records, issued_ms=kick["issued_ms"], deadline_ms=kick["deadline_ms"],
+        anchor_ms=0) is False
 
 
 def test_connected_after_a_stall_needs_the_wall_anchor(tmp_path):

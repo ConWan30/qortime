@@ -199,12 +199,46 @@ def _flip_kickoff_pattern(sub) -> None:
     assert hit, "kickoff pattern press missing from the controller log"
 
 
+def _stamp_chunk_times(sub) -> None:
+    """Give each chunk the segment's mono time. The fixture seals chunks without t_us."""
+    by_seq = {int(m["seq"]): int(m.get("mono_ms") or 0) for m in sub.bundle.segments}
+    for chunk in sub.bundle.input_chunks:
+        seg = chunk.get("seg")
+        if isinstance(seg, int) and not isinstance(seg, bool) and seg in by_seq:
+            chunk["t_us"] = by_seq[seg] * 1000
+
+
+def _status_row(mono_ms: int, state: str) -> dict:
+    return {"type": "status", "t_us": mono_ms * 1000, "state": state, "detail": state, "seg": 0}
+
+
+def _connected_pad(sub) -> None:
+    _stamp_chunk_times(sub)
+    sub.bundle.inputs.append(_status_row(0, "connected"))
+
+
+def _only_options_on_kickoff(sub) -> None:
+    """Leave the kickoff OPTIONS press and clear every other button in that window."""
+    from qor_receipt.review.bundle import wall_anchor
+
+    kick = next(c for c in sub.bundle.receipt["challenges"] if c["phase"] == "kickoff")
+    anchor = wall_anchor(sub.bundle) or 0
+    options = 1 << 9
+    for row in sub.bundle.inputs:
+        if row.get("type") != "in" or not isinstance(row.get("t_us"), int) or isinstance(row.get("t_us"), bool):
+            continue
+        wall = anchor + row["t_us"] // 1000
+        if kick["issued_ms"] <= wall <= kick["deadline_ms"] and row.get("b") and not (row["b"] & options):
+            row["b"] = 0
+
+
 def _mismatch_review(tmp_path):
     e = Env(tmp_path, tail_ms=8_000, k=1)
     sub = e.submit()
     _flip_kickoff_pattern(sub)
+    _connected_pad(sub)
     e.upload_all(sub)
-    return e.ref.review(sub)
+    return e, e.ref.review(sub)
 
 
 def _assert_mismatch_refused(out: dict) -> None:
@@ -213,15 +247,62 @@ def _assert_mismatch_refused(out: dict) -> None:
     assert out["state"] == "refused"
     assert out.get("reason") == "home:kickoff:challenge_failed:pattern_mismatch"
     assert out["review"].get("reason") == out["reason"]
-    buried = " ".join(out["review"].get("post_sign_errors") or [])
-    assert "pattern_mismatch" not in buried
+    assert out["review"].get("post_sign_errors") == [out["reason"]]
+
+
+def _js_verify(receipt: dict, referee_pub: str, allowlist_path: str, tmp: Path) -> dict:
+    """The browser verifier on the same receipt bytes the Python verifier just judged."""
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is not installed")
+    path = tmp / "js-receipt.json"
+    path.write_text(json.dumps(receipt))
+    script = (
+        "import { verifyReceipt } from './verify/verify.js';"
+        "import { readFileSync } from 'node:fs';"
+        "const [receiptPath, pub, allowPath] = process.argv.slice(1);"
+        "const receipt = JSON.parse(readFileSync(receiptPath, 'utf8'));"
+        "const allowlist = JSON.parse(readFileSync(allowPath, 'utf8'));"
+        "const v = await verifyReceipt(receipt, pub, { allowlist });"
+        "process.stdout.write(JSON.stringify({status:v.status, errors:v.errors, partial:v.partial}));"
+    )
+    proc = subprocess.run(
+        [node, "--input-type=module", "-e", script, str(path), referee_pub, allowlist_path],
+        capture_output=True, text=True, cwd=Path(__file__).resolve().parents[1], timeout=60)
+    if proc.returncode != 0:
+        raise AssertionError(proc.stderr or proc.stdout)
+    return json.loads(proc.stdout)
+
+
+def _assert_verifiers_agree(receipt: dict, referee_pub: str, allowlist_path: str, tmp: Path, *,
+                            status: str, present: str, absent: str) -> None:
+    py = R.verify_receipt(receipt, referee_pub=referee_pub, allowlist_path=allowlist_path)
+    js = _js_verify(receipt, referee_pub, allowlist_path, tmp)
+    for name, verdict in (("python", py), ("js", js)):
+        assert verdict["status"] == status, (name, verdict)
+        bag = verdict["errors"] + verdict["partial"]
+        assert present in bag, (name, verdict)
+        assert absent not in bag, (name, verdict)
+        assert verdict["status"] != "VERIFIED"
 
 
 def test_pattern_mismatch_is_fail_with_a_top_level_reason(tmp_path):
-    """A challenge failure that blocks signing is fail, and the reason is not only in post_sign_errors."""
-    out = _mismatch_review(tmp_path)
+    """A gate-passing mismatch blocks signing. The reason is the headline and post_sign_errors."""
+    e, out = _mismatch_review(tmp_path)
     _assert_mismatch_refused(out)
-    assert out["review"].get("post_sign_errors") in (None, [])
+    rec = json.loads(e.fx["files"]["receipt.json"])
+    for challenge in rec["challenges"]:
+        if challenge["phase"] == "kickoff":
+            challenge["result"] = {"ok": False, "reason": "pattern_mismatch", "pause_press_ms": None,
+                                   "done_ms": None, "latency_ms": None}
+    signed = R.sign_player(R.sign_referee(rec, e.fx["capture"]), "home", e.fx["device"])
+    _assert_verifiers_agree(
+        signed, e.fx["capture"].pubkey_hex, e.allow, tmp_path,
+        status="FAIL", present="home:kickoff:challenge_failed:pattern_mismatch",
+        absent="home:challenge_unanswered:kickoff")
 
 
 def _receipt_with_stored_mismatch(e):
@@ -246,6 +327,7 @@ def test_qorcap97_bundle_is_accepted_and_published_as_fail(tmp_path):
     assert sub.state == "awaiting_segments", sub.errors
     assert not any(str(x).startswith("local_receipt:") for x in sub.errors)
     _flip_kickoff_pattern(sub)
+    _connected_pad(sub)
     e.upload_all(sub)
     out = e.ref.review(sub)
     _assert_mismatch_refused(out)
@@ -258,6 +340,62 @@ def test_qorcap97_bundle_is_accepted_and_published_as_fail(tmp_path):
         "checks": [{"name": "challenges", "state": "fail"}]})
     assert "Challenge failed at kickoff (home): wrong button pattern" in shown["statusText"]
     assert shown["role"] == "status"
+
+
+def _withheld_review(tmp_path, prepare, *, stamp: bool = True):
+    e = Env(tmp_path, tail_ms=8_000, k=1)
+    sub = e.submit()
+    prepare(sub)
+    if stamp:
+        _stamp_chunk_times(sub)
+    e.upload_all(sub)
+    out = e.ref.review(sub)
+    assert out["state"] == "awaiting_player_signature", json.dumps(out["review"]["checks"], indent=1)
+    assert out["review"]["checks"]["challenges"]["state"] == "partial"
+    assert "reason" not in out and "reason" not in out["review"]
+    assert out["review"].get("post_sign_errors") in (None, [])
+    final = e.player_sign(sub)
+    receipt = final["receipt"]
+    kick = next(c for c in receipt["challenges"] if c["phase"] == "kickoff")
+    assert kick["result"] is None
+    _assert_verifiers_agree(
+        receipt, e.key.pubkey_hex, e.allow, tmp_path,
+        status="PARTIAL", present="home:challenge_unanswered:kickoff",
+        absent="home:kickoff:challenge_failed:pattern_mismatch")
+    return out
+
+
+def test_stall_glitch_is_unanswered_not_fail(tmp_path):
+    """OPTIONS, then a stall, then nothing. That is not a player FAIL."""
+
+    def prepare(sub):
+        _only_options_on_kickoff(sub)
+        sub.bundle.inputs.append(_status_row(0, "connected"))
+        sub.bundle.inputs.append(_status_row(6_000, "stalled"))
+
+    _withheld_review(tmp_path, prepare)
+
+
+def test_old_bundle_without_chunk_times_is_unanswered(tmp_path):
+    """A pre-0.3.34 log with no chunk times withholds the mismatch and stays partial."""
+
+    def prepare(sub):
+        _flip_kickoff_pattern(sub)
+        sub.bundle.inputs.append(_status_row(0, "connected"))
+
+    _withheld_review(tmp_path, prepare, stamp=False)
+
+
+def test_unplugged_then_reconnected_is_unanswered_not_fail(tmp_path):
+    """A drop that reconnects before the deadline still withholds the mismatch."""
+
+    def prepare(sub):
+        _flip_kickoff_pattern(sub)
+        sub.bundle.inputs.append(_status_row(0, "connected"))
+        sub.bundle.inputs.append(_status_row(6_000, "unplugged"))
+        sub.bundle.inputs.append(_status_row(8_000, "connected"))
+
+    _withheld_review(tmp_path, prepare)
 
 
 def test_mixed_local_errors_still_reject_the_upload(tmp_path):
@@ -284,7 +422,7 @@ def test_reverting_the_challenge_mapping_fails_that_check(tmp_path, monkeypatch)
         return "partial", None
 
     monkeypatch.setattr("qor_receipt.review.engine.challenge_check_state", reverted)
-    out = _mismatch_review(tmp_path)
+    _e, out = _mismatch_review(tmp_path)
     with pytest.raises(AssertionError):
         _assert_mismatch_refused(out)
 
