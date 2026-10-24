@@ -212,6 +212,80 @@ def test_opencv_matches_the_pin():
     assert pe.OpticalFlowPanEstimator().identity()["opencv_pinned"] is True
 
 
+def test_running_estimator_hash_is_on_the_allowlist():
+    """Runs in both CI jobs (3.11 and 3.13), so it checks both interpreters' hashes are listed."""
+    import sys
+
+    from qor_receipt.vision import estimator_allowlist as al
+
+    sha = pe.estimator_sha256()
+    assert sha in al.KNOWN_ESTIMATOR_SHA256, (
+        f"estimator sha256 {sha} on CPython {sys.version_info[0]}.{sys.version_info[1]} "
+        f"(numpy {np.__version__}) is not in estimator_allowlist.py"
+    )
+    assert np.__version__ == al.PINNED_NUMPY_REQUIREMENT.split("==")[1]
+    assert pe.estimator_known() is True
+    ident = pe.OpticalFlowPanEstimator().identity()
+    assert ident["estimator_known"] is True and ident["opencv_pinned"] is True
+
+
+def test_allowlist_is_a_fixed_frozenset_of_lowercase_hex():
+    from qor_receipt.vision import estimator_allowlist as al
+
+    assert type(al.KNOWN_ESTIMATOR_SHA256) is frozenset and al.KNOWN_ESTIMATOR_SHA256
+    for sha in al.KNOWN_ESTIMATOR_SHA256:
+        assert type(sha) is str and len(sha) == 64 and all(c in "0123456789abcdef" for c in sha)
+    import inspect
+
+    # estimator_known takes only parameters; it never accepts a hash from the caller.
+    assert list(inspect.signature(pe.estimator_known).parameters) == ["params"]
+
+
+@pytest.mark.parametrize("target,attr,value", [
+    ("np", "__version__", "9.9.9"),
+    ("cv2", "__version__", "9.9.9"),
+    ("cv2", "getBuildInformation", lambda: "evil build"),
+    ("cv2", "useOptimized", lambda: not cv2.useOptimized()),
+], ids=["numpy_version", "opencv_version", "opencv_build", "use_optimized"])
+def test_unknown_environment_fails_closed(monkeypatch, target, attr, value):
+    frames = pan_frames(10, 9.6)
+    assert claimed(run(frames, 1000))
+    monkeypatch.setattr(getattr(pe, target), attr, value)
+    assert pe.estimator_known() is False
+    est = pe.OpticalFlowPanEstimator()
+    ident = est.identity()
+    assert ident["estimator_known"] is False
+    bins = est.estimate_frames(frames, 0, 1000)
+    assert len(bins) == 10
+    assert all(b.no_claim and b.reason == "unknown_estimator_hash" and b.yaw_rate is None for b in bins)
+
+
+def test_other_params_tampered_allowlist_and_exceptions_fail_closed(monkeypatch):
+    from qor_receipt.vision import estimator_allowlist as al
+
+    frames = pan_frames(10, 9.6)
+    other = pe.OpticalFlowPanEstimator(pe.PanParams(min_features=31))
+    assert other.identity()["estimator_known"] is False
+    assert all(b.reason == "unknown_estimator_hash" for b in other.estimate_frames(frames, 0, 1000))
+
+    sha = pe.estimator_sha256()
+    for tampered in ({sha}, [sha], frozenset({sha.upper()}), frozenset({sha, "not-hex"}), frozenset()):
+        monkeypatch.setattr(al, "KNOWN_ESTIMATOR_SHA256", tampered)
+        assert pe.estimator_known() is False
+    monkeypatch.undo()
+    assert pe.estimator_known() is True
+
+    def boom(*a, **k):
+        raise RuntimeError("no")
+
+    monkeypatch.setattr(pe, "estimator_sha256", boom)
+    assert pe.estimator_known() is False
+    monkeypatch.undo()
+    monkeypatch.setattr(pe, "opencv_matches_pin", lambda: False)
+    assert pe.estimator_known() is False
+    assert pe.OpticalFlowPanEstimator().identity()["opencv_pinned"] is False
+
+
 # sha256 of bins_jsonl on fixed synthetic inputs, produced on the pinned wheel.
 # A change here means the estimator's output changed: bump the version or explain why.
 GOLDEN_SYNTHETIC = {
@@ -249,6 +323,13 @@ def test_pinned_wheel_matches_the_constraints_file():
     # The referee image installs .[referee,vision]; neither extra carries the exact pin.
     for extra in ("referee", "vision"):
         assert pe.PINNED_OPENCV_WHEEL not in project["optional-dependencies"][extra]
+
+    from qor_receipt.vision import estimator_allowlist as al
+
+    assert al.PINNED_NUMPY_REQUIREMENT in pins
+    assert al.PINNED_NUMPY_REQUIREMENT in project["optional-dependencies"]["dev"]
+    for extra in ("referee", "vision"):
+        assert al.PINNED_NUMPY_REQUIREMENT not in project["optional-dependencies"][extra]
 
 
 def test_scorebug_mask_comes_from_the_local_scorebug_profile():

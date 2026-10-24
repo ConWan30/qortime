@@ -2,7 +2,7 @@
 
 Test-only harness under `tests/redteam/`. It scores controller logs by calling `input_energy_series`, `score_motion`, `check_inputs`, `check_checkpoints`, and `check_input_files` in process. It does not sign a receipt, does not hold a referee key, and does not open a network connection. Nothing here is a submission.
 
-Harness `redteam-aimbot/v2` for package `qor-receipt==0.1.0`. Harness sha256 `c0638ed14f1bc7c55ce45ec7ae9ce8dd71728d7201b1284dbbfade7f01d9220e` over 16 files.
+Harness `redteam-aimbot/v2` for package `qor-receipt==0.1.0`. Harness sha256 `69fa389a342d17532c608561e739c6d8a8c56762861d1c6b39e3710440aeee6f` over 16 files.
 
 ## Headline: honest USB log, assisted screen
 
@@ -73,7 +73,7 @@ Each scorer sha256 is the hash of `qor-receipt==0.1.0`, the scorer and estimator
 
 **SYNTHETIC-DATA CAVEAT:** these rates come from synthetic data with only one benign sample (n=1 control) and are NOT real-world or measured detection/false-alarm rates; '0/1 false alarms' is not a false-alarm rate.
 
-The 150 ms event window is valid only on synthetic data with a shared clock. On real footage, a video-vs-log mismatch claim is allowed only for a bundle that carries a frame_bind chain (qorcap #75, --frame-bind) that verifies; if that bundle's chain is missing, stripped or broken, every mismatch claim is no-claim. This is checked per bundle, not switched on by merging code, so older footage stays no-claim.
+The 150 ms event window is valid only on synthetic data with a shared clock. On real footage, no video-vs-log mismatch claim is ever allowed: the mismatch claim gate has no allow path, so every mismatch claim is no-claim with ceiling PARTIAL, for every bundle, and older footage stays no-claim. A frame_bind chain (qorcap #75, --frame-bind) that verifies proves frames were not altered after recording, not press-to-frame timing. An allow path may come only in a separate reviewed PR that verifies the bundle itself; even then a mismatch signal may lower a verdict to at most PARTIAL and never raises one.
 
 | scorer | version | package | estimator | file set | sha256 | headline catch rate | headline false-alarm rate | abstained |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -136,7 +136,7 @@ report = evaluate(scorers=[PanAgreementScorer(MyPanEstimator()), EventPressAgree
       "tests/redteam/scorers.py"
     ],
     "package_version": "0.1.0",
-    "sha256": "c0638ed14f1bc7c55ce45ec7ae9ce8dd71728d7201b1284dbbfade7f01d9220e",
+    "sha256": "69fa389a342d17532c608561e739c6d8a8c56762861d1c6b39e3710440aeee6f",
     "version": "redteam-aimbot/v2"
   },
   "headline_stick_aimbots": {

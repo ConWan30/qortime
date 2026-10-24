@@ -6,4 +6,8 @@
 # reads neither the `dev` extra nor this file.
 # The estimator's sha256 folds in cv2.__version__ and sha256(cv2.getBuildInformation()),
 # so any other build reports a different hash.
+# numpy is pinned too: the hash folds in numpy.__version__, and 2.4.6 has wheels for
+# both CI interpreters (CPython 3.11 and 3.13), so both report the same hash
+# (qor_receipt/vision/estimator_allowlist.py).
 opencv-python-headless==5.0.0.93
+numpy==2.4.6

@@ -35,7 +35,8 @@ the digest is recomputed inside the gate. Never accept a ``FrameBindResult`` (or
 any status) from the caller. Do not build against either before it is on main.
 An allow path may return only in a separate reviewed PR that also adds a
 bundle-bound, verifiable encode-latency calibration. Even then, the most a
-mismatch signal may do is hold a verdict at PARTIAL; it never raises one.
+mismatch signal may do is lower a verdict to at most PARTIAL (a lower verdict
+stays as it is); it never raises one.
 
 Observation only, not a limit or threshold: on the match 170123 highlight clips
 (one session, 3 clips) two independent clip-to-capture-clock alignments disagreed
@@ -48,7 +49,7 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, final
 
 from qor_receipt.review.frame_bind import FRAME_BIND_STATUSES
 
@@ -69,6 +70,8 @@ SKEW_MARGIN_FACTOR = 1.5
 MIN_CALIBRATION_SAMPLES = 30
 MAX_PLAUSIBLE_ENCODE_LATENCY_MS = 2_000.0
 
+# Documentation only. The result object returns the literal "PARTIAL" and never
+# reads this name, so patching it changes nothing.
 CEILING = "PARTIAL"
 
 # Reason codes, in the order the gate checks them. The last one is returned when
@@ -106,25 +109,57 @@ class EncodeLatencyCalibration:
     p99_ms: float
 
 
-class MismatchGateResult:
+@final
+class MismatchGateResult(tuple):
     """Frozen gate result. ``allowed`` is always False and ``ceiling`` is ``"PARTIAL"``.
 
-    ``allowed`` is a read-only property, not a stored field, and the object is
-    falsy, so ``if gate(...):`` never takes the claim branch.
+    ``allowed`` and ``ceiling`` are read-only properties that return literals, and
+    the object is falsy, so ``if gate(...):`` never takes the claim branch.
+
+    The reason is stored as the single item of an immutable tuple, not in a slot
+    or ``__dict__``. There is no attribute storage at all (``__slots__ = ()``), so
+    neither ``setattr`` nor ``object.__setattr__`` can change it. The reason is
+    validated in ``__new__`` and re-checked on every read.
+
+    The class is final (``__init_subclass__`` raises ``TypeError``). Equality and
+    hashing need this exact type on both sides; a plain tuple, a look-alike, or
+    anything else never compares equal. ``copy``, ``deepcopy`` and ``pickle`` go
+    through ``__reduce__``, which rebuilds via ``__new__`` and so re-validates
+    the reason; a forged payload with an unknown reason raises ``ValueError``.
+
+    ``reason`` is diagnostic only. A caller must never branch on it to raise a
+    tier: ``no_bundle_verifier`` means "no verifier exists", not "passed".
     """
 
-    __slots__ = ("_reason",)
+    __slots__ = ()
 
-    def __init__(self, reason: str) -> None:
-        if reason not in REASONS:
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        raise TypeError("MismatchGateResult is final and cannot be subclassed")
+
+    def __new__(cls, reason: str) -> MismatchGateResult:
+        if cls is not MismatchGateResult:
+            raise TypeError("MismatchGateResult is final")
+        if type(reason) is not str or reason not in REASONS:
             raise ValueError(f"unknown reason {reason!r}")
-        object.__setattr__(self, "_reason", reason)
+        return tuple.__new__(cls, (reason,))
 
     def __setattr__(self, name: str, value: Any) -> None:
         raise AttributeError("MismatchGateResult is frozen")
 
     def __delattr__(self, name: str) -> None:
         raise AttributeError("MismatchGateResult is frozen")
+
+    def __reduce__(self) -> tuple[Any, tuple[str]]:
+        return (MismatchGateResult, (self.reason,))
+
+    def __reduce_ex__(self, protocol: Any) -> tuple[Any, tuple[str]]:
+        return self.__reduce__()
+
+    def __copy__(self) -> MismatchGateResult:
+        return MismatchGateResult(self.reason)
+
+    def __deepcopy__(self, memo: Any) -> MismatchGateResult:
+        return MismatchGateResult(self.reason)
 
     @property
     def allowed(self) -> bool:
@@ -136,26 +171,34 @@ class MismatchGateResult:
 
     @property
     def ceiling(self) -> str:
-        return CEILING
+        return "PARTIAL"
 
     @property
     def reason(self) -> str:
-        return self._reason
+        value = tuple.__getitem__(self, 0)
+        if type(value) is not str or value not in REASONS:
+            raise ValueError("MismatchGateResult reason failed re-validation")
+        return value
 
     def __bool__(self) -> bool:
         return False
 
     def __eq__(self, other: object) -> bool:
-        return type(other) is MismatchGateResult and other._reason == self._reason
+        if type(self) is not MismatchGateResult or type(other) is not MismatchGateResult:
+            return False
+        return tuple.__eq__(self, other)
+
+    def __ne__(self, other: object) -> bool:
+        return not self.__eq__(other)
 
     def __hash__(self) -> int:
-        return hash(("MismatchGateResult", self._reason))
+        return hash(("MismatchGateResult", self.reason))
 
     def __repr__(self) -> str:
-        return f"MismatchGateResult(allowed=False, reason={self._reason!r}, ceiling={CEILING!r})"
+        return f"MismatchGateResult(allowed={self.allowed!r}, reason={self.reason!r}, ceiling={self.ceiling!r})"
 
     def to_dict(self) -> dict[str, Any]:
-        return {"allowed": False, "no_claim": self.no_claim, "reason": self._reason, "ceiling": CEILING}
+        return {"allowed": self.allowed, "no_claim": self.no_claim, "reason": self.reason, "ceiling": self.ceiling}
 
 
 def _exact_int(value: Any) -> bool:

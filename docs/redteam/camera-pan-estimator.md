@@ -40,6 +40,8 @@ A bin is `no_claim` when **any** frame pair in it is unreadable, or when the bin
 - Inlier ratio < 0.5, residual > 1 px, or confidence < 0.35.
 - Any exception.
 
+Every bin is `no_claim` with reason `unknown_estimator_hash` unless `estimator_known()` is True (see below).
+
 ## Determinism
 
 - `cv2.setNumThreads(1)` holds during a run, and the previous value is restored afterwards.
@@ -71,23 +73,37 @@ The tested wheel is **`opencv-python-headless==5.0.0.93`** (OpenCV 5.0.0, `cp37-
 - The pin lives in `tests/constraints-pan-estimator.txt` and in the `dev` extra of `pyproject.toml`. CI already installs `.[dev,vision]`, so it gets the pin, and a test checks that the two places agree.
 - To install it locally: `pip install -e ".[dev,vision]" -c tests/constraints-pan-estimator.txt`.
 - The live referee image (`services/referee/Dockerfile`) installs `.[referee,vision]`, so it is unchanged. Neither of those extras carries the exact pin.
-- numpy is not pinned. CI resolves numpy 2.4.6 on Python 3.11 and 2.5.4 on 3.13, so the two report different estimator hashes. The golden output tests pass on both.
+- numpy is pinned to **`numpy==2.4.6`** in the same two places. 2.4.6 has wheels for both CI interpreters (CPython 3.11 and 3.13), so both report one estimator hash. Before the pin, CI resolved numpy 2.4.6 on 3.11 and 2.5.4 on 3.13 (numpy 2.5 dropped 3.11), and the hashes differed. The vision and referee extras keep `numpy>=1.26`.
 
-## Harness plug-in
+### Known-good hash allowlist (fail closed)
 
-`tests/redteam/optical_flow.py` adapts the estimator to #67's `CameraPanEstimator` protocol. The harness's `VariantSample` carries no pixels, so the adapter takes a frame source. When the estimator has a `sha256`, `source_identity` folds it in and records it as `estimator_sha256`.
+`qor_receipt/vision/estimator_allowlist.py` holds `KNOWN_ESTIMATOR_SHA256`, a fixed `frozenset` of exact 64-character lowercase hex digests. It is a separate file because the hash covers `pan_estimator.py`'s own source. It currently holds one entry, recorded on CPython 3.11 and 3.13 with numpy 2.4.6, `opencv-python-headless==5.0.0.93`, and `cv2.useOptimized()` True:
 
-That identity is caller-reported and is not verified. QorProof's E1–E3 show an estimator can claim any sha256, and D1 shows the adapter cache is shared across frame sources. Those tests are in `tests/test_mismatch_gate_qorproof.py` as `xfail(strict=True)`. QorVolution Bot's follow-up PR fixes that code; this PR does not touch it.
+`8f049000579fafe68b5741fb28e8b48ff71323625bb68aa7531639efd9066b0d`
 
-The committed red-team report (`motion-rule-v3-aimbot.md`) still uses the no_claim stubs. A test plugs this estimator in on synthetic frames and checks only the contract, the identity, and determinism. No catch rate is asserted or published, because pan versus right stick is not a valid Madden aimbot signal (see below).
+How the check works:
 
-On the box (Python 3.13, numpy 2.5.4, the pinned wheel) the estimator hash is `c5e8ddfdcae2e20a12cd77b87e520abbf73cc20af1b146768eea895b2c5b695f`. Earlier revisions reported:
+- `estimator_known()` recomputes the hash in-process. It never takes a hash from the caller.
+- It is True only when that hash is in the set **and** `opencv_matches_pin()` is True. It is False on any exception, or if the allowlist is not a frozenset of lowercase hex.
+- `identity()` reports `estimator_known` separately from `opencv_pinned`.
+- Any other numpy, OpenCV version or build, `useOptimized` setting, parameters, or edited source makes `estimate_frames` return only `no_claim` bins with reason `unknown_estimator_hash`.
+- Being known unlocks nothing: the mismatch gate still has no allow path.
+
+Tests check that:
+
+- the running hash is listed (this runs in both CI jobs);
+- the set is a frozenset of lowercase hex;
+- patching the numpy version, OpenCV version, OpenCV build, or `useOptimized` gives False and all `no_claim`;
+- a tampered allowlist or an exception gives False.
+
+The current hash is the allowlist entry above. Earlier revisions reported:
 
 - `e225c50d…`, before the OpenCV identity was hashed;
 - `dcb9d149…`, before the clock gate;
 - `2d236634…`, before the per-bundle frame_bind gate;
 - `b0c8f40d…`, before the status, coverage, and encode-latency conditions;
-- `b85405bd…`, before the gate moved out of this module and numpy and `useOptimized` joined the hash.
+- `b85405bd…`, before the gate moved out of this module and numpy and `useOptimized` joined the hash;
+- `c5e8ddfd…` (CPython 3.13, numpy 2.5.4), before the allowlist check and the numpy pin.
 
 The per-bin outputs on the three clips are byte-identical across all of them.
 
@@ -104,6 +120,11 @@ Any video-vs-log mismatch detector must call it. Examples are a skill move, a us
 **The result always has `allowed=False` and `ceiling="PARTIAL"`, for every input.**
 
 - `MismatchGateResult` is frozen, its `allowed` is a read-only property, and the object is falsy.
+- The class is final: `__init_subclass__` raises `TypeError`. Equality and hashing require the exact type on both sides, so a plain tuple or a look-alike never compares equal.
+- `ceiling`, `repr` and `to_dict()` use the literal `"PARTIAL"`. Patching the module's `CEILING` name changes nothing.
+- The reason is the single item of an immutable tuple. There are no slots and no `__dict__`, so `object.__setattr__` cannot change it, and it is re-validated on every read.
+- `copy`, `deepcopy` and `pickle` round-trip through `__reduce__`, which rebuilds the object via `__new__` and re-validates the reason, so a forged pickle with an unknown reason is rejected.
+- `reason` is diagnostic only. A caller must never branch on it to raise a tier: `no_bundle_verifier` means no verifier exists, not "passed".
 - The gate never trusts a caller-built status, coverage, or calibration. Anyone can construct those, so they prove nothing about a bundle.
 - The inputs are still validated so that `reason` says which condition a future allow path would have failed first. Reasons are checked in this order: `frame_bind_not_verified`, `encode_latency_calibration_missing` / `_invalid`, `video_time_missing`, `log_time_missing`, `event_time_invalid`, `coverage_missing` / `_invalid`, `align_gaps_invalid`, `event_in_align_gap`, `coverage_overlaps_align_gap`, `event_outside_coverage`. If all inputs look well formed, the reason is `no_bundle_verifier`.
 
@@ -128,7 +149,7 @@ Tests:
 2. **A bundle-bound, verifiable encode-latency calibration.** Frame `mono_ms` is stamped after encoding and pipe buffering, while HID rows are stamped at the USB read. Every press-to-frame gap therefore includes encode latency that has not been measured.
 3. **Coverage and align_gaps taken from the verified frame_bind result,** not from the caller.
 
-An allow path may return only in a separate reviewed PR that adds all three. Even then a mismatch signal can at most hold a verdict at PARTIAL; it never raises one.
+An allow path may return only in a separate reviewed PR that adds all three. Even then a mismatch signal may lower a verdict to at most PARTIAL (a lower verdict stays as it is); it never raises one.
 
 **Observation only, not a limit or threshold:**
 
