@@ -67,7 +67,8 @@ the security argument (no pre-knowledge, HID + video pause 0–600 ms after the 
 
 The agent sends `cp = {seq, t_ms, frames_hash, input_hash, prev}` every ~4 s, with `hash = SHA-256(JCS(cp))`. It is
 chained from `prev = 64×"0"`, and the request is signed by the player key. `frames_hash` is the SHA-256 over the
-SHA-256 values of the window's frames. `input_hash` is the SHA-256 of the JCS of the window's HID events.
+SHA-256 values of the window's frames. A per-frame PTS binding, when a bundle has one, is the optional `frames.jsonl`
+sidecar in §7, outside this receipt. `input_hash` is the SHA-256 of the JCS of the window's HID events.
 The referee checks seq/prev/hash, then signs
 `JCS({type:"checkpoint", match_id, role, hash, referee_ts_ms})`.
 
@@ -99,3 +100,78 @@ each other. Otherwise there's no receipt (HTTP 409, dispute).
 * **VERIFIED** only otherwise. Missing evidence never yields VERIFIED.
 * The trust tier is reported separately. Platforms should set their own policy (e.g. stakes over $X need
   VERIFIED + dual-attested).
+
+## 7. Per-bundle frame binding
+
+`qor-receipt/v0` gains no fields for this. `body_of` still copies only `seq`, `t_ms`, `frames_hash`, `input_hash`,
+and `prev`, so a `qorcap` object on a checkpoint line stays off the signed receipt. Old bundles that omit the
+sidecars stay valid. `frames.jsonl` and `readers.json` are optional bundle members (`bundle_files.meta`), not
+required files.
+
+`frames.jsonl` (`qorcap-frame-bind/v0`) is one RFC 8785 JCS object per line, LF, no CR. The newline is not hashed.
+`head_0` is 64 `0` characters. `head_n = SHA-256(JCS({prev, sha256}))`, where `sha256` is the hex SHA-256 of line
+n's exact bytes. A bound checkpoint carries `qorcap.frame_bind = {schema, n, head}` for a prefix of that chain.
+The last checkpoint's `n` is the line count. Every checkpoint carries it, or none of them do.
+
+The first line is a header. `time_base` is `{num, den}`, both integers ≥ 1. Each frame line carries integer `pts`
+in that base. Presentation time in seconds is `pts * num / den`. The base is the encoder's: a 90 kHz MPEG-TS PTS
+is `{num: 1, den: 90000}`. The line has no `fps`, `fps_num`, or `fps_den`, and frame time is not a frame index
+divided by a rate. `mono_ms` is the capture monotonic millisecond of the packet that starts the frame, which binds
+that PTS to the capture clock. `au_sha256` is the SHA-256 of the encoded video access unit.
+
+A segment that is not fully bound is one `align_gap` line: `seg`, `from_frame`, `samples`, `bound`, and `reason`.
+Coverage is `bound` of `samples`. The sample span is `[from_frame, from_frame + samples)`. Samples in that span
+without a frame row are the gap. `reason` is `pts_regression`, `composition_offset`, `sample_pes_mismatch`,
+`clock_lost`, or `unreadable`.
+
+`readers.json` (`qorcap-readers/v0`) is one closed object (`additionalProperties` false): hashes of the scorebug
+and vision reader code and packs, plus a `runtimes` array of the builds that produced the reads (ffmpeg and cv2
+when those produced them). Checkpoint seq 0 carries `qorcap.readers` as `{schema, sha256}` of the file bytes
+(JCS plus one trailing LF) or `{schema, state: "unbound"}` when no file was sealed. Later checkpoints omit it.
+
+`qor_receipt.review.frame_bind.frame_bind_status` returns exactly one status, as a plain `str`:
+
+frame-bind status set: verified, missing, stripped, broken
+
+Code imports `FRAME_BIND_STATUSES` and `FRAME_BIND_VERIFIED` from that module. `is_frame_bind_verified(value)` is
+true only when `type(value) is str` and `value == FRAME_BIND_VERIFIED`. The type check runs before equality, so a
+`str` subclass (including one whose `__eq__` always returns true) and an Enum equal to `FRAME_BIND_VERIFIED` are
+not verified. A value that is not that plain string, or that is not in `FRAME_BIND_STATUSES`, is not a claim.
+
+The primary API is `verify_frame_bind(bundle)`. `bundle` is a directory, the canonical bundle bytes, or a zip of
+the sidecar files. The function reads those bytes and recomputes the status, the bundle digest, and coverage.
+It returns a frozen `FrameBindResult` with `status`, `bundle_digest`, and `coverage` (one segment per `seg`,
+including each `align_gap`). `FrameBindResult` is not a trust token. Anyone can construct one, including a
+`status` of `FRAME_BIND_VERIFIED` and a fabricated digest. Downstream gates MUST call `verify_frame_bind`
+themselves on the bundle. A gate that is handed a result MUST recompute the bundle digest from bytes and
+re-verify if it does not match that result (`frame_bind_result_ok(bundle, result)` does this). Gates must never
+trust a caller-supplied result. A copy of a real result compares equal; that still requires the bundle bytes.
+
+* **verified** — every checkpoint has `frame_bind`, seq 0 has `readers`, the files those commitments require are
+  present, and the hash chain, PTS order, gap coverage, and schemas check. Successive frame rows have strictly
+  increasing `pts`. `readers` `state: "unbound"` with no `readers.json` can still be verified: that is a frame
+  binding with no reader-identity claim.
+* **missing** — no `frame_bind`, no `readers` on seq 0, and neither sidecar file. missing does not prove binding was never enabled.
+  A complete strip and reseal is indistinguishable from never-enabled at this verifier. Only a
+  referee signature over a checkpoint hash that still contained the commitment can show that removal, and this
+  status does not check that signature.
+* **stripped** — a visible leftover: `frame_bind` on some checkpoints but not others; `frame_bind` without
+  `readers` on seq 0, or `readers` on seq 0 without `frame_bind` on every checkpoint; `frames.jsonl` or
+  `readers.json` present without its commitment; a `frame_bind` or readers-hash commitment whose file is absent;
+  or `readers.json` beside `state: "unbound"`.
+* **broken** — the commitments and the files they require are present, and the hash chain, PTS monotonicity, gap
+  coverage, or a schema check fails. A checkpoints file that cannot be parsed, and any other shape, is broken.
+
+missing and stripped are no claim. broken is no claim. The status is advisory. It is not an input to `VERIFIED`,
+`PARTIAL`, `FAIL`, or `SELF_ATTESTED`.
+
+A video-versus-log mismatch claim for a bundle is allowed only when that bundle's own frame-bind status is
+verified and the press-to-frame encode latency for that bundle was measured. A recorder self-report does not
+count as that measurement. missing, stripped, broken, any other value, or any event inside an align_gap is no
+claim. There is no fixed-fps skew formula. 719 ms is an observed maximum across 3 clips in one session. It is
+not a limit.
+
+`verify/verify.js` does not walk these files. `verify/frame-bind-status.js` exports the same status set and
+`isFrameBindVerified`, which is true only for a string primitive equal to the verified constant. It does not
+decide a receipt and does not recompute a bundle. Porting `verify_frame_bind` into the browser verifier is a
+follow-up.
