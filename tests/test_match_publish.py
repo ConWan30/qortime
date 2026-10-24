@@ -51,6 +51,27 @@ def test_publishes_page_index_and_never_raw_inputs(tmp_path):
     assert "first" not in idx.lower().replace("first-", "")
 
 
+def test_public_page_puts_a_challenge_refusal_at_the_top(tmp_path):
+    """A failed challenge check is FAIL on the page, with the reason above the checks. Not PARTIAL."""
+    from qor_receipt.match_index.viewer import write_viewer
+
+    reason = "home:kickoff:challenge_failed:pattern_mismatch"
+    idx = {"match_id": "m", "events": [], "publish": {
+        "receipt": {"status": "PARTIAL", "label": "PARTIAL · some checks not covered", "errors": [],
+                    "partial": ["review_partial:motion"], "reason": reason,
+                    "checks": [{"name": "challenges", "state": "fail", "line": "3 challenges, rule 2"},
+                               {"name": "motion", "state": "partial", "line": "low"}]},
+        "highlights": [], "advisory": "advisory evidence, not proof"}}
+    write_viewer(idx, tmp_path, embed=False, name="index.html")
+    html = (tmp_path / "index.html").read_text(encoding="utf-8")
+    assert f'"reason": "{reason}"' in html
+    assert '"state": "fail"' in html
+    assert '(CHECK_FAIL||REFUSAL)?"FAIL"' in html
+    # json.dumps writes the middle dot as an escape. The blob still carries the verifier's PARTIAL label.
+    assert "PARTIAL" in html and "some checks not covered" in html
+    assert "const STATUS=(CHECK_FAIL||REFUSAL)?\"FAIL\":(RCPT.status||\"\");" in html
+
+
 def test_fail_receipt_needs_allow_fail_and_is_never_gold(tmp_path):
     b = _bundle(tmp_path, status_fail=True)
     with pytest.raises(P.PublishRefused, match="FAIL"):

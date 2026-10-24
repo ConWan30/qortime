@@ -116,6 +116,9 @@ class Submission:
                "missing_count": len(missing), "received": len(self.received), "bad_segments": self.bad,
                "bytes_required": sum(int(self.bundle.segments[s]["bytes"]) for s in self.required),
                "review": self.review, "verify": self.verify}
+        reason = self.review.get("reason") if isinstance(self.review, dict) else None
+        if isinstance(reason, str) and reason:
+            out["reason"] = reason
         if self.corroboration:
             out["corroboration"] = self.corroboration
         return out
@@ -433,7 +436,7 @@ class Referee:
                 final = None
                 checks["final_reread"] = {"state": FAIL_CHECK, "detail": f"decode/read error: {type(e).__name__}: {e}"}
         # ---- challenges (official nonce tokens, raw HID re-run, pause seen on the referee's decode)
-        ch_out, ch_check, pause_spans = self._challenges(sub, rd, wmm)
+        ch_out, ch_check, pause_spans, challenge_reason = self._challenges(sub, rd, wmm)
         checks["challenges"] = ch_check
         # ---- motion rule v3: a spread across the match, not the final-reread tail
         try:
@@ -467,6 +470,9 @@ class Referee:
                                f"challenge windows, a stratified random spread of at most {MOTION_SAMPLE_MAX_SEGMENTS} "
                                f"media segments for motion drawn after commit, {k} random segments drawn after commit)")),
                   "not_proven": NOT_PROVEN}
+        if challenge_reason:
+            # First field a reader sees. A refusal must not live only under post_sign_errors.
+            review = {"reason": challenge_reason, **review}
         device_key = device_key_for_bundle(b)
         if device_key is not None:
             # Informational. Not a check, so it cannot pass or fail the review.
@@ -506,7 +512,8 @@ class Referee:
             out["log_entry"] = sub.log_entry
         return out
 
-    def _challenges(self, sub: Submission, rd, wmm: int) -> tuple[list[dict], dict[str, Any], list[tuple[int, int]]]:
+    def _challenges(self, sub: Submission, rd, wmm: int
+                    ) -> tuple[list[dict], dict[str, Any], list[tuple[int, int]], str | None]:
         b = sub.bundle
         toks = {t.get("nonce"): t for t in b.jsonl("official_challenges.jsonl")}
         presses = B.press_events(b)
@@ -585,15 +592,16 @@ class Referee:
             for i in apply_consistency(out):
                 notes.append(f"{out[i].get('phase')}: latency_inconsistent")
         phases = {c.get("phase") for c in out if c.get("issuer") and (c.get("result") or {}).get("ok")}
-        if bad:
-            state = FAIL_CHECK
-        elif all(p in phases for p in PHASES):
-            state = PASS
-        else:
-            state = PARTIAL_CHECK
+        blocking: list[str] = []
+        for role in ("home", "away"):
+            if any(isinstance(c, dict) and c.get("role") == role for c in out):
+                blocking.extend(R.blocking_challenge_errors(out, role))
+        state, reason = challenge_check_state(
+            blocking=blocking, anchor_bad=bad, phases_passed=all(p in phases for p in PHASES))
+        if state == PARTIAL_CHECK:
             missing = [p for p in PHASES if p not in phases]
             notes.append(f"official challenges passed for {sorted(phases) or 'none'}; missing/failed: {missing}")
-        return out, {"state": state, "detail": {"count": len(out), "rule": rule, "notes": notes}}, pause_spans
+        return out, {"state": state, "detail": {"count": len(out), "rule": rule, "notes": notes}}, pause_spans, reason
 
     def _motion(self, sub: Submission, rd, pause_spans_wall: list[tuple[int, int]],
                 wmm: int) -> tuple[int | None, dict[str, Any]]:
@@ -721,6 +729,25 @@ def _end_menu_hit(reader, img) -> bool:
 
 def _final_screen_hit(fn, img) -> bool:
     return bool(fn(img))
+
+
+def challenge_check_state(*, blocking: list[str], anchor_bad: bool, phases_passed: bool) -> tuple[str, str | None]:
+    """Map a challenge re-run onto pass / partial / fail.
+
+    A failure that blocks signing (``blocking``) is fail, and the refusal reason is returned with it.
+    Missing or unofficial phases stay partial. An anchor that is not in the manifest is fail on its own.
+    """
+    if anchor_bad or blocking:
+        if len(blocking) == 1:
+            reason = blocking[0]
+        elif blocking:
+            reason = "; ".join(blocking)
+        else:
+            reason = "challenge_anchor_not_in_manifest"
+        return FAIL_CHECK, reason
+    if phases_passed:
+        return PASS, None
+    return PARTIAL_CHECK, None
 
 
 def pause_seen_for(press_ms: int | None, onsets: list[int]) -> int | None:

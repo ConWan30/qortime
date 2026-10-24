@@ -183,6 +183,60 @@ def test_scorebug_only_final_is_partial(tmp_path):
     assert v["status"] == "PARTIAL" and "review_partial:final_reread" in v["partial"]
 
 
+def _flip_kickoff_pattern(sub) -> None:
+    """Change the first pattern button after OPTIONS so the referee re-run is a pattern mismatch."""
+    kick = next(c for c in sub.bundle.receipt["challenges"] if c["phase"] == "kickoff")
+    want = kick["pattern"][1]
+    wrong = "CROSS" if want != "CROSS" else "CIRCLE"
+    bit = {"CROSS": 0, "CIRCLE": 1}[wrong]
+    hit = False
+    for row in sub.bundle.inputs:
+        if row.get("type") == "in" and row.get("t_us") == 7_500_000 and row.get("b"):
+            row["b"] = 1 << bit
+            hit = True
+            break
+    assert hit, "kickoff pattern press missing from the controller log"
+
+
+def _mismatch_review(tmp_path):
+    e = Env(tmp_path, tail_ms=8_000, k=1)
+    sub = e.submit()
+    _flip_kickoff_pattern(sub)
+    e.upload_all(sub)
+    return e.ref.review(sub)
+
+
+def _assert_mismatch_refused(out: dict) -> None:
+    challenges = out["review"]["checks"]["challenges"]
+    assert challenges["state"] == "fail", challenges
+    assert out["state"] == "refused"
+    assert out.get("reason") == "home:kickoff:challenge_failed:pattern_mismatch"
+    assert out["review"].get("reason") == out["reason"]
+    buried = " ".join(out["review"].get("post_sign_errors") or [])
+    assert "pattern_mismatch" not in buried
+
+
+def test_pattern_mismatch_is_fail_with_a_top_level_reason(tmp_path):
+    """A challenge failure that blocks signing is fail, and the reason is not only in post_sign_errors."""
+    _assert_mismatch_refused(_mismatch_review(tmp_path))
+
+
+def test_reverting_the_challenge_mapping_fails_that_check(tmp_path, monkeypatch):
+    """The old mapping (any incomplete phase is partial) must fail the mismatch assertion."""
+
+    def reverted(*, blocking, anchor_bad, phases_passed):
+        if anchor_bad:
+            return "fail", None
+        if phases_passed:
+            return "pass", None
+        return "partial", None
+
+    monkeypatch.setattr("qor_receipt.review.engine.challenge_check_state", reverted)
+    out = _mismatch_review(tmp_path)
+    with pytest.raises(AssertionError):
+        _assert_mismatch_refused(out)
+
+
 def test_no_official_challenges_is_partial(tmp_path):
     e = Env(tmp_path, tokens=False)
     sub = e.submit()

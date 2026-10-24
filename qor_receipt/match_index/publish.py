@@ -236,6 +236,20 @@ def _check_line(name: str, check: dict) -> str | None:
     return None
 
 
+def _refusal_reason(receipt: dict, ver: dict) -> str | None:
+    """Reason a refused challenge carries onto the public page. Absent unless signing was blocked."""
+    review = receipt.get("review") if isinstance(receipt.get("review"), dict) else {}
+    raw = review.get("reason") if isinstance(review, dict) else None
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()
+    if ver.get("status") != FAIL:
+        return None
+    for err in ver.get("errors") or []:
+        if isinstance(err, str) and ("challenge_failed:" in err or err.startswith("review_check_failed:challenges")):
+            return err
+    return None
+
+
 def _public_corroboration(co: dict) -> dict:
     """Fields the match page renders. The verifier's detail sentence names status codes and stays off the page."""
     keep = ("schema", "status", "reasons", "tolerance_ms", "affects_verdict", "pairing_id", "finals")
@@ -340,6 +354,7 @@ def _publish(bdir: Path, site: Path, video: Path | None, hdir: Path | None, slug
             for e in idx["events"]:
                 e["locked"] = False
         res = receipt.get("result") or {}
+        reason = _refusal_reason(receipt, ver)
         label = {"VERIFIED": "VERIFIED · co-signed by the QorTime referee",
                  "PARTIAL": "PARTIAL · some checks not covered",
                  "SELF_ATTESTED": "SELF-SIGNED · signed on the player's own PC, not by the QorTime referee",
@@ -354,6 +369,7 @@ def _publish(bdir: Path, site: Path, video: Path | None, hdir: Path | None, slug
             "slug": slug, "generated_ms": now_ms or int(time.time() * 1000),
             "receipt": {"url": "receipt.json", "status": status, "label": label, "errors": ver["errors"],
                         "partial": ver["partial"],
+                        **({"reason": reason} if reason else {}),
                         "trust_tier": {"single-attested": "one-player tier", "dual-attested": "two-player tier"}.get(
                             ver.get("trust_tier"), ver.get("trust_tier")),
                         "referee_kind": (receipt.get("referee") or {}).get("key_kind"),
