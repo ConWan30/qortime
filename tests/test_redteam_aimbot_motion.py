@@ -547,6 +547,26 @@ def test_import_guard_blocks_urllib_request_and_network_tools():
         assert "site/" not in text
         assert "SoftwareKey" not in text
     assert audit_source(Path(__file__).read_text(encoding="utf-8"), filename="test") == []
+    for name in (
+        "ssl", "ftplib", "smtplib", "poplib", "imaplib", "xmlrpc", "telnetlib",
+        "websockets", "urllib3", "aiohttp", "httpx", "http.client",
+    ):
+        found = audit_source(f"import {name}\n")
+        assert found and name in found[0]
+    dynamic = audit_source('import importlib\nimportlib.import_module("socket")\n')
+    assert any("socket" in item for item in dynamic)
+    builtin = audit_source('import builtins\nbuiltins.__import__("requests")\n')
+    assert any("requests" in item for item in builtin)
+    dunder = audit_source('__import__("ssl")\n')
+    assert any("ssl" in item for item in dunder)
+    opened = audit_source("import asyncio\nasyncio.open_connection('h', 80)\n")
+    assert any("open_connection" in item for item in opened)
+    created = audit_source("import asyncio\nasyncio.create_connection(None)\n")
+    assert any("create_connection" in item for item in created)
+    sock = audit_source('import socket\nsocket.create_connection(("h", 80))\n')
+    assert any("create_connection" in item for item in sock)
+    connect = audit_source('import socket\nsocket.socket().connect(("h", 80))\n')
+    assert any("connect" in item for item in connect)
 
 
 SYNTHETIC_RATE_CAVEAT = (
@@ -606,7 +626,7 @@ def test_harness_process_does_not_import_referee_modules():
     floor from ``receipt.py`` as text and does not import ``qor_receipt.receipt``, so
     the trust root never loads. Dropping it from this list would hide that import.
     """
-    assert "trusted_referees" in _FORBIDDEN_MODULE_TOKENS
+    assert _FORBIDDEN_MODULE_TOKENS == ("qor_receipt.referee", "referee_service", "trusted_referees")
     code = (
         "import json, sys\n"
         "sys.path.insert(0, 'tests')\n"
@@ -637,6 +657,115 @@ def test_harness_process_does_not_import_referee_modules():
     assert "qor_receipt.review.media" in loaded
 
 
+def test_verdict_import_scan_fails_closed_and_catches_evasions(tmp_path: Path):
+    """Unreadable files are offenders, and so are the import forms that skip a plain import."""
+    from redteam.imports_guard import verdict_path_import_offenders
+
+    service = tmp_path / "services" / "referee"
+    service.mkdir(parents=True)
+    (service / "binary.py").write_bytes(b"\xff\xfe not utf-8")
+    (service / "syntax.py").write_text("def (\n", encoding="utf-8")
+    (service / "plain.py").write_text("from qor_receipt import vision\n", encoding="utf-8")
+    (service / "alias.py").write_text(
+        "import importlib\nload = importlib.import_module\nload('qor_receipt.vision.pan_estimator')\n",
+        encoding="utf-8",
+    )
+    (service / "package_arg.py").write_text(
+        "import importlib\nimportlib.import_module('.pan_estimator', package='qor_receipt.vision')\n",
+        encoding="utf-8",
+    )
+    (service / "fromlist.py").write_text("__import__('qor_receipt', fromlist=['vision'])\n", encoding="utf-8")
+    (service / "variable.py").write_text(
+        "import importlib\nname = 'qor_receipt.vision.pan_estimator'\nimportlib.import_module(name)\n",
+        encoding="utf-8",
+    )
+    (service / "redteam_mod.py").write_text("import redteam.optical_flow\n", encoding="utf-8")
+    (service / "clean.py").write_text("import json\n", encoding="utf-8")
+    package = tmp_path / "qor_receipt" / "referee"
+    package.mkdir(parents=True)
+    (package / "app.py").write_text("from ..vision.pan_estimator import OpticalFlowPanEstimator\n", encoding="utf-8")
+    (package / "ok.py").write_text("from . import app\n", encoding="utf-8")
+
+    offenders = verdict_path_import_offenders(tmp_path)
+    assert "services/referee/binary.py" in offenders
+    assert "services/referee/syntax.py" in offenders
+    assert "services/referee/plain.py" in offenders
+    assert "services/referee/alias.py" in offenders
+    assert "services/referee/package_arg.py" in offenders
+    assert "services/referee/fromlist.py" in offenders
+    assert "services/referee/variable.py" in offenders
+    assert "services/referee/redteam_mod.py" in offenders
+    assert "qor_receipt/referee/app.py" in offenders
+    assert "services/referee/clean.py" not in offenders
+    assert "qor_receipt/referee/ok.py" not in offenders
+
+
+def test_socket_and_requests_blocked_while_harness_runs():
+    """The network guard is on while evaluate() scores, including dynamic imports."""
+    code = (
+        "import json, sys, os, subprocess, ctypes\n"
+        "import socket as socket_mod\n"
+        "sys.path.insert(0, 'tests')\n"
+        "from redteam.aimbot_harness import evaluate\n"
+        "from redteam.imports_guard import install_network_guard\n"
+        "install_network_guard()\n"
+        "report = evaluate()\n"
+        "assert len(report.variants) == 11\n"
+        "import importlib, builtins\n"
+        "sys.modules.pop('socket', None)\n"
+        "sys.modules.pop('requests', None)\n"
+        "sys.modules.pop('http.client', None)\n"
+        "blocked = []\n"
+        "def attempt(label, fn):\n"
+        "    try:\n"
+        "        fn()\n"
+        "    except ImportError as exc:\n"
+        "        if 'blocked import' not in str(exc):\n"
+        "            raise\n"
+        "        blocked.append(label)\n"
+        "    else:\n"
+        "        raise SystemExit('not blocked: ' + label)\n"
+        "attempt('socket', lambda: __import__('socket'))\n"
+        "attempt('requests', lambda: __import__('requests'))\n"
+        "attempt('importlib.import_module', lambda: importlib.import_module('socket'))\n"
+        "attempt('builtins.__import__', lambda: builtins.__import__('http.client'))\n"
+        "def attempt_runtime(label, fn):\n"
+        "    try:\n"
+        "        fn()\n"
+        "    except RuntimeError as exc:\n"
+        "        if 'blocked audit event' not in str(exc):\n"
+        "            raise\n"
+        "        blocked.append(label)\n"
+        "    else:\n"
+        "        raise SystemExit('not blocked: ' + label)\n"
+        "attempt_runtime('os.system', lambda: os.system('true'))\n"
+        "attempt_runtime('subprocess.Popen', lambda: subprocess.Popen(['true']))\n"
+        "attempt_runtime('socket.socket', lambda: socket_mod.socket())\n"
+        "attempt_runtime('ctypes', lambda: ctypes.CDLL(None))\n"
+        "print(json.dumps({'variants': len(report.variants), 'blocked': blocked}))\n"
+    )
+    proc = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(proc.stdout)
+    assert payload["variants"] == 11
+    assert payload["blocked"] == [
+        "socket",
+        "requests",
+        "importlib.import_module",
+        "builtins.__import__",
+        "os.system",
+        "subprocess.Popen",
+        "socket.socket",
+        "ctypes",
+    ]
+
+
 def test_report_prints_and_matches_the_committed_doc(capsys):
     text = render_report()
     with capsys.disabled():
@@ -650,3 +779,5 @@ def test_report_prints_and_matches_the_committed_doc(capsys):
     assert "button_action" in text
     assert "log-tamper" in text
     assert "example-no-claim-events/v0" in text
+    assert "tripwire" in text
+    assert "sandbox" not in text

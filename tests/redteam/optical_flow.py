@@ -13,18 +13,16 @@ PARTIAL and it never overrides the deterministic checks.
 from __future__ import annotations
 
 from collections.abc import Callable, Hashable, Iterable
-from typing import Any, ClassVar
+from typing import Any
 
 from qor_receipt.vision.pan_estimator import OpticalFlowPanEstimator
-from redteam.scorers import PanBin, VariantSample
+from redteam.scorers import EstimateCache, PanBin, VariantSample, estimate_cache_key
 
 FrameSource = Callable[[VariantSample], Iterable[tuple[int, Any]]]
 
 
 class OpticalFlowHarnessEstimator:
     """``CameraPanEstimator`` over a frame source. Bins cover ``[0, sample.duration_ms)``."""
-
-    _cache: ClassVar[dict[tuple[str, Hashable], tuple[PanBin, ...]]] = {}
 
     def __init__(
         self,
@@ -37,26 +35,50 @@ class OpticalFlowHarnessEstimator:
         self.cache_key = cache_key
         self.name = self.core.name
         self.version = self.core.version
+        self._cache = EstimateCache()
 
     @property
     def sha256(self) -> str:
         return self.core.sha256
 
     def estimate(self, sample: VariantSample) -> list[PanBin]:
-        """``cache_key`` lets the harness reuse bins when the frames do not depend on the variant."""
-        key = None if self.cache_key is None else (self.core.sha256, self.cache_key(sample))
-        if key is not None and key in self._cache:
-            return list(self._cache[key])
-        bins = self._estimate(sample)
+        """Reuse bins only for this instance, and only when the frames and the window match.
+
+        ``cache_key`` turns the cache on. The store key is ``estimate_cache_key``
+        (identity, including the core class and instance attributes, plus the
+        frame-source path and a hash of the frame bytes) together with
+        ``sample.duration_ms`` and the value ``cache_key`` returned. Bins cover
+        ``[0, duration_ms)``, so a later call with the same frames and a longer
+        window must not reuse the shorter result. When the identity is
+        ``unhashed``, nothing is stored.
+        """
+        frames = self._frames(sample)
+        key = None
+        if self.cache_key is not None:
+            caller_key = self.cache_key(sample)
+            base = estimate_cache_key(self, self, self.frame_source, frames)
+            # An unhashed identity is not stored. Two unresolvable cores must not share bins.
+            if base is not None:
+                duration_ms = getattr(sample, "duration_ms", None)
+                key = (*base, duration_ms, caller_key)
+                hit = self._cache.get(key)
+                if hit is not None:
+                    return list(hit)
+        bins = self._bins(frames, sample)
         if key is not None:
-            self._cache[key] = tuple(bins)
+            self._cache.put(key, bins)
         return bins
 
     def _estimate(self, sample: VariantSample) -> list[PanBin]:
+        return self._bins(self._frames(sample), sample)
+
+    def _frames(self, sample: VariantSample) -> list[Any]:
         try:
-            frames = self.frame_source(sample)
+            return list(self.frame_source(sample))
         except Exception:
-            frames = []
+            return []
+
+    def _bins(self, frames: list[Any], sample: VariantSample) -> list[PanBin]:
         bins = self.core.estimate_frames(frames, 0, sample.duration_ms)
         return [
             PanBin(mono_ms=b.mono_ms, yaw_rate=b.yaw_rate, pitch_rate=b.pitch_rate, confidence=b.confidence, no_claim=b.no_claim)

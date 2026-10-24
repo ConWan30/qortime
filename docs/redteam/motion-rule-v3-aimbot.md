@@ -2,7 +2,11 @@
 
 Test-only harness under `tests/redteam/`. It scores controller logs by calling `input_energy_series`, `score_motion`, `check_inputs`, `check_checkpoints`, and `check_input_files` in process. It does not sign a receipt, does not hold a referee key, and does not open a network connection. Nothing here is a submission.
 
-Harness `redteam-aimbot/v2` for package `qor-receipt==0.1.0`. Harness sha256 `69fa389a342d17532c608561e739c6d8a8c56762861d1c6b39e3710440aeee6f` over 16 files.
+The network guard a test can install around a run is a tripwire. It refuses network modules and a few process calls (socket, subprocess.Popen, os.system, os.spawn, ctypes) for the rest of that process.
+
+Harness `redteam-aimbot/v2` for package `qor-receipt==0.1.0`. Harness sha256 `310c8baccbc088fc49c26f7cf10e244e7bfab57837df431b33b2009f0b87bc58` over 16 files.
+
+The harness sha256 moved because `tests/redteam/scorers.py` and `tests/redteam/aimbot_harness.py` changed. It is still the package version plus the sorted in-repo Python files reachable from the harness. It does not include scorer settings.
 
 ## Headline: honest USB log, assisted screen
 
@@ -69,7 +73,7 @@ Pan bins are `{mono_ms, yaw_rate, pitch_rate, confidence, no_claim}`. Events are
 
 Catch rate is flagged attacks divided by decided attacks. False-alarm rate is flagged benign divided by decided benign. An abstention is neither. The rates below are the honest-seal cohort, which is the traffic input proof would let through. Log-tamper rates are in the JSON block.
 
-Each scorer sha256 is the hash of `qor-receipt==0.1.0`, the scorer and estimator version strings, and the sorted repo-relative path plus bytes of the scorer module and its transitive in-repo imports.
+Each scorer sha256 is the hash of `qor-receipt==0.1.0`, the scorer and estimator version strings, the canonical JSON of runtime settings (such as `min_confidence` and any thresholds passed at construction), an estimator sha256 only when the class object is OpticalFlowPanEstimator, recomputed from that module's source (a copied attribute, property, __module__, or __qualname__ is not trusted), the sorted repo-relative path plus bytes of the scorer module and its transitive in-repo imports, the source of an injected estimator or `core` (a hash of that class's own source, and, outside the repo, a path relative to the module root), and declared non-Python weight, model, or data files hashed by bytes. A file that cannot be read is recorded as `unhashed` and is not dropped. An implementation whose file cannot be resolved or read makes the identity `unhashed`, and an unhashed result is not cached. The hashes in the table moved because that coverage is new and because `tests/redteam/scorers.py` changed.
 
 **SYNTHETIC-DATA CAVEAT:** these rates come from synthetic data with only one benign sample (n=1 control) and are NOT real-world or measured detection/false-alarm rates; '0/1 false alarms' is not a false-alarm rate.
 
@@ -77,9 +81,9 @@ The 150 ms event window is valid only on synthetic data with a shared clock. On 
 
 | scorer | version | package | estimator | file set | sha256 | headline catch rate | headline false-alarm rate | abstained |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| motion-rule-v3 | motion-rule/v3 | 0.1.0 | — | 15 files | 045e785fd73520a4a69b5a98ba5489c6267eaa59445abddfe0d1dd89e90e44f2 | 1/6 (0.17) | 0/1 (0.00) | 0/7 |
-| pan-agreement | pan-agreement/v0 | 0.1.0 | example-no-claim/v0 | 15 files | 1e8c8af89e919474eafa5621091ce54f740d29c5ace9dbc930d74c314453731a | n/a (0/6 decided) | n/a (0/1 decided) | 7/7 |
-| event-press-agreement | event-press-agreement/v0 | 0.1.0 | example-no-claim-events/v0 | 15 files | 0293b86f7231cfe300b7473da67c6c99a667711560467d3f06d45e89046b8846 | n/a (0/6 decided) | n/a (0/1 decided) | 7/7 |
+| motion-rule-v3 | motion-rule/v3 | 0.1.0 | — | 15 files | bc583152b26acad4663b200f56bced6f69fb70ad536293c94056656816a9b48c | 1/6 (0.17) | 0/1 (0.00) | 0/7 |
+| pan-agreement | pan-agreement/v0 | 0.1.0 | example-no-claim/v0 | 15 files | 23fb3756603fbbbfcb530c95789738b4105bccece4de0ec61b51988948408f08 | n/a (0/6 decided) | n/a (0/1 decided) | 7/7 |
+| event-press-agreement | event-press-agreement/v0 | 0.1.0 | example-no-claim-events/v0 | 15 files | 19c153a2736ac7978589de997a59a9555a42a96137cac303095f5fbe6194f4bf | n/a (0/6 decided) | n/a (0/1 decided) | 7/7 |
 
 | variant | cohort | motion-rule-v3 | pan-agreement | event-press-agreement |
 | --- | --- | --- | --- | --- |
@@ -136,7 +140,7 @@ report = evaluate(scorers=[PanAgreementScorer(MyPanEstimator()), EventPressAgree
       "tests/redteam/scorers.py"
     ],
     "package_version": "0.1.0",
-    "sha256": "69fa389a342d17532c608561e739c6d8a8c56762861d1c6b39e3710440aeee6f",
+    "sha256": "310c8baccbc088fc49c26f7cf10e244e7bfab57837df431b33b2009f0b87bc58",
     "version": "redteam-aimbot/v2"
   },
   "headline_stick_aimbots": {
@@ -180,7 +184,7 @@ report = evaluate(scorers=[PanAgreementScorer(MyPanEstimator()), EventPressAgree
       "log_tamper_true_positives": 1,
       "name": "motion-rule-v3",
       "package_version": "0.1.0",
-      "sha256": "045e785fd73520a4a69b5a98ba5489c6267eaa59445abddfe0d1dd89e90e44f2",
+      "sha256": "bc583152b26acad4663b200f56bced6f69fb70ad536293c94056656816a9b48c",
       "version": "motion-rule/v3"
     },
     {
@@ -214,7 +218,7 @@ report = evaluate(scorers=[PanAgreementScorer(MyPanEstimator()), EventPressAgree
       "log_tamper_true_positives": 0,
       "name": "pan-agreement",
       "package_version": "0.1.0",
-      "sha256": "1e8c8af89e919474eafa5621091ce54f740d29c5ace9dbc930d74c314453731a",
+      "sha256": "23fb3756603fbbbfcb530c95789738b4105bccece4de0ec61b51988948408f08",
       "version": "pan-agreement/v0"
     },
     {
@@ -248,7 +252,7 @@ report = evaluate(scorers=[PanAgreementScorer(MyPanEstimator()), EventPressAgree
       "log_tamper_true_positives": 0,
       "name": "event-press-agreement",
       "package_version": "0.1.0",
-      "sha256": "0293b86f7231cfe300b7473da67c6c99a667711560467d3f06d45e89046b8846",
+      "sha256": "19c153a2736ac7978589de997a59a9555a42a96137cac303095f5fbe6194f4bf",
       "version": "event-press-agreement/v0"
     }
   ],
