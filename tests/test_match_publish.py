@@ -291,6 +291,10 @@ def test_published_match_170123_verifies_and_stays_public():
     for line in body["review"]["not_proven"]:
         assert line in page
     assert "Footage is not published" in page
+    assert "nofootage" in page and "#seal{" in page and ".seal{position:absolute" not in page
+    assert ".grid.nofootage" in page and "main-col" in page
+    assert 'grid-template-areas:"main side"' in page
+    assert "Footage stays on the player's PC." in page
     assert "Recorded Oct 23, 2026, 5:01 PM" in page and "5:18 PM CT." in page
     assert "qortime-online-s2" in page and "delegation serial 2" in page
     assert "hardware-verified" not in page.lower() and "attestation" not in page.lower()
