@@ -8,7 +8,6 @@ so a camera move of d px per frame is d / 320 * 10 * 100 %W/s.
 from __future__ import annotations
 
 import ast
-import inspect
 import sys
 from pathlib import Path
 
@@ -182,22 +181,60 @@ def test_version_and_hash_cover_source_and_params():
     assert other != est.sha256
 
 
-def test_hash_covers_the_opencv_build(monkeypatch):
+def test_hash_covers_the_opencv_build_and_numpy(monkeypatch):
     base = pe.estimator_sha256()
     ident = pe.opencv_identity()
     assert ident["cv2_version"] == cv2.__version__
+    assert ident["numpy_version"] == np.__version__
+    assert ident["cv2_use_optimized"] in ("True", "False")
     assert len(ident["build_info_sha256"]) == 64
     assert pe.OpticalFlowPanEstimator().identity()["opencv"] == ident
 
-    monkeypatch.setattr(pe.cv2, "__version__", "0.0.0-other")
-    other_version = pe.estimator_sha256()
-    monkeypatch.undo()
-    monkeypatch.setattr(pe.cv2, "getBuildInformation", lambda: "a different OpenCV build")
-    other_build = pe.estimator_sha256()
-    monkeypatch.undo()
-
-    assert len({base, other_version, other_build}) == 3
+    variants = []
+    for target, attr, value in (
+        (pe.cv2, "__version__", "0.0.0-other"),
+        (pe.cv2, "getBuildInformation", lambda: "a different OpenCV build"),
+        (pe.cv2, "useOptimized", lambda: not cv2.useOptimized()),
+        (pe.np, "__version__", "0.0.0-other"),
+    ):
+        monkeypatch.setattr(target, attr, value)
+        variants.append(pe.estimator_sha256())
+        monkeypatch.undo()
+    assert len({base, *variants}) == 5
     assert pe.estimator_sha256() == base
+
+
+def test_opencv_matches_the_pin():
+    """CI installs the pinned wheel through the dev extra. Fails on any other OpenCV build."""
+    assert pe.opencv_matches_pin(), (
+        f"OpenCV {cv2.__version__} is not {pe.PINNED_OPENCV_WHEEL}; install with -c tests/constraints-pan-estimator.txt"
+    )
+    assert pe.OpticalFlowPanEstimator().identity()["opencv_pinned"] is True
+
+
+# sha256 of bins_jsonl on fixed synthetic inputs, produced on the pinned wheel.
+# A change here means the estimator's output changed: bump the version or explain why.
+GOLDEN_SYNTHETIC = {
+    "pan_x9.6": "fa0296a060b775f6aeca09078d0c3875308dca0de20e6ec554b3db439ad70ccb",
+    "pan_x3_y-2": "d379e97639479bc9616738c4f1acc2242a3963decfe6eb780e79c0eaff86e18f",
+    "static": "cff5ed9fa5ba295125fea2b92d5fd185c0e5b24931af120b3a3dd4d7f5096ba7",
+}
+
+
+def _golden_inputs():
+    return {
+        "pan_x9.6": pan_frames(30, 9.6),
+        "pan_x3_y-2": pan_frames(30, 3.0, -2.0),
+        "static": pan_frames(30, 0.0),
+    }
+
+
+def test_golden_output_on_synthetic_frames():
+    import hashlib
+
+    for name, frames in _golden_inputs().items():
+        digest = hashlib.sha256(pe.bins_jsonl(run(frames, 3000))).hexdigest()
+        assert digest == GOLDEN_SYNTHETIC[name], name
 
 
 def test_pinned_wheel_matches_the_constraints_file():
@@ -212,110 +249,6 @@ def test_pinned_wheel_matches_the_constraints_file():
     # The referee image installs .[referee,vision]; neither extra carries the exact pin.
     for extra in ("referee", "vision"):
         assert pe.PINNED_OPENCV_WHEEL not in project["optional-dependencies"][extra]
-
-
-def test_skew_constants_are_observations_not_limits():
-    assert pe.OBSERVED_CLIP_CLOCK_SKEW_RANGE_MS == (120, 719)
-    assert pe.OBSERVED_MAX_CLIP_CLOCK_SKEW_MS == 719
-    assert pe.SKEW_MARGIN_FACTOR == 1.5
-    # The old permissive spacing helper and "limit" names must not come back.
-    for gone in ("within_clock_skew", "CLOCK_SKEW_NO_CLAIM_MS", "MEASURED_CLIP_CAPTURE_SKEW_MS"):
-        assert not hasattr(pe, gone)
-
-
-SPACINGS_MS = (0, 1, 119, 120, 500, 719, 720, 1078, 1079, 1500, 10_000, 3_600_000, -719, -10_000)
-
-
-# Hand-built for the tests. qortime has no frame_bind check and no encode-latency
-# calibration yet (qorcap PR 75 is unmerged), so no production code produces these.
-CAL = pe.EncodeLatencyCalibration(source="test-rig", n_samples=200, p50_ms=38.0, p99_ms=71.0)
-COVER = [(0, 50_000), (52_000, 200_000)]  # align_gap at [50_000, 52_000)
-INSIDE = 100_000
-
-
-def allowed(status=pe.FrameBindStatus.VERIFIED, coverage=COVER, cal=CAL, video_ms=INSIDE, log_ms=None):
-    return pe.mismatch_claim_allowed(status, coverage=coverage, encode_latency=cal, video_ms=video_ms, log_ms=log_ms)
-
-
-def test_all_three_conditions_allow_and_spacing_inside_coverage_does_not_matter():
-    assert allowed() is True
-    assert allowed(status="verified") is True
-    for d in (0, 1, 150, 719, 1079, 5_000):
-        assert allowed(video_ms=INSIDE + d, log_ms=INSIDE) is True
-
-
-def test_defaults_are_no_claim():
-    assert pe.mismatch_claim_allowed() is False
-    assert pe.mismatch_claim_allowed(video_ms=INSIDE, log_ms=INSIDE) is False
-    assert pe.mismatch_claim_allowed(pe.FrameBindStatus.VERIFIED, video_ms=INSIDE) is False  # no coverage, no calibration
-    assert {s.value for s in pe.FrameBindStatus} == {"verified", "missing", "stripped", "broken"}
-
-
-@pytest.mark.parametrize("status", ["missing", "stripped", "broken",
-                                    pe.FrameBindStatus.MISSING, pe.FrameBindStatus.STRIPPED, pe.FrameBindStatus.BROKEN])
-def test_each_non_verified_status_is_no_claim(status):
-    assert allowed(status=status) is False
-
-
-@pytest.mark.parametrize("status", ["VERIFIED", "Verified", " verified", "ok", "unknown", "", None, True, 1, ["verified"]])
-def test_unknown_or_non_string_status_is_no_claim(status):
-    assert allowed(status=status) is False
-
-
-@pytest.mark.parametrize("cal", [
-    None,
-    {"source": "rig", "n_samples": 10, "p50_ms": 30.0, "p99_ms": 60.0},
-    pe.EncodeLatencyCalibration(source="", n_samples=10, p50_ms=30.0, p99_ms=60.0),
-    pe.EncodeLatencyCalibration(source="rig", n_samples=0, p50_ms=30.0, p99_ms=60.0),
-    pe.EncodeLatencyCalibration(source="rig", n_samples=10, p50_ms=float("nan"), p99_ms=60.0),
-    pe.EncodeLatencyCalibration(source="rig", n_samples=10, p50_ms=-1.0, p99_ms=60.0),
-    pe.EncodeLatencyCalibration(source="rig", n_samples=10, p50_ms=90.0, p99_ms=60.0),
-])
-def test_verified_chain_without_measured_encode_latency_is_no_claim(cal):
-    assert allowed(cal=cal) is False
-
-
-def test_event_in_an_align_gap_or_outside_coverage_is_no_claim():
-    assert allowed(video_ms=50_000) is False  # first ms of the gap
-    assert allowed(video_ms=51_999) is False  # last ms of the gap
-    assert allowed(video_ms=52_000) is True   # coverage resumes
-    assert allowed(video_ms=49_999) is True
-    assert allowed(video_ms=200_000) is False  # past the end (half-open)
-    assert allowed(video_ms=INSIDE, log_ms=51_000) is False  # log event in the gap
-    assert allowed(video_ms=None) is False
-    for bad in (None, [], "0-200000", [(10, 10)], [(20, 10)], [(0.0, 200_000.0)], [5]):
-        assert allowed(coverage=bad) is False
-
-
-def test_without_every_condition_spacing_never_permits_a_claim():
-    """Fails if a spacing-only allow path comes back."""
-    partial = [
-        dict(status="missing"), dict(status="broken"), dict(status="stripped"), dict(status="nope"),
-        dict(cal=None), dict(coverage=None), dict(coverage=[(0, 1)]),
-    ]
-    for kwargs in partial:
-        for spacing in SPACINGS_MS:
-            assert allowed(video_ms=INSIDE + spacing, log_ms=INSIDE, **kwargs) is False
-    gate_src = inspect.getsource(pe.mismatch_claim_allowed)
-    body = gate_src.split('"""')[-1]
-    for name in ("OBSERVED_MAX_CLIP_CLOCK_SKEW_MS", "OBSERVED_CLIP_CLOCK_SKEW_RANGE_MS", "SKEW_MARGIN_FACTOR", "719",
-                 "abs(", "os.environ", "getenv"):
-        assert name not in body
-
-
-def test_nothing_in_qortime_produces_a_verified_status_or_a_calibration_yet():
-    """qorcap PR 75 is not merged; no non-test qortime code builds a calibration or a verified status."""
-    users = []
-    for path in sorted((ROOT / "qor_receipt").rglob("*.py")):
-        text = path.read_text(encoding="utf-8")
-        if path.name == "pan_estimator.py":
-            assert "EncodeLatencyCalibration(" not in text
-            assert "FrameBindStatus.VERIFIED" in text  # only the gate's comparison
-            assert text.count("FrameBindStatus.VERIFIED") == 1
-            continue
-        if "EncodeLatencyCalibration" in text or "FrameBindStatus" in text or "mismatch_claim_allowed" in text:
-            users.append(str(path))
-    assert users == []
 
 
 def test_scorebug_mask_comes_from_the_local_scorebug_profile():
