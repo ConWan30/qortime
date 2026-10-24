@@ -781,3 +781,4 @@ def test_report_prints_and_matches_the_committed_doc(capsys):
     assert "example-no-claim-events/v0" in text
     assert "tripwire" in text
     assert "sandbox" not in text
+    assert "os.fork" in text and "os.execv" in text
