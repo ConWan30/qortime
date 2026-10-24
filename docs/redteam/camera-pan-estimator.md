@@ -65,7 +65,11 @@ The tested wheel is **`opencv-python-headless==5.0.0.93`** (OpenCV 5.0.0, `cp37-
 - To install it locally: `pip install -e ".[dev,vision]" -c tests/constraints-pan-estimator.txt`.
 - The live referee image (`services/referee/Dockerfile`) installs `.[referee,vision]`, so it is unchanged. Neither of those extras carries the exact pin.
 
-The committed red-team doc locks the estimator hash. Its equality test is skipped, with a message, on any other OpenCV build.
+## Harness plug-in
+
+`tests/redteam/optical_flow.py` adapts the estimator to #67's `CameraPanEstimator` protocol. The harness's `VariantSample` carries no pixels, so the adapter takes a frame source. When the estimator has a `sha256`, `source_identity` folds it in and records it as `estimator_sha256`. That is how the OpenCV build reaches the scorer hash.
+
+The committed red-team report (`motion-rule-v3-aimbot.md`) still uses the no_claim stubs. A test plugs this estimator in on synthetic frames and checks only the contract, the identity, and determinism. No catch rate is asserted or published, because pan versus right stick is not a valid Madden aimbot signal (see below).
 
 With that wheel the estimator hash is `dcb9d149ddd1f81e87b81cd6ac86be00578a6cec7ac39cd50c050958c7e8b14f`. The real-data numbers below were produced before the OpenCV identity was folded into the hash, so they were reported as `e225c50d…`. The code path and the wheel are identical, and the bins are unchanged.
 

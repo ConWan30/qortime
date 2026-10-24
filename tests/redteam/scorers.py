@@ -170,6 +170,7 @@ class ScorerIdentity:
     estimator_name: str | None = None
     estimator_version: str | None = None
     files: tuple[str, ...] = ()
+    estimator_sha256: str | None = None
 
 
 @dataclass(frozen=True)
@@ -300,6 +301,11 @@ def source_identity(scorer: Any, estimator: Any | None = None) -> ScorerIdentity
         f"estimator={getattr(estimator, 'name', '')}",
         f"estimator_version={getattr(estimator, 'version', '')}",
     ]
+    # An estimator may carry its own sha256 (for example one that folds in the
+    # OpenCV build). It joins the prefix only when present, so stubs hash as before.
+    estimator_sha = getattr(estimator, "sha256", None)
+    if estimator_sha:
+        prefix.append(f"estimator_sha256={estimator_sha}")
     digest, rels = hash_file_set(start, prefix)
     return ScorerIdentity(
         name=scorer.name,
@@ -309,6 +315,7 @@ def source_identity(scorer: Any, estimator: Any | None = None) -> ScorerIdentity
         estimator_name=getattr(estimator, "name", None),
         estimator_version=getattr(estimator, "version", None),
         files=rels,
+        estimator_sha256=estimator_sha or None,
     )
 
 

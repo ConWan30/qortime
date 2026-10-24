@@ -245,3 +245,41 @@ def test_estimator_is_not_imported_by_referee_or_verifier_code():
             if any(m.startswith("qor_receipt.vision") for m in mods):
                 offenders.append(str(path))
     assert offenders == []
+
+
+def test_plugs_into_the_redteam_harness_with_its_own_hash():
+    """Plumbing only. The harness has no pixels, so a synthetic frame source stands in.
+
+    This asserts the contract, the recorded identity, and determinism. It does not
+    assert a catch rate: on Madden, camera pan versus right stick is not a valid
+    aimbot signal (see docs/redteam/camera-pan-estimator.md).
+    """
+    from redteam.aimbot_harness import evaluate
+    from redteam.optical_flow import OpticalFlowHarnessEstimator
+    from redteam.scorers import PanAgreementScorer
+
+    def frames(sample):
+        return pan_frames(sample.duration_ms // FRAME_MS, 9.6)
+
+    estimator = OpticalFlowHarnessEstimator(frames, cache_key=lambda sample: ("pan-9.6px", sample.duration_ms))
+    report = evaluate(scorers=[PanAgreementScorer(estimator)])
+    assert list(report.scores) == ["motion-rule-v3", "pan-agreement"]
+    ident = report.identities["pan-agreement"]
+    assert ident.estimator_version == pe.ESTIMATOR_VERSION
+    assert ident.estimator_sha256 == pe.estimator_sha256()
+    assert "qor_receipt/vision/pan_estimator.py" in ident.files
+    assert "tests/redteam/optical_flow.py" in ident.files
+    for name, score in report.scores["pan-agreement"].items():
+        assert score.detail["estimator_version"] == pe.ESTIMATOR_VERSION
+        assert score.detail["claimed"] >= score.detail["bins"] - 1
+    sample = report.variants[0].sample
+    one = [b.to_dict() for b in estimator._estimate(sample)]
+    two = [b.to_dict() for b in estimator._estimate(sample)]
+    assert one == two
+    assert all(abs(b["yaw_rate"] - 30.0) < 1.5 for b in one if not b["no_claim"])
+
+    from redteam.scorers import NoClaimPanEstimator, source_identity
+
+    stub = source_identity(PanAgreementScorer(NoClaimPanEstimator()), NoClaimPanEstimator())
+    assert stub.estimator_sha256 is None
+
