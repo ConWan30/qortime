@@ -2,7 +2,7 @@
 
 Test-only harness under `tests/redteam/`. It scores controller logs by calling `input_energy_series`, `score_motion`, `check_inputs`, `check_checkpoints`, and `check_input_files` in process. It does not sign a receipt, does not hold a referee key, and does not open a network connection. Nothing here is a submission.
 
-Harness `redteam-aimbot/v2` for package `qor-receipt==0.1.0`. Harness sha256 `9732b84afa28767b6dd66d05fb773c9403a203731e3a20f3812745196a7aaabf` over 16 files.
+Harness `redteam-aimbot/v2` for package `qor-receipt==0.1.0`. Harness sha256 `11e384810c9f330a4cb75f0de8ffbd4d7ea16870c8ad877b6af65264dfedc961` over 16 files.
 
 ## Headline: honest USB log, assisted screen
 
@@ -77,9 +77,9 @@ The 150 ms event window is valid only on synthetic data with a shared clock. On 
 
 | scorer | version | package | estimator | file set | sha256 | headline catch rate | headline false-alarm rate | abstained |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| motion-rule-v3 | motion-rule/v3 | 0.1.0 | — | 15 files | c5f4e48700e91cede7ae778b4ac54924bf986b2bf684b1fe013df7060d1ff7a3 | 1/6 (0.17) | 0/1 (0.00) | 0/7 |
-| pan-agreement | pan-agreement/v0 | 0.1.0 | example-no-claim/v0 | 15 files | c0fb69ffcbae8a9921b8ae7c3beb1248b8df597c1e9c2a6eb155d35cb54f8d21 | n/a (0/6 decided) | n/a (0/1 decided) | 7/7 |
-| event-press-agreement | event-press-agreement/v0 | 0.1.0 | example-no-claim-events/v0 | 15 files | 1a024dd53a081ae4e980882e9b8804dfc5c4aaf58fe530ceff4fdb625b164bc6 | n/a (0/6 decided) | n/a (0/1 decided) | 7/7 |
+| motion-rule-v3 | motion-rule/v3 | 0.1.0 | — | 15 files | 2a3f4c4be6c122b43215a93d1722b3a24873697237520e454ab26da4cc8391d0 | 1/6 (0.17) | 0/1 (0.00) | 0/7 |
+| pan-agreement | pan-agreement/v0 | 0.1.0 | example-no-claim/v0 | 15 files | f590a5708fa85b28db3b509d739e1f9fe4570933a175e3a36949e8d31ed5b7a0 | n/a (0/6 decided) | n/a (0/1 decided) | 7/7 |
+| event-press-agreement | event-press-agreement/v0 | 0.1.0 | example-no-claim-events/v0 | 15 files | e9b39e78322120e2f2373d235b26f4082db69078e13a8e906b2b8f6f70736e4f | n/a (0/6 decided) | n/a (0/1 decided) | 7/7 |
 
 | variant | cohort | motion-rule-v3 | pan-agreement | event-press-agreement |
 | --- | --- | --- | --- | --- |
@@ -136,7 +136,7 @@ report = evaluate(scorers=[PanAgreementScorer(MyPanEstimator()), EventPressAgree
       "tests/redteam/scorers.py"
     ],
     "package_version": "0.1.0",
-    "sha256": "9732b84afa28767b6dd66d05fb773c9403a203731e3a20f3812745196a7aaabf",
+    "sha256": "11e384810c9f330a4cb75f0de8ffbd4d7ea16870c8ad877b6af65264dfedc961",
     "version": "redteam-aimbot/v2"
   },
   "headline_stick_aimbots": {
@@ -180,7 +180,7 @@ report = evaluate(scorers=[PanAgreementScorer(MyPanEstimator()), EventPressAgree
       "log_tamper_true_positives": 1,
       "name": "motion-rule-v3",
       "package_version": "0.1.0",
-      "sha256": "c5f4e48700e91cede7ae778b4ac54924bf986b2bf684b1fe013df7060d1ff7a3",
+      "sha256": "2a3f4c4be6c122b43215a93d1722b3a24873697237520e454ab26da4cc8391d0",
       "version": "motion-rule/v3"
     },
     {
@@ -214,7 +214,7 @@ report = evaluate(scorers=[PanAgreementScorer(MyPanEstimator()), EventPressAgree
       "log_tamper_true_positives": 0,
       "name": "pan-agreement",
       "package_version": "0.1.0",
-      "sha256": "c0fb69ffcbae8a9921b8ae7c3beb1248b8df597c1e9c2a6eb155d35cb54f8d21",
+      "sha256": "f590a5708fa85b28db3b509d739e1f9fe4570933a175e3a36949e8d31ed5b7a0",
       "version": "pan-agreement/v0"
     },
     {
@@ -248,7 +248,7 @@ report = evaluate(scorers=[PanAgreementScorer(MyPanEstimator()), EventPressAgree
       "log_tamper_true_positives": 0,
       "name": "event-press-agreement",
       "package_version": "0.1.0",
-      "sha256": "1a024dd53a081ae4e980882e9b8804dfc5c4aaf58fe530ceff4fdb625b164bc6",
+      "sha256": "e9b39e78322120e2f2373d235b26f4082db69078e13a8e906b2b8f6f70736e4f",
       "version": "event-press-agreement/v0"
     }
   ],

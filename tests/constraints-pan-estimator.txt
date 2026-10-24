@@ -1,0 +1,9 @@
+# Pins the OpenCV wheel the camera-pan estimator (qor_receipt/vision/pan_estimator.py)
+# and its hash-locked red-team doc were produced with. CI gets the same pin from the
+# `dev` extra in pyproject.toml (tests check the two agree). Locally:
+#   pip install -e ".[dev,vision]" -c tests/constraints-pan-estimator.txt
+# The live referee image (services/referee/Dockerfile installs .[referee,vision])
+# reads neither the `dev` extra nor this file.
+# The estimator's sha256 folds in cv2.__version__ and sha256(cv2.getBuildInformation()),
+# so any other build reports a different hash.
+opencv-python-headless==5.0.0.93
