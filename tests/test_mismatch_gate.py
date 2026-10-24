@@ -125,9 +125,11 @@ def test_in_process_bypasses_are_not_a_seal():
             return tuple.__new__(cls, (reason,))
 
     swapped = result_cls(mg.R_NO_BUNDLE_VERIFIER)
-    object.__setattr__(swapped, "__class__", Other)
-    assert swapped.allowed is True
-    object.__setattr__(swapped, "__class__", result_cls)
+    try:
+        object.__setattr__(swapped, "__class__", Other)
+        assert swapped.allowed is True
+    finally:
+        object.__setattr__(swapped, "__class__", result_cls)
     assert type(swapped) is result_cls and swapped.allowed is False
 
     saved_init = result_cls.__dict__["__init_subclass__"]

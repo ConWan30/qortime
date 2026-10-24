@@ -257,6 +257,16 @@ def test_bin_pairs_does_not_claim_forged_pair_results():
     assert all(b.no_claim and b.yaw_rate is None for b in bins)
 
 
+def test_replacing_mask_cache_is_not_known():
+    est = pe.OpticalFlowPanEstimator()
+    est._mask_cache = {}
+    with pytest.warns(RuntimeWarning, match="_mask_cache"):
+        assert est.identity()["estimator_known"] is False
+    bins = est.estimate_frames([(0, None), (100, None)], 0, 200)
+    assert bins and all(b.no_claim and b.reason == "unknown_estimator_hash" and b.yaw_rate is None for b in bins)
+    assert pe.estimator_known(pe.DEFAULT_PARAMS) is True
+
+
 def test_replacing_pair_on_the_instance_is_not_known():
     est = pe.OpticalFlowPanEstimator()
     est._pair = lambda *_args, **_kwargs: pe.PairResult(100, True, "ok", yaw_rate=99.0, pitch_rate=0.0, confidence=1.0)

@@ -4,7 +4,7 @@ Test-only harness under `tests/redteam/`. It scores controller logs by calling `
 
 The network guard a test can install around a run is a tripwire. It refuses network modules and a few process calls (socket, subprocess.Popen, os.system, os.spawn, ctypes) for the rest of that process. os.fork followed by os.execv does not trip that hook.
 
-Harness `redteam-aimbot/v2` for package `qor-receipt==0.1.0`. Harness sha256 `f1b3b34fa947041c062e56c90bb08849b7c0c9565e0236aadfd4a1d13856f927` over 16 files.
+Harness `redteam-aimbot/v2` for package `qor-receipt==0.1.0`. Harness sha256 `962fcc8e10c78635dfb9d260521ac5d1904170421f280b20e40655fd882ef17f` over 16 files.
 
 The harness sha256 moved because `tests/redteam/scorers.py` and `tests/redteam/aimbot_harness.py` changed. It is still the package version plus the sorted in-repo Python files reachable from the harness. It does not include scorer settings.
 
@@ -81,9 +81,9 @@ The 150 ms event window is valid only on synthetic data with a shared clock. On 
 
 | scorer | version | package | estimator | file set | sha256 | headline catch rate | headline false-alarm rate | abstained |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| motion-rule-v3 | motion-rule/v3 | 0.1.0 | — | 15 files | 4aead4c93b3889ae9b827fefd251c6bb1204fda20c49f0fe5966f2e31e7c5340 | 1/6 (0.17) | 0/1 (0.00) | 0/7 |
-| pan-agreement | pan-agreement/v0 | 0.1.0 | example-no-claim/v0 | 15 files | 29967ed620cad5e62c723eaa43288e9a43997842ba2af8df573ccd3eccd44f32 | n/a (0/6 decided) | n/a (0/1 decided) | 7/7 |
-| event-press-agreement | event-press-agreement/v0 | 0.1.0 | example-no-claim-events/v0 | 15 files | cc15899bcefe3e7885d5d09e684422ecf77c3d1ef03f0c52ddfc18cc29ea6a4a | n/a (0/6 decided) | n/a (0/1 decided) | 7/7 |
+| motion-rule-v3 | motion-rule/v3 | 0.1.0 | — | 15 files | f9a8c8eebf4dcc9c0a6458dcdf25487bd29abd6213c71ef7e4c1ef0fcf8f0f97 | 1/6 (0.17) | 0/1 (0.00) | 0/7 |
+| pan-agreement | pan-agreement/v0 | 0.1.0 | example-no-claim/v0 | 15 files | 90f4422e4a254bf709d93846942c0db34c7308829cd82a252fa95916208e3ba3 | n/a (0/6 decided) | n/a (0/1 decided) | 7/7 |
+| event-press-agreement | event-press-agreement/v0 | 0.1.0 | example-no-claim-events/v0 | 15 files | b819b774a4a6deb9b9b59f783321c7bd15c32eece5c98b26f5dae49c0af25c33 | n/a (0/6 decided) | n/a (0/1 decided) | 7/7 |
 
 | variant | cohort | motion-rule-v3 | pan-agreement | event-press-agreement |
 | --- | --- | --- | --- | --- |
@@ -140,7 +140,7 @@ report = evaluate(scorers=[PanAgreementScorer(MyPanEstimator()), EventPressAgree
       "tests/redteam/scorers.py"
     ],
     "package_version": "0.1.0",
-    "sha256": "f1b3b34fa947041c062e56c90bb08849b7c0c9565e0236aadfd4a1d13856f927",
+    "sha256": "962fcc8e10c78635dfb9d260521ac5d1904170421f280b20e40655fd882ef17f",
     "version": "redteam-aimbot/v2"
   },
   "headline_stick_aimbots": {
@@ -184,7 +184,7 @@ report = evaluate(scorers=[PanAgreementScorer(MyPanEstimator()), EventPressAgree
       "log_tamper_true_positives": 1,
       "name": "motion-rule-v3",
       "package_version": "0.1.0",
-      "sha256": "4aead4c93b3889ae9b827fefd251c6bb1204fda20c49f0fe5966f2e31e7c5340",
+      "sha256": "f9a8c8eebf4dcc9c0a6458dcdf25487bd29abd6213c71ef7e4c1ef0fcf8f0f97",
       "version": "motion-rule/v3"
     },
     {
@@ -218,7 +218,7 @@ report = evaluate(scorers=[PanAgreementScorer(MyPanEstimator()), EventPressAgree
       "log_tamper_true_positives": 0,
       "name": "pan-agreement",
       "package_version": "0.1.0",
-      "sha256": "29967ed620cad5e62c723eaa43288e9a43997842ba2af8df573ccd3eccd44f32",
+      "sha256": "90f4422e4a254bf709d93846942c0db34c7308829cd82a252fa95916208e3ba3",
       "version": "pan-agreement/v0"
     },
     {
@@ -252,7 +252,7 @@ report = evaluate(scorers=[PanAgreementScorer(MyPanEstimator()), EventPressAgree
       "log_tamper_true_positives": 0,
       "name": "event-press-agreement",
       "package_version": "0.1.0",
-      "sha256": "cc15899bcefe3e7885d5d09e684422ecf77c3d1ef03f0c52ddfc18cc29ea6a4a",
+      "sha256": "b819b774a4a6deb9b9b59f783321c7bd15c32eece5c98b26f5dae49c0af25c33",
       "version": "event-press-agreement/v0"
     }
   ],

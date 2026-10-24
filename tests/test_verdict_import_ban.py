@@ -4,6 +4,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from redteam import imports_guard  # noqa: E402
@@ -98,3 +100,61 @@ def test_static_import_ban_catches_aliased_and_indirect_loaders(tmp_path: Path):
     assert "C extension" in doc
     assert "does not recognize" in doc
     assert "os.fork" in doc and "os.execv" in doc
+
+
+@pytest.mark.parametrize(
+    ("label", "source"),
+    [
+        ("module_alias", "import importlib\nil = importlib\nil.import_module('qor_receipt.vision')\n"),
+        ("importlib_dunder", "import importlib\nimportlib.__import__('qor_receipt.vision')\n"),
+        ("vars_builtins", "import builtins\nvars(builtins)['__import__']('qor_receipt.vision')\n"),
+        ("sys_modules", "import sys\nsys.modules['qor_receipt.vision']\n"),
+        ("import_then_attr", "__import__('importlib').import_module('qor_receipt.vision')\n"),
+        ("pkgutil_resolve", "import pkgutil\npkgutil.resolve_name('qor_receipt.vision.pan_estimator')\n"),
+        (
+            "source_file_loader",
+            "from importlib.machinery import SourceFileLoader\nSourceFileLoader('m', 'x.py').load_module()\n",
+        ),
+    ],
+)
+def test_verdict_path_import_offenders_catch_each_loader_form(tmp_path: Path, label: str, source: str):
+    """Each loader form is an offender on its own, not only when mixed with another form."""
+    service = tmp_path / "services" / "referee"
+    service.mkdir(parents=True)
+    (service / f"{label}.py").write_text(source, encoding="utf-8")
+    assert f"services/referee/{label}.py" in verdict_path_import_offenders(tmp_path)
+
+
+def test_safe_loader_lookalikes_are_not_offenders(tmp_path: Path):
+    service = tmp_path / "services" / "referee"
+    service.mkdir(parents=True)
+    samples = {
+        "resolve_safe.py": "import pkgutil\npkgutil.resolve_name('json.dumps')\n",
+        "sys_modules_safe.py": "import sys\nsys.modules['json']\n",
+        "vars_unrelated.py": "import json\nvars(json)['dumps']('{}')\n",
+        "import_os.py": "__import__('os')\n",
+    }
+    for name, text in samples.items():
+        (service / name).write_text(text, encoding="utf-8")
+    offenders = set(verdict_path_import_offenders(tmp_path))
+    for name in samples:
+        assert f"services/referee/{name}" not in offenders
+
+
+def test_scanned_roots_include_eval_and_skip_published_trees(tmp_path: Path):
+    """``eval/`` is scanned and is not a verdict path. Published trees stay out."""
+    assert imports_guard.SCANNED_ROOTS == ("qor_receipt", "services", "scripts", "eval")
+    assert {"tests", "docs", "site", "verify", "schema"} <= imports_guard._SCAN_SKIP
+    assert "eval" not in imports_guard._SCAN_SKIP
+    text = (ROOT / "eval" / "score_reader.py").read_text(encoding="utf-8")
+    assert "qor_receipt._vendor.qoresence.vision" in text
+    assert "qor_receipt.vision" not in text
+    assert "eval/score_reader.py" not in verdict_path_import_offenders(ROOT)
+
+    folder = tmp_path / "eval"
+    folder.mkdir()
+    (folder / "plug.py").write_text("import qor_receipt.vision\n", encoding="utf-8")
+    (folder / "clean.py").write_text("import json\n", encoding="utf-8")
+    offenders = verdict_path_import_offenders(tmp_path)
+    assert "eval/plug.py" in offenders
+    assert "eval/clean.py" not in offenders

@@ -23,7 +23,6 @@ PINNED_NUMPY_REQUIREMENT = "numpy==2.4.6"
 
 KNOWN_ESTIMATOR_SHA256: frozenset[str] = frozenset({
     # CPython 3.11 and 3.13, numpy 2.4.6, opencv-python-headless 5.0.0.93
-    # Re-recorded after public bin_pairs stopped claiming caller-supplied results
-    # and an extra instance attribute stopped counting as known.
-    "50a1ce3020b17b5fedd27a3a8dc5ab334a5355ed2bbb7da20723a6c01a101788",
+    # Re-recorded after a replaced _mask_cache warns and is not a known instance.
+    "47413a5cb28a9c8a526568be9a926894dc52d2c1939eed9be135895961f1c2d5",
 })

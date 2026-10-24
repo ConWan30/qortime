@@ -45,8 +45,9 @@ pair results into claims. ``estimator_known`` accepts only an exact
 ``PanParams`` instance whose fields are exact ``int`` and ``float`` values, not
 a look-alike whose ``to_json`` matches and not an ``int`` or ``float`` subclass.
 A subclass of ``OpticalFlowPanEstimator`` that overrides ``pairs`` is not known.
-An instance attribute other than ``params`` and ``_mask_cache``, including a
-replacement ``_pair``, is not known.
+An instance attribute other than ``params``, ``_mask_cache``, and
+``_mask_cache_id``, including a replacement ``_pair``, is not known. Replacing
+``_mask_cache`` warns and is not known.
 
 Determinism
 -----------
@@ -72,6 +73,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import warnings
 from collections.abc import Iterable, Sequence
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
@@ -293,15 +295,14 @@ def estimator_known(params: PanParams = DEFAULT_PARAMS) -> bool:
 
 
 # Instance attributes ``__init__`` writes. Anything else, including ``_pair``, is not the known estimator.
-_ESTIMATOR_ATTRS = frozenset({"params", "_mask_cache"})
+_ESTIMATOR_ATTRS = frozenset({"params", "_mask_cache", "_mask_cache_id"})
 
 
-def _running_estimator_known(estimator: object) -> bool:
-    """True only for an exact instance with no method patched onto it.
+def _estimator_instance_ok(estimator: object) -> bool:
+    """True for an exact instance whose methods and mask cache are the ones ``__init__`` wrote.
 
-    ``pairs`` on the instance must be ``OpticalFlowPanEstimator.pairs``. The
-    instance ``__dict__`` may contain only ``params`` and ``_mask_cache``, so
-    assigning ``estimator._pair`` (or any other attribute) is not known.
+    Does not consult the allowlist. A rejected instance must not be hashed as if
+    it were the known estimator. Replacing ``_mask_cache`` warns.
     """
     cls = OpticalFlowPanEstimator
     if type(estimator) is not cls:
@@ -311,6 +312,23 @@ def _running_estimator_known(estimator: object) -> bool:
         return False
     pairs = getattr(estimator, "pairs", None)
     if getattr(pairs, "__func__", None) is not cls.pairs:
+        return False
+    cache = data.get("_mask_cache")
+    if type(cache) is not dict or data.get("_mask_cache_id") != id(cache):
+        warnings.warn("pan estimator _mask_cache was replaced", RuntimeWarning, stacklevel=2)
+        return False
+    return True
+
+
+def _running_estimator_known(estimator: object) -> bool:
+    """True only for an exact instance with no method patched onto it.
+
+    ``pairs`` on the instance must be ``OpticalFlowPanEstimator.pairs``. The
+    instance ``__dict__`` may contain only ``params``, ``_mask_cache``, and
+    ``_mask_cache_id``, so assigning ``estimator._pair`` (or any other attribute)
+    is not known. Replacing ``_mask_cache`` warns and is not known.
+    """
+    if not _estimator_instance_ok(estimator):
         return False
     return estimator_known(getattr(estimator, "params", None))
 
@@ -340,6 +358,7 @@ class OpticalFlowPanEstimator:
     def __init__(self, params: PanParams = DEFAULT_PARAMS) -> None:
         self.params = params
         self._mask_cache: dict[tuple[int, int], Any] = {}
+        self._mask_cache_id = id(self._mask_cache)
 
     @property
     def sha256(self) -> str:

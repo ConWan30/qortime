@@ -115,7 +115,7 @@ def test_property_sha_is_not_trusted():
 
 
 def test_forged_module_and_qualname_do_not_take_the_real_identity():
-    from qor_receipt.vision.pan_estimator import OpticalFlowPanEstimator, estimator_sha256
+    from qor_receipt.vision.pan_estimator import OpticalFlowPanEstimator, PanParams, estimator_sha256
 
     class Fake(NoClaimPanEstimator):
         @property
@@ -132,6 +132,14 @@ def test_forged_module_and_qualname_do_not_take_the_real_identity():
     assert fake.estimator_sha256 is None
     assert honest.estimator_sha256 == estimator_sha256()
     assert OpticalFlowPanEstimator.__module__ not in fake.files or honest.sha256 != fake.sha256
+    other = OpticalFlowPanEstimator(PanParams(min_features=31))
+    other_id = source_identity(PanAgreementScorer(other), other)
+    assert other_id.estimator_sha256 == estimator_sha256(other.params)
+    assert other_id.estimator_sha256 != estimator_sha256()
+    real._pair = lambda *_args, **_kwargs: None
+    rejected = source_identity(PanAgreementScorer(real), real)
+    assert rejected.estimator_sha256 is None
+    assert estimator_sha256() not in repr(rejected)
 
 
 def _load_adapter(path: Path, module_name: str):
