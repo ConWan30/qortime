@@ -655,6 +655,44 @@ def test_harness_process_does_not_import_referee_modules():
     assert "qor_receipt.review.media" in loaded
 
 
+def test_verdict_import_scan_fails_closed_and_catches_evasions(tmp_path: Path):
+    """Unreadable files are offenders, and so are the import forms that skip a plain import."""
+    from redteam.imports_guard import verdict_path_import_offenders
+
+    service = tmp_path / "services" / "referee"
+    service.mkdir(parents=True)
+    (service / "binary.py").write_bytes(b"\xff\xfe not utf-8")
+    (service / "syntax.py").write_text("def (\n", encoding="utf-8")
+    (service / "plain.py").write_text("from qor_receipt import vision\n", encoding="utf-8")
+    (service / "alias.py").write_text(
+        "import importlib\nload = importlib.import_module\nload('qor_receipt.vision.pan_estimator')\n",
+        encoding="utf-8",
+    )
+    (service / "package_arg.py").write_text(
+        "import importlib\nimportlib.import_module('.pan_estimator', package='qor_receipt.vision')\n",
+        encoding="utf-8",
+    )
+    (service / "fromlist.py").write_text("__import__('qor_receipt', fromlist=['vision'])\n", encoding="utf-8")
+    (service / "redteam_mod.py").write_text("import redteam.optical_flow\n", encoding="utf-8")
+    (service / "clean.py").write_text("import json\n", encoding="utf-8")
+    package = tmp_path / "qor_receipt" / "referee"
+    package.mkdir(parents=True)
+    (package / "app.py").write_text("from ..vision.pan_estimator import OpticalFlowPanEstimator\n", encoding="utf-8")
+    (package / "ok.py").write_text("from . import app\n", encoding="utf-8")
+
+    offenders = verdict_path_import_offenders(tmp_path)
+    assert "services/referee/binary.py" in offenders
+    assert "services/referee/syntax.py" in offenders
+    assert "services/referee/plain.py" in offenders
+    assert "services/referee/alias.py" in offenders
+    assert "services/referee/package_arg.py" in offenders
+    assert "services/referee/fromlist.py" in offenders
+    assert "services/referee/redteam_mod.py" in offenders
+    assert "qor_receipt/referee/app.py" in offenders
+    assert "services/referee/clean.py" not in offenders
+    assert "qor_receipt/referee/ok.py" not in offenders
+
+
 def test_socket_and_requests_blocked_while_harness_runs():
     """The network guard is on while evaluate() scores, including dynamic imports."""
     code = (

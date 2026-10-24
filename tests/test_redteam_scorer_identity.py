@@ -2,9 +2,7 @@
 
 Equivalent to the harness-identity findings against ``source_identity`` (a copied
 sha256, a newline in that sha, and a ``core`` subclass outside the hashed file
-set). ``optical_flow.py`` is not on this branch; the cache test uses
-``EstimateCache`` directly. PR #68's xfail copies of D1 and E1–E3 should pass
-once that branch merges this identity and uses ``EstimateCache``.
+set). The optical-flow adapter stores bins in ``EstimateCache``.
 """
 from __future__ import annotations
 
@@ -246,7 +244,7 @@ class _CachingHost:
         self.core = core
         self.frames = frames
         self.cache = EstimateCache()
-        self.computes = 0
+        self._computes = 0
 
     def produce(self, sample):
         return self.frames
@@ -256,7 +254,7 @@ class _CachingHost:
         hit = self.cache.get(key)
         if hit is not None:
             return hit
-        self.computes += 1
+        self._computes += 1
         value = (self.core.marker, self.frames)
         self.cache.put(key, value)
         return value
@@ -272,10 +270,10 @@ def test_estimate_cache_does_not_cross_cores_or_frame_sources():
     assert first.estimate(None) == ("core-a", frames_pos)
     assert other_core.estimate(None) == ("core-b", frames_pos)
     assert other_frames.estimate(None) == ("core-a", frames_neg)
-    assert first.computes == other_core.computes == other_frames.computes == 1
+    assert first._computes == other_core._computes == other_frames._computes == 1
 
     assert first.estimate(None) == ("core-a", frames_pos)
-    assert first.computes == 1
+    assert first._computes == 1
 
     key_first = estimate_cache_key(first, first.core, first.produce, first.frames)
     key_core = estimate_cache_key(other_core, other_core.core, other_core.produce, other_core.frames)
@@ -290,6 +288,80 @@ def test_estimate_cache_does_not_cross_cores_or_frame_sources():
     shared.put(key_first, ("core-a", frames_pos))
     assert shared.get(key_core) is None
     assert shared.get(key_frames) is None
+
+
+class _Array:
+    def __init__(self, shape, dtype, blob: bytes) -> None:
+        self.shape = shape
+        self.dtype = dtype
+        self._blob = blob
+
+    def tobytes(self) -> bytes:
+        return self._blob
+
+
+def test_frame_hash_includes_dtype_and_shape():
+    def produce(sample):
+        return sample
+
+    uint8 = frame_source_identity(produce, (_Array((2,), "uint8", b"ab"),))
+    uint16 = frame_source_identity(produce, (_Array((2,), "uint16", b"ab"),))
+    wider = frame_source_identity(produce, (_Array((1, 2), "uint8", b"ab"),))
+    assert len({uint8, uint16, wider}) == 3
+
+
+def test_raw_byte_frames_are_length_prefixed():
+    def produce(sample):
+        return sample
+
+    one = frame_source_identity(produce, (b"a\nb",))
+    two = frame_source_identity(produce, (b"a", b"b"))
+    assert one != two
+
+
+def test_factory_classes_with_different_closures_do_not_hash_the_same():
+    def factory(secret):
+        class Closed:
+            name = "closed"
+            version = "v0"
+
+            def value(self):
+                return secret
+
+        return Closed
+
+    first = factory(1)()
+    second = factory(2)()
+    same = factory(1)()
+    assert source_identity(first, first).sha256 != source_identity(second, second).sha256
+    assert source_identity(first, first).sha256 == source_identity(same, same).sha256
+
+
+def test_mutating_an_estimator_attribute_misses_the_cache():
+    class Core:
+        name = "core"
+        version = "v0"
+
+        def __init__(self) -> None:
+            self.yaw = 1
+
+    host = _CachingHost(Core(), (b"frame",))
+
+    def estimate():
+        key = estimate_cache_key(host, host.core, host.produce, host.frames)
+        hit = host.cache.get(key)
+        if hit is not None:
+            return hit
+        host._computes += 1
+        value = (host.core.yaw,)
+        host.cache.put(key, value)
+        return value
+
+    assert estimate() == (1,)
+    assert host._computes == 1
+    host.core.yaw = 9
+    assert estimate() == (9,)
+    assert host._computes == 2
 
 
 def test_frame_source_identity_hashes_path_and_bytes():

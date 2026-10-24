@@ -42,18 +42,21 @@ class OpticalFlowHarnessEstimator:
         return self.core.sha256
 
     def estimate(self, sample: VariantSample) -> list[PanBin]:
-        """Reuse bins only for this instance, and only when the frames match.
+        """Reuse bins only for this instance, and only when the frames and the window match.
 
-        ``cache_key`` turns the cache on. It is not the store key. The store key
-        is ``estimate_cache_key``: the full estimator identity (core class source
-        included) plus the frame-source path and a hash of the frame bytes. Two
-        instances that pass the same short key still cannot read each other's bins.
+        ``cache_key`` turns the cache on. The store key is ``estimate_cache_key``
+        (identity, including the core class and instance attributes, plus the
+        frame-source path and a hash of the frame bytes) together with
+        ``sample.duration_ms`` and the value ``cache_key`` returned. Bins cover
+        ``[0, duration_ms)``, so a later call with the same frames and a longer
+        window must not reuse the shorter result.
         """
         frames = self._frames(sample)
         key = None
         if self.cache_key is not None:
-            self.cache_key(sample)
-            key = estimate_cache_key(self, self, self.frame_source, frames)
+            caller_key = self.cache_key(sample)
+            duration_ms = getattr(sample, "duration_ms", None)
+            key = (*estimate_cache_key(self, self, self.frame_source, frames), duration_ms, caller_key)
             hit = self._cache.get(key)
             if hit is not None:
                 return list(hit)

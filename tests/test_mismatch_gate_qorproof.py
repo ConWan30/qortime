@@ -237,6 +237,46 @@ def _harness_path():
         sys.path.insert(0, tests_dir)
 
 
+def test_cache_includes_duration_when_frames_are_reused():
+    """Same frames and the same short cache key must not reuse bins for a longer window."""
+    _harness_path()
+    from redteam.optical_flow import OpticalFlowHarnessEstimator
+    from redteam.pan_frames import pan_frames
+
+    frames = pan_frames(10, 9.6)
+
+    class S:
+        def __init__(self, duration_ms: int) -> None:
+            self.duration_ms = duration_ms
+
+    est = OpticalFlowHarnessEstimator(lambda s: frames, cache_key=lambda s: "k")
+    short = est.estimate(S(1000))
+    long = est.estimate(S(3000))
+    assert len(short) == 10
+    assert len(long) == 30
+
+
+def test_mutated_core_attribute_is_not_served_from_the_cache():
+    _harness_path()
+    from redteam.optical_flow import OpticalFlowHarnessEstimator
+
+    class YawCore(pe.OpticalFlowPanEstimator):
+        def __init__(self) -> None:
+            super().__init__()
+            self.yaw = 1.0
+
+        def estimate_frames(self, frames, start, end):
+            return [pe.PanBin(t, self.yaw, 0.0, 1.0) for t in range(start, end, 100)]
+
+    class S:
+        duration_ms = 1000
+
+    est = OpticalFlowHarnessEstimator(lambda s: [], cache_key=lambda s: "k", core=YawCore())
+    assert est.estimate(S())[0].yaw_rate == 1.0
+    est.core.yaw = 9.0
+    assert est.estimate(S())[0].yaw_rate == 9.0
+
+
 def test_D1_harness_cache_shared_across_frame_sources():
     _harness_path()
     from redteam.optical_flow import OpticalFlowHarnessEstimator

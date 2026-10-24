@@ -510,6 +510,70 @@ def _class_block(source: str, qualname: str) -> str | None:
     return "".join(block)
 
 
+def _encode_cell(value: Any) -> bytes | None:
+    """Deterministic bytes for a closure cell or a plain attribute. None if it is not safe to hash."""
+    if value is None or type(value) is bool or type(value) is int:
+        return repr(value).encode("ascii")
+    if type(value) is float and math.isfinite(value):
+        return repr(value).encode("ascii")
+    if type(value) is str:
+        raw = value.encode("utf-8", "surrogateescape")
+        return b"s" + str(len(raw)).encode("ascii") + b":" + raw
+    if type(value) is bytes:
+        return b"b" + str(len(value)).encode("ascii") + b":" + value
+    if type(value) is tuple:
+        parts: list[bytes] = []
+        for item in value:
+            encoded = _encode_cell(item)
+            if encoded is None:
+                return None
+            parts.append(encoded)
+        return b"t" + b",".join(parts)
+    return None
+
+
+def _closure_functions(cls: type) -> list[Any]:
+    """Functions on ``cls`` that close over a cell, including properties."""
+    found: list[Any] = []
+    for base in cls.__mro__:
+        if base is object:
+            continue
+        for value in base.__dict__.values():
+            funcs: list[Any] = []
+            if isinstance(value, (staticmethod, classmethod)):
+                funcs.append(value.__func__)
+            elif isinstance(value, property):
+                funcs.extend(fn for fn in (value.fget, value.fset, value.fdel) if fn is not None)
+            elif inspect.isfunction(value):
+                funcs.append(value)
+            for fn in funcs:
+                if getattr(fn, "__closure__", None):
+                    found.append(fn)
+    return found
+
+
+def _closure_material(cls: type) -> bytes:
+    """Bytes that differ when two classes from the same source close over different values.
+
+    Encodable cells contribute their contents. A cell that cannot be encoded contributes
+    its identity, so two classes still do not hash the same.
+    """
+    parts: list[bytes] = []
+    for fn in _closure_functions(cls):
+        closure = fn.__closure__ or ()
+        for index, cell in enumerate(closure):
+            try:
+                value = cell.cell_contents
+            except ValueError:
+                parts.append(f"empty:{id(cell)}".encode("ascii"))
+                continue
+            encoded = _encode_cell(value)
+            if encoded is None:
+                encoded = f"opaque:{type(value).__name__}:{id(cell)}".encode("ascii", "replace")
+            parts.append(f"{fn.__name__}:{index}:".encode("ascii", "replace") + encoded)
+    return b"\n".join(parts)
+
+
 def _class_source_tag(obj: Any) -> str:
     """Module-qualified class name plus a hash of that class's source text."""
     cls = type(obj)
@@ -531,9 +595,13 @@ def _class_source_tag(obj: Any) -> str:
         except (OSError, TypeError):
             found = None
         text = found if type(found) is str and found else None
-    if not text:
+    closed = _closure_material(cls)
+    payload = (text or "").encode("utf-8")
+    if closed:
+        payload = payload + b"\n" + closed
+    if not payload:
         return f"{label} unhashed"
-    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    digest = hashlib.sha256(payload).hexdigest()
     return f"{label} {digest}"
 
 
@@ -725,8 +793,13 @@ def _callable_path(fn: Any) -> str:
         return _safe_label(path.name)
 
 
+def _lp(blob: bytes) -> bytes:
+    """Length-prefixed blob, so ``b'a\\nb'`` does not join into ``b'a' + b'b'``."""
+    return str(len(blob)).encode("ascii") + b":" + blob
+
+
 def _pixel_bytes(item: Any) -> bytes | None:
-    """Raw bytes of an array-like frame, without importing a numeric library."""
+    """Raw bytes of an array-like frame, including shape and dtype."""
     tobytes = getattr(item, "tobytes", None)
     if not callable(tobytes):
         return None
@@ -737,36 +810,65 @@ def _pixel_bytes(item: Any) -> bytes | None:
     if type(blob) is not bytes:
         return None
     shape = getattr(item, "shape", ())
-    return repr(shape).encode("ascii", "replace") + b"\0" + blob
+    dtype = getattr(item, "dtype", "")
+    header = f"{shape!r}|{dtype!s}".encode("ascii", "replace")
+    return _lp(header) + _lp(blob)
 
 
 def _frame_material(frames: Sequence[Any]) -> bytes:
     chunks: list[bytes] = []
     for item in frames:
         if isinstance(item, (bytes, bytearray, memoryview)):
-            chunks.append(bytes(item))
+            chunks.append(_lp(bytes(item)))
             continue
         pixels = _pixel_bytes(item)
         if pixels is not None:
-            chunks.append(pixels)
+            chunks.append(_lp(pixels))
             continue
         if isinstance(item, (tuple, list)) and len(item) == 2:
             body = _pixel_bytes(item[1])
             if body is None and isinstance(item[1], (bytes, bytearray, memoryview)):
-                body = bytes(item[1])
+                body = _lp(bytes(item[1]))
             if body is not None:
-                chunks.append(str(item[0]).encode("utf-8") + b"\0" + body)
+                mono = str(item[0]).encode("utf-8", "replace")
+                chunks.append(_lp(_lp(mono) + body))
                 continue
         path = item if isinstance(item, (str, Path)) else getattr(item, "path", None)
         if isinstance(path, (str, Path)) and Path(path).is_file():
             try:
-                chunks.append(Path(path).read_bytes())
+                chunks.append(_lp(Path(path).read_bytes()))
                 continue
             except OSError:
-                chunks.append(b"unhashed")
+                chunks.append(_lp(b"unhashed"))
                 continue
-        chunks.append(repr(item).encode("utf-8", "replace"))
-    return b"\n".join(chunks)
+        chunks.append(_lp(repr(item).encode("utf-8", "replace")))
+    return b"".join(chunks)
+
+
+def _instance_state(obj: Any, seen: set[int] | None = None, depth: int = 0) -> bytes:
+    """Public instance attributes, so a mutation after the first estimate changes the cache key."""
+    if obj is None or depth > 3:
+        return b""
+    encoded = _encode_cell(obj)
+    if encoded is not None:
+        return encoded
+    if seen is None:
+        seen = set()
+    if id(obj) in seen:
+        return b"cycle"
+    seen.add(id(obj))
+    data = getattr(obj, "__dict__", None)
+    if not isinstance(data, dict):
+        return f"id:{id(obj)}".encode("ascii")
+    parts: list[bytes] = []
+    for key in sorted(data):
+        if type(key) is not str or key.startswith("_"):
+            continue
+        value = data[key]
+        if callable(value):
+            continue
+        parts.append(key.encode("utf-8", "replace") + b"=" + _instance_state(value, seen, depth + 1))
+    return b"\n".join(parts)
 
 
 def frame_source_identity(frame_source: Any, frames: Sequence[Any]) -> str:
@@ -775,16 +877,19 @@ def frame_source_identity(frame_source: Any, frames: Sequence[Any]) -> str:
     return f"{_callable_path(frame_source)} {digest}"
 
 
-def estimate_cache_key(scorer: Any, estimator: Any | None, frame_source: Any, frames: Sequence[Any]) -> tuple[str, str]:
-    """Key by the full scorer identity and the frame-source identity.
+def estimate_cache_key(scorer: Any, estimator: Any | None, frame_source: Any, frames: Sequence[Any]) -> tuple[str, str, str]:
+    """Key by the full scorer identity, the frame-source identity, and instance state.
 
-    The identity covers the core class source and the scorer settings. The frame
-    half is the source path plus a hash of the frame bytes. Two cores in one
-    file, or two frame sources that share a path, still get different keys.
+    The identity covers the core class source, closure cells, and the scorer
+    settings. The frame half is the source path plus a hash of the frame bytes
+    (shape and dtype included). Instance state is the public attributes, so
+    mutating one after the first estimate misses. Two cores in one file, or two
+    frame sources that share a path, still get different keys.
     """
     ident = source_identity(scorer, estimator)
     fingerprint = ident.sha256 if ident.sha256 != "unhashed" else "unhashed:" + "|".join(ident.files)
-    return fingerprint, frame_source_identity(frame_source, frames)
+    state = hashlib.sha256(_instance_state(scorer) + b"\n" + _instance_state(estimator)).hexdigest()
+    return fingerprint, frame_source_identity(frame_source, frames), state
 
 
 class EstimateCache:
@@ -795,13 +900,13 @@ class EstimateCache:
     """
 
     def __init__(self) -> None:
-        self._store: dict[tuple[str, str], tuple[Any, ...]] = {}
+        self._store: dict[tuple[Any, ...], tuple[Any, ...]] = {}
 
-    def get(self, key: tuple[str, str]) -> tuple[Any, ...] | None:
+    def get(self, key: tuple[Any, ...]) -> tuple[Any, ...] | None:
         hit = self._store.get(key)
         return None if hit is None else tuple(hit)
 
-    def put(self, key: tuple[str, str], value: Sequence[Any]) -> None:
+    def put(self, key: tuple[Any, ...], value: Sequence[Any]) -> None:
         self._store[key] = tuple(value)
 
 

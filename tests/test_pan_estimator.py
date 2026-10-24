@@ -7,7 +7,6 @@ so a camera move of d px per frame is d / 320 * 10 * 100 %W/s.
 """
 from __future__ import annotations
 
-import ast
 import sys
 from pathlib import Path
 
@@ -258,85 +257,17 @@ def test_scorebug_mask_comes_from_the_local_scorebug_profile():
     assert pe.SCOREBUG_BAND in pe.DEFAULT_PARAMS.masks
 
 
-_VISION = "qor_receipt.vision"
-_SCAN_SKIP = frozenset({
-    "tests", "docs", "site", "verify", "schema", ".git", "node_modules", "__pycache__",
-})
-
-
-def _is_vision_module(name: object) -> bool:
-    return type(name) is str and (name == _VISION or name.startswith(_VISION + "."))
-
-
-def _call_imports_vision(node: ast.Call) -> bool:
-    func = node.func
-    if isinstance(func, ast.Name):
-        called = func.id
-    elif isinstance(func, ast.Attribute):
-        called = func.attr
-    else:
-        return False
-    if called not in {"import_module", "__import__"} or not node.args:
-        return False
-    arg = node.args[0]
-    return isinstance(arg, ast.Constant) and _is_vision_module(arg.value)
-
-
-def _file_imports_vision(path: Path) -> bool:
-    try:
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, SyntaxError):
-        return False
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import) and any(_is_vision_module(alias.name) for alias in node.names):
-            return True
-        if isinstance(node, ast.ImportFrom) and _is_vision_module(node.module):
-            return True
-        if isinstance(node, ast.Call) and _call_imports_vision(node):
-            return True
-    return False
-
-
-def vision_import_offenders(root: Path) -> list[str]:
-    """Python files on the verdict path that import ``qor_receipt.vision``.
-
-    The scan covers ``qor_receipt/`` except the vision package itself, every
-    Python file under ``services/``, and any other referee path that lives
-    outside ``qor_receipt/``. ``site/``, ``verify/``, and ``schema/`` are not
-    part of this scan.
-    """
-    paths: list[Path] = []
-    package = root / "qor_receipt"
-    if package.is_dir():
-        for path in package.rglob("*.py"):
-            if path.relative_to(package).parts[:1] == ("vision",):
-                continue
-            paths.append(path)
-    services = root / "services"
-    if services.is_dir():
-        paths.extend(path for path in services.rglob("*.py") if "__pycache__" not in path.parts)
-    for path in root.rglob("*.py"):
-        parts = path.relative_to(root).parts
-        if parts[0] in _SCAN_SKIP or parts[0] == "qor_receipt" or parts[0].endswith(".egg-info"):
-            continue
-        if any(part.endswith(".egg-info") or part in {"node_modules", "__pycache__"} for part in parts):
-            continue
-        if any("referee" in part for part in parts):
-            paths.append(path)
-    offenders: list[str] = []
-    for path in sorted(set(paths)):
-        if _file_imports_vision(path):
-            offenders.append(path.relative_to(root).as_posix())
-    return offenders
-
-
 def test_estimator_is_not_imported_by_referee_or_verifier_code():
     """Advisory only: the package, services/, and outside referee paths must not import it."""
-    assert vision_import_offenders(ROOT) == []
+    from redteam.imports_guard import verdict_path_import_offenders
+
+    assert verdict_path_import_offenders(ROOT) == []
 
 
 def test_an_import_from_services_is_rejected(tmp_path: Path):
     """A services/ module that imports the estimator is an offender, and so is an outside referee path."""
+    from redteam.imports_guard import verdict_path_import_offenders
+
     service = tmp_path / "services" / "referee"
     service.mkdir(parents=True)
     (service / "plug.py").write_text("from qor_receipt.vision.pan_estimator import OpticalFlowPanEstimator\n", encoding="utf-8")
@@ -347,7 +278,7 @@ def test_an_import_from_services_is_rejected(tmp_path: Path):
         "import importlib\nimportlib.import_module('qor_receipt.vision.pan_estimator')\n",
         encoding="utf-8",
     )
-    offenders = vision_import_offenders(tmp_path)
+    offenders = verdict_path_import_offenders(tmp_path)
     assert offenders == ["eval/referee_side.py", "services/referee/plug.py"]
 
 
