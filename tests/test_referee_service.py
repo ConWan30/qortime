@@ -408,6 +408,41 @@ def _withheld_review(tmp_path, prepare, *, stamp: bool = True):
     return out
 
 
+def _status_at_kickoff_issue(sub, state: str) -> dict:
+    from qor_receipt.review.bundle import wall_anchor
+
+    kick = next(c for c in sub.bundle.receipt["challenges"] if c["phase"] == "kickoff")
+    anchor = wall_anchor(sub.bundle) or 0
+    return _status_row(kick["issued_ms"] - anchor, state)
+
+
+def test_issue_time_status_tie_uses_the_referee_gate(tmp_path):
+    """asleep beside connected at issued_ms is unanswered. connected alone at that ms still fails."""
+    tied = Env(tmp_path / "tie", tail_ms=8_000, k=1)
+    sub = tied.submit()
+    _flip_kickoff_pattern(sub)
+    _stamp_chunk_times(sub)
+    sub.bundle.inputs.append(_status_at_kickoff_issue(sub, "asleep"))
+    sub.bundle.inputs.append(_status_at_kickoff_issue(sub, "connected"))
+    tied.upload_all(sub)
+    out = tied.ref.review(sub)
+    assert out["state"] == "awaiting_player_signature", json.dumps(out["review"]["checks"], indent=1)
+    assert out["review"]["checks"]["challenges"]["state"] == "partial"
+    assert "reason" not in out
+    final = tied.player_sign(sub)
+    kick = next(c for c in final["receipt"]["challenges"] if c["phase"] == "kickoff")
+    assert kick["result"] is None
+
+    alone = Env(tmp_path / "alone", tail_ms=8_000, k=1)
+    sub = alone.submit()
+    _flip_kickoff_pattern(sub)
+    _stamp_chunk_times(sub)
+    sub.bundle.inputs.append(_status_at_kickoff_issue(sub, "connected"))
+    alone.upload_all(sub)
+    refused = alone.ref.review(sub)
+    _assert_mismatch_refused(refused)
+
+
 def test_stall_glitch_is_unanswered_not_fail(tmp_path):
     """OPTIONS, then a stall, then nothing. That is not a player FAIL."""
 

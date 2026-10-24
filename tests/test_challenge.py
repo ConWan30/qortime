@@ -354,6 +354,25 @@ def test_no_status_rows_withhold_the_mismatch(tmp_path):
     assert stored is None and local["reason"] == "pattern_mismatch" and local["withheld"] == "controller_log"
 
 
+def test_status_tie_at_issue_fails_closed(tmp_path):
+    """Every status row at the last wall <= issued_ms must be connected, in either order."""
+    kick = _kickoff()
+    issued = kick["issued_ms"]
+    t0 = issued + 1_000
+    presses = [_press(t0, "OPTIONS"), _press(t0 + 400, _wrong_button(kick["pattern"]))]
+    span = _chunk_span(issued, kick["deadline_ms"])
+    stored, local = _boundary(tmp_path, "connected", [
+        _header(), _status(issued, "connected"), *presses, *span])
+    assert stored["reason"] == "pattern_mismatch" and "withheld" not in local
+    for name, first, second in (
+        ("asleep-then-connected", "asleep", "connected"),
+        ("connected-then-asleep", "connected", "asleep"),
+    ):
+        stored, local = _boundary(tmp_path, name, [
+            _header(), _status(issued, first), _status(issued, second), *presses, *span])
+        assert stored is None and local["withheld"] == "controller_log", name
+
+
 def test_status_rows_are_sorted_before_the_window_check(tmp_path):
     kick = _kickoff()
     issued, deadline = kick["issued_ms"], kick["deadline_ms"]

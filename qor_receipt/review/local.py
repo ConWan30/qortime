@@ -22,8 +22,11 @@ does not close the open. From that chunk each next chunk is at most 3000 ms late
 ``deadline_ms``. A last chunk before the deadline does not cover it, even when the deadline is within 3000 ms.
 A single chunk after the deadline does not cover the window, and neither does a
 crash gap followed by rows after the deadline. Wall time is header ``wall_anchor_ms`` plus ``t_us // 1000``.
-The pad's status must be ``connected`` at ``issued_ms`` and remain ``connected`` through ``deadline_ms + 2500``
-with no ``stalled``, ``unplugged``, or ``missing`` row in that span. A malformed status row withholds it.
+Status at issue is every status row at the latest wall time at or before ``issued_ms``. Each of those
+rows must be ``connected``. A non-connected row at that same millisecond, including an unknown state
+such as ``asleep``, withholds the result in either order. The pad must then remain ``connected`` through
+``deadline_ms + 2500``. Any other status in that span, including ``stalled``, ``unplugged``, and
+``missing``, withholds it. A malformed status row withholds it.
 OPTIONS alone, and OPTIONS inside the window with the rest of the pattern after the deadline, are that stored
 mismatch when the log passes this gate. Every other non-ok result stays ``result: null`` (the verifiers say
 ``challenge_unanswered``) and the reason goes to ``challenge_results.jsonl``, with
@@ -125,11 +128,13 @@ def inputs_log_intact(path: str | Path) -> bool:
 def pad_connected_through(records: list, *, issued_ms: int, deadline_ms: int, anchor_ms: int) -> bool:
     """True when status records show ``connected`` from issue through the stall lag.
 
-    Any status other than ``connected`` in ``[issued_ms, deadline_ms + STALL_LAG_MS]`` fails the check.
-    ``stalled``, ``unplugged``, and ``missing`` are examples, and so is an unplug that reconnects before
-    the deadline. A status row whose ``t_us``
-    is not an integer, or whose ``state`` is not a string, fails closed. Times are the same wall clock
-    as ``press_events`` (header ``wall_anchor_ms`` plus ``t_us // 1000``).
+    Status at issue is every row at the latest wall time at or before ``issued_ms``. Each of those
+    rows must be ``connected``. A non-connected row at that same millisecond, including an unknown
+    state such as ``asleep``, fails the check in either order. Any status other than ``connected``
+    after that, through ``deadline_ms + STALL_LAG_MS``, fails too. ``stalled``, ``unplugged``, and
+    ``missing`` are examples, and so is an unplug that reconnects before the deadline. A status row
+    whose ``t_us`` is not an integer, or whose ``state`` is not a string, fails closed. Times are
+    the same wall clock as ``press_events`` (header ``wall_anchor_ms`` plus ``t_us // 1000``).
     """
     events: list[tuple[int, str]] = []
     for r in records:
@@ -140,12 +145,12 @@ def pad_connected_through(records: list, *, issued_ms: int, deadline_ms: int, an
             return False
         events.append((anchor_ms + t_us // 1000, state))
     events.sort()
-    state: str | None = None
+    last: int | None = None
     i = 0
     while i < len(events) and events[i][0] <= issued_ms:
-        state = events[i][1]
+        last = events[i][0]
         i += 1
-    if state != "connected":
+    if last is None or any(state != "connected" for t, state in events if t == last):
         return False
     end = deadline_ms + STALL_LAG_MS
     while i < len(events) and events[i][0] <= end:
