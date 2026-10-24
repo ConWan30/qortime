@@ -71,23 +71,36 @@ The tested wheel is **`opencv-python-headless==5.0.0.93`** (OpenCV 5.0.0, `cp37-
 
 The committed red-team report (`motion-rule-v3-aimbot.md`) still uses the no_claim stubs. A test plugs this estimator in on synthetic frames and checks only the contract, the identity, and determinism. No catch rate is asserted or published, because pan versus right stick is not a valid Madden aimbot signal (see below).
 
-With that wheel the estimator hash is `b0c8f40d58ce3e577fd868594196966674b4fadc57772f6607c108a4457e6cfe`. Earlier revisions reported `e225c50d…` (before the OpenCV identity was hashed), `dcb9d149…` (before the clock gate), and `2d236634…` (before the per-bundle frame_bind gate). The per-bin outputs on the three clips are byte-identical across all of them.
+With that wheel the estimator hash is `b85405bd85431980e4094bbf36553052b64428d51ad33bf18967724d8290aae8`. Earlier revisions reported `e225c50d…` (before the OpenCV identity was hashed), `dcb9d149…` (before the clock gate), `2d236634…` (before the per-bundle frame_bind gate), and `b0c8f40d…` (before the status, coverage, and encode-latency conditions). The per-bin outputs on the three clips are byte-identical across all of them.
 
-## Per-bundle frame_bind gate for video-vs-log detectors
+## Per-bundle claim gate for video-vs-log detectors
 
-Any video-vs-log mismatch detector must call `mismatch_claim_allowed(frame_bind, video_ms, log_ms)` for the bundle it is judging before it claims anything. Examples are a skill move, a user catch, or controlled-player motion with no matching logged press.
+Any video-vs-log mismatch detector must call this for the bundle it is judging before it claims anything:
 
-The gate checks **that bundle**. It is not a code-level or global switch, and nothing turns it on when a PR merges.
+```python
+mismatch_claim_allowed(frame_bind_status, *, coverage, encode_latency, video_ms, log_ms)
+```
 
-- **The only allow path:** `frame_bind` is a `FrameBindVerification` with `status="verified"`, a `bundle_id`, and a 64-hex `chain_head`. That means this bundle's frame_bind chain verified. The chain follows the qorcap PR 75 design: `frames.jsonl` plus a running hash in checkpoints.
-- **Everything else is `no_claim`:**
-  - the default (`None`);
-  - a `missing`, `stripped`, or `broken` chain;
-  - any other status;
-  - a bare bool, a dict, or a subclass.
-- **Spacing never matters.** `video_ms` and `log_ms` never change the answer, so spacing alone never permits a claim. Tests fail if a spacing-only allow path comes back.
+Examples are a skill move, a user catch, or controlled-player motion with no matching logged press.
 
-**Nothing produces `verified` today.** qorcap PR 75 is not merged, and qortime has no frame_bind verifier. No code path in qortime can produce `status="verified"`, so in practice every mismatch claim is `no_claim` for now. The tests build a verified object by hand to exercise the allow path. Another test checks that no non-test qortime code constructs one.
+The gate checks that bundle. It is not a code-level or global switch, and nothing turns it on when a PR merges. **A claim is allowed only when all three conditions hold:**
+
+1. **`frame_bind_status` is `verified`.**
+   - The status comes from the bundle's frame_bind check, which follows the qorcap PR 75 design: `frames.jsonl` plus a running hash in checkpoints.
+   - The check returns one of `verified`, `missing`, `stripped`, `broken`, plus the chain head and coverage. The gate takes the status as `FrameBindStatus` or the exact string.
+   - The default is `missing`. `missing`, `stripped`, `broken`, any unknown string such as `VERIFIED` or `ok`, and any non-string are all `no_claim`.
+2. **`encode_latency` is a measured `EncodeLatencyCalibration`.**
+   - Frame `mono_ms` is stamped after encoding and pipe buffering. HID rows are stamped at the USB read. A press-to-frame gap therefore includes encode latency nobody has measured.
+   - The default is absent, which is `no_claim`.
+   - A calibration needs a source, a positive sample count, and finite, non-negative p50 and p99 with p50 ≤ p99. Anything else, including a dict, is `no_claim`.
+3. **The event lies inside a covered stretch of that bundle's coverage.**
+   - Coverage is a list of half-open `[start_ms, end_ms)` stretches. An `align_gap` is not covered, so an event in a gap is `no_claim` for that stretch.
+   - `video_ms` must be covered. So must `log_ms` when it is given.
+   - With no coverage, nothing is covered.
+
+Event spacing never permits a claim on its own. Tests fail if a spacing-only allow path comes back, and the gate has no path that relies on the observed skew below.
+
+**Nothing produces any of these today.** qorcap PR 75 is not merged, qortime has no frame_bind check, and there is no encode-latency calibration. Every mismatch claim is therefore `no_claim`. The tests hand-build a verified status, a calibration, and coverage to exercise the allow path. Another test checks that no other qortime module references or builds them.
 
 **Observation only, not a limit or threshold:**
 

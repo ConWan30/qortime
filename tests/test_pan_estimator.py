@@ -226,74 +226,96 @@ def test_skew_constants_are_observations_not_limits():
 SPACINGS_MS = (0, 1, 119, 120, 500, 719, 720, 1078, 1079, 1500, 10_000, 3_600_000, -719, -10_000)
 
 
-HEAD = "ab" * 32
+# Hand-built for the tests. qortime has no frame_bind check and no encode-latency
+# calibration yet (qorcap PR 75 is unmerged), so no production code produces these.
+CAL = pe.EncodeLatencyCalibration(source="test-rig", n_samples=200, p50_ms=38.0, p99_ms=71.0)
+COVER = [(0, 50_000), (52_000, 200_000)]  # align_gap at [50_000, 52_000)
+INSIDE = 100_000
 
 
-def _verified(bundle_id: str = "match-test") -> "pe.FrameBindVerification":
-    # Hand-built for the test. qortime has no frame_bind verifier yet (qorcap PR 75
-    # is unmerged), so no production code path produces this object.
-    return pe.FrameBindVerification(status="verified", bundle_id=bundle_id, chain_head=HEAD)
+def allowed(status=pe.FrameBindStatus.VERIFIED, coverage=COVER, cal=CAL, video_ms=INSIDE, log_ms=None):
+    return pe.mismatch_claim_allowed(status, coverage=coverage, encode_latency=cal, video_ms=video_ms, log_ms=log_ms)
 
 
-NO_CLAIM_INPUTS = [
-    None,
-    True,
-    1,
-    "verified",
-    {"status": "verified", "bundle_id": "m", "chain_head": HEAD},
-    pe.FrameBindVerification(status="missing", bundle_id="m", detail="no frames.jsonl"),
-    pe.FrameBindVerification(status="stripped", bundle_id="m", detail="checkpoints lost running hash"),
-    pe.FrameBindVerification(status="broken", bundle_id="m", chain_head=HEAD, detail="link 41 mismatch"),
-    pe.FrameBindVerification(status="VERIFIED", bundle_id="m", chain_head=HEAD),
-    pe.FrameBindVerification(status="ok", bundle_id="m", chain_head=HEAD),
-    pe.FrameBindVerification(status="verified", bundle_id=None, chain_head=HEAD),
-    pe.FrameBindVerification(status="verified", bundle_id="m", chain_head=None),
-    pe.FrameBindVerification(status="verified", bundle_id="m", chain_head="AB" * 32),
-    pe.FrameBindVerification(status="verified", bundle_id="m", chain_head="ab" * 31),
-]
+def test_all_three_conditions_allow_and_spacing_inside_coverage_does_not_matter():
+    assert allowed() is True
+    assert allowed(status="verified") is True
+    for d in (0, 1, 150, 719, 1079, 5_000):
+        assert allowed(video_ms=INSIDE + d, log_ms=INSIDE) is True
 
 
-@pytest.mark.parametrize("frame_bind", NO_CLAIM_INPUTS, ids=lambda v: repr(v)[:60])
-def test_without_a_verified_bundle_chain_every_mismatch_is_no_claim(frame_bind):
-    """Missing, stripped, broken, malformed, or non-object input: no_claim at every spacing.
-
-    Fails if a spacing-only allow path comes back.
-    """
-    for spacing in SPACINGS_MS:
-        assert pe.mismatch_claim_allowed(frame_bind, video_ms=100_000 + spacing, log_ms=100_000) is False
-    assert pe.mismatch_claim_allowed(frame_bind) is False
-
-
-def test_default_is_no_claim_and_statuses_are_closed():
+def test_defaults_are_no_claim():
     assert pe.mismatch_claim_allowed() is False
-    assert pe.FRAME_BIND_STATUSES == {"verified", "missing", "stripped", "broken"}
+    assert pe.mismatch_claim_allowed(video_ms=INSIDE, log_ms=INSIDE) is False
+    assert pe.mismatch_claim_allowed(pe.FrameBindStatus.VERIFIED, video_ms=INSIDE) is False  # no coverage, no calibration
+    assert {s.value for s in pe.FrameBindStatus} == {"verified", "missing", "stripped", "broken"}
 
 
-def test_verified_chain_is_the_only_allow_path_and_spacing_does_not_matter():
-    results = {pe.mismatch_claim_allowed(_verified(), video_ms=100_000 + d, log_ms=100_000) for d in SPACINGS_MS}
-    assert results == {True}
+@pytest.mark.parametrize("status", ["missing", "stripped", "broken",
+                                    pe.FrameBindStatus.MISSING, pe.FrameBindStatus.STRIPPED, pe.FrameBindStatus.BROKEN])
+def test_each_non_verified_status_is_no_claim(status):
+    assert allowed(status=status) is False
 
-    class Subclass(pe.FrameBindVerification):
-        pass
 
-    assert pe.mismatch_claim_allowed(Subclass(status="verified", bundle_id="m", chain_head=HEAD)) is False
+@pytest.mark.parametrize("status", ["VERIFIED", "Verified", " verified", "ok", "unknown", "", None, True, 1, ["verified"]])
+def test_unknown_or_non_string_status_is_no_claim(status):
+    assert allowed(status=status) is False
+
+
+@pytest.mark.parametrize("cal", [
+    None,
+    {"source": "rig", "n_samples": 10, "p50_ms": 30.0, "p99_ms": 60.0},
+    pe.EncodeLatencyCalibration(source="", n_samples=10, p50_ms=30.0, p99_ms=60.0),
+    pe.EncodeLatencyCalibration(source="rig", n_samples=0, p50_ms=30.0, p99_ms=60.0),
+    pe.EncodeLatencyCalibration(source="rig", n_samples=10, p50_ms=float("nan"), p99_ms=60.0),
+    pe.EncodeLatencyCalibration(source="rig", n_samples=10, p50_ms=-1.0, p99_ms=60.0),
+    pe.EncodeLatencyCalibration(source="rig", n_samples=10, p50_ms=90.0, p99_ms=60.0),
+])
+def test_verified_chain_without_measured_encode_latency_is_no_claim(cal):
+    assert allowed(cal=cal) is False
+
+
+def test_event_in_an_align_gap_or_outside_coverage_is_no_claim():
+    assert allowed(video_ms=50_000) is False  # first ms of the gap
+    assert allowed(video_ms=51_999) is False  # last ms of the gap
+    assert allowed(video_ms=52_000) is True   # coverage resumes
+    assert allowed(video_ms=49_999) is True
+    assert allowed(video_ms=200_000) is False  # past the end (half-open)
+    assert allowed(video_ms=INSIDE, log_ms=51_000) is False  # log event in the gap
+    assert allowed(video_ms=None) is False
+    for bad in (None, [], "0-200000", [(10, 10)], [(20, 10)], [(0.0, 200_000.0)], [5]):
+        assert allowed(coverage=bad) is False
+
+
+def test_without_every_condition_spacing_never_permits_a_claim():
+    """Fails if a spacing-only allow path comes back."""
+    partial = [
+        dict(status="missing"), dict(status="broken"), dict(status="stripped"), dict(status="nope"),
+        dict(cal=None), dict(coverage=None), dict(coverage=[(0, 1)]),
+    ]
+    for kwargs in partial:
+        for spacing in SPACINGS_MS:
+            assert allowed(video_ms=INSIDE + spacing, log_ms=INSIDE, **kwargs) is False
     gate_src = inspect.getsource(pe.mismatch_claim_allowed)
     body = gate_src.split('"""')[-1]
-    for name in ("OBSERVED_MAX_CLIP_CLOCK_SKEW_MS", "OBSERVED_CLIP_CLOCK_SKEW_RANGE_MS", "SKEW_MARGIN_FACTOR", "719", "abs(", "os.environ", "getenv"):
+    for name in ("OBSERVED_MAX_CLIP_CLOCK_SKEW_MS", "OBSERVED_CLIP_CLOCK_SKEW_RANGE_MS", "SKEW_MARGIN_FACTOR", "719",
+                 "abs(", "os.environ", "getenv"):
         assert name not in body
 
 
-def test_nothing_in_qortime_produces_a_verified_frame_bind_yet():
-    """qorcap PR 75 is not merged; no non-test code constructs FrameBindVerification."""
+def test_nothing_in_qortime_produces_a_verified_status_or_a_calibration_yet():
+    """qorcap PR 75 is not merged; no non-test qortime code builds a calibration or a verified status."""
     users = []
     for path in sorted((ROOT / "qor_receipt").rglob("*.py")):
+        text = path.read_text(encoding="utf-8")
         if path.name == "pan_estimator.py":
+            assert "EncodeLatencyCalibration(" not in text
+            assert "FrameBindStatus.VERIFIED" in text  # only the gate's comparison
+            assert text.count("FrameBindStatus.VERIFIED") == 1
             continue
-        if "FrameBindVerification" in path.read_text(encoding="utf-8"):
+        if "EncodeLatencyCalibration" in text or "FrameBindStatus" in text or "mismatch_claim_allowed" in text:
             users.append(str(path))
     assert users == []
-    src = (ROOT / "qor_receipt" / "vision" / "pan_estimator.py").read_text(encoding="utf-8")
-    assert src.count("FrameBindVerification(") == 0  # the class is declared, never instantiated in the module
 
 
 def test_scorebug_mask_comes_from_the_local_scorebug_profile():

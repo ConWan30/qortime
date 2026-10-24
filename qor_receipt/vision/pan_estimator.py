@@ -52,17 +52,26 @@ Per-bundle frame_bind gate (applies to any future video-vs-log mismatch detector
 --------------------------------------------------------------------------------
 A detector that compares an on-screen event with the USB HID log (skill move,
 user catch, controlled-player motion with no matching logged press) must call
-``mismatch_claim_allowed(frame_bind)`` for the bundle it is judging. The gate is
-per bundle, not a code-level switch: a claim is allowed only when *that* bundle
-carries a frame_bind chain (qorcap PR 75 design: ``frames.jsonl`` plus a running
-hash in checkpoints) that verified, passed in as a ``FrameBindVerification``
-with status ``verified``. A missing, stripped, or broken chain, an unknown
-status, ``None``, or a bare bool is ``no_claim``, whatever the event spacing.
-Spacing alone never permits a claim.
+``mismatch_claim_allowed`` for the bundle it is judging. The gate is per bundle,
+not a code-level switch. A claim is allowed only when ALL of these hold:
 
-qorcap PR 75 is not merged, and nothing in qortime verifies a frame_bind chain
-yet, so no code path here can produce ``status="verified"`` today: in practice
-every mismatch claim is ``no_claim`` until a verifier exists.
+1. ``frame_bind_status`` for *that* bundle is ``verified``. The status comes
+   from the bundle's frame_bind check (qorcap PR 75 design: ``frames.jsonl``
+   plus a running hash in checkpoints), one of verified / missing / stripped /
+   broken. Default is ``missing``. Any other or unknown value is ``no_claim``.
+2. ``encode_latency`` is a measured ``EncodeLatencyCalibration``. Frame
+   ``mono_ms`` is stamped after encoding and pipe buffering, while HID rows are
+   stamped at the USB read, so a press-to-frame gap includes encode latency
+   nobody has measured. Default is absent, which is ``no_claim``.
+3. The event falls inside a covered stretch of that bundle's frame_bind
+   ``coverage``. An ``align_gap`` is simply not covered: an event in a gap is
+   ``no_claim`` for that stretch. No coverage means nothing is covered.
+
+Event spacing alone never permits a claim.
+
+Nothing produces any of these today: qorcap PR 75 is not merged, qortime has
+no frame_bind check and no encode-latency calibration. Every mismatch claim is
+``no_claim`` until both exist.
 
 Observation only, not a limit or threshold: on the match 170123 highlight
 clips (one session, 3 clips), two independent clip-to-capture-clock alignments
@@ -78,6 +87,7 @@ import json
 import math
 from collections.abc import Iterable, Sequence
 from dataclasses import asdict, dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -108,54 +118,94 @@ SKEW_MARGIN_FACTOR = 1.5
 # bundle's verified binding, not these numbers, must then define any timing
 # tolerance. The gate below does not read them.
 
-FRAME_BIND_VERIFIED = "verified"
-FRAME_BIND_MISSING = "missing"    # bundle has no frames.jsonl / no running hash in checkpoints
-FRAME_BIND_STRIPPED = "stripped"  # bundle shows signs a chain was there and was removed
-FRAME_BIND_BROKEN = "broken"      # chain present but a link, hash, or checkpoint does not verify
-FRAME_BIND_STATUSES = frozenset({FRAME_BIND_VERIFIED, FRAME_BIND_MISSING, FRAME_BIND_STRIPPED, FRAME_BIND_BROKEN})
+class FrameBindStatus(str, Enum):
+    """Result of one bundle's frame_bind check (qorcap PR 75 design)."""
+
+    VERIFIED = "verified"
+    MISSING = "missing"    # no frames.jsonl / no running hash in checkpoints
+    STRIPPED = "stripped"  # signs a chain was there and was removed
+    BROKEN = "broken"      # chain present but a link, hash, or checkpoint does not verify
 
 
 @dataclass(frozen=True)
-class FrameBindVerification:
-    """Result of verifying one bundle's frame_bind chain (qorcap PR 75 design).
+class EncodeLatencyCalibration:
+    """Measured capture-to-stamp latency for frames (encode + pipe buffering), in ms.
 
-    Produced by a frame_bind verifier for one specific bundle. No such verifier
-    exists in qortime yet, so nothing here produces ``status="verified"``.
-    ``chain_head`` is the verified chain head (64 lowercase hex) when verified.
+    Must come from a measurement on the capture rig. Nothing in qortime produces
+    one yet. ``n_samples`` must be positive and the latencies finite, non-negative,
+    with ``p50_ms <= p99_ms``.
     """
 
-    status: str
-    bundle_id: str | None = None
-    chain_head: str | None = None
-    detail: str = ""
+    source: str
+    n_samples: int
+    p50_ms: float
+    p99_ms: float
 
 
-def _hex64(value: Any) -> bool:
-    return isinstance(value, str) and len(value) == 64 and all(c in "0123456789abcdef" for c in value)
+Stretch = tuple[int, int]  # half-open [start_ms, end_ms) of frame_bind coverage on the capture clock
+
+
+def _calibration_ok(cal: Any) -> bool:
+    if type(cal) is not EncodeLatencyCalibration:
+        return False
+    if not isinstance(cal.source, str) or not cal.source:
+        return False
+    if isinstance(cal.n_samples, bool) or not isinstance(cal.n_samples, int) or cal.n_samples <= 0:
+        return False
+    vals = (cal.p50_ms, cal.p99_ms)
+    if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v < 0 for v in vals):
+        return False
+    return cal.p50_ms <= cal.p99_ms
+
+
+def _covered(t_ms: Any, coverage: Any) -> bool:
+    if isinstance(t_ms, bool) or not isinstance(t_ms, int):
+        return False
+    if coverage is None or isinstance(coverage, (str, bytes)):
+        return False
+    try:
+        stretches = list(coverage)
+    except TypeError:
+        return False
+    for stretch in stretches:
+        try:
+            start, end = stretch
+        except (TypeError, ValueError):
+            continue
+        if any(isinstance(v, bool) or not isinstance(v, int) for v in (start, end)) or start >= end:
+            continue
+        if start <= t_ms < end:
+            return True
+    return False
 
 
 def mismatch_claim_allowed(
-    frame_bind: FrameBindVerification | None = None,
+    frame_bind_status: FrameBindStatus | str = FrameBindStatus.MISSING,
+    *,
+    coverage: Sequence[Stretch] | None = None,
+    encode_latency: EncodeLatencyCalibration | None = None,
     video_ms: int | None = None,
     log_ms: int | None = None,
 ) -> bool:
     """Per-bundle gate for any video-vs-log mismatch claim. False means ``no_claim``.
 
-    The only allow path: ``frame_bind`` is a ``FrameBindVerification`` for the
-    bundle being judged, with ``status == "verified"``, a ``bundle_id``, and a
-    64-hex ``chain_head``. The default (``None``), a missing, stripped, or broken
-    chain, any other status, a bare bool, or any other object is ``no_claim``.
-    ``video_ms`` and ``log_ms`` never change the answer: event spacing alone
+    Allowed only when (1) ``frame_bind_status`` is ``verified`` for this bundle,
+    (2) ``encode_latency`` is a measured ``EncodeLatencyCalibration``, and
+    (3) ``video_ms`` (and ``log_ms`` when given) lie inside a covered stretch of
+    this bundle's ``coverage``. Missing, stripped, broken, unknown, or non-string
+    statuses; absent or malformed calibration; no coverage; and events in an
+    align_gap are all ``no_claim``. Spacing between ``video_ms`` and ``log_ms``
     never permits a claim, and nothing here relies on the observed skew.
     """
-    del video_ms, log_ms
-    if type(frame_bind) is not FrameBindVerification:
+    if not isinstance(frame_bind_status, str) or frame_bind_status != FrameBindStatus.VERIFIED.value:
         return False
-    if frame_bind.status != FRAME_BIND_VERIFIED:
+    if not _calibration_ok(encode_latency):
         return False
-    if not isinstance(frame_bind.bundle_id, str) or not frame_bind.bundle_id:
+    if not _covered(video_ms, coverage):
         return False
-    return _hex64(frame_bind.chain_head)
+    if log_ms is not None and not _covered(log_ms, coverage):
+        return False
+    return True
 
 FracBox = tuple[float, float, float, float]  # x0, x1, y0, y1 as fractions of the full frame
 
