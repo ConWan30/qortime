@@ -547,6 +547,26 @@ def test_import_guard_blocks_urllib_request_and_network_tools():
         assert "site/" not in text
         assert "SoftwareKey" not in text
     assert audit_source(Path(__file__).read_text(encoding="utf-8"), filename="test") == []
+    for name in (
+        "ssl", "ftplib", "smtplib", "poplib", "imaplib", "xmlrpc", "telnetlib",
+        "websockets", "urllib3", "aiohttp", "httpx", "http.client",
+    ):
+        found = audit_source(f"import {name}\n")
+        assert found and name in found[0]
+    dynamic = audit_source('import importlib\nimportlib.import_module("socket")\n')
+    assert any("socket" in item for item in dynamic)
+    builtin = audit_source('import builtins\nbuiltins.__import__("requests")\n')
+    assert any("requests" in item for item in builtin)
+    dunder = audit_source('__import__("ssl")\n')
+    assert any("ssl" in item for item in dunder)
+    opened = audit_source("import asyncio\nasyncio.open_connection('h', 80)\n")
+    assert any("open_connection" in item for item in opened)
+    created = audit_source("import asyncio\nasyncio.create_connection(None)\n")
+    assert any("create_connection" in item for item in created)
+    sock = audit_source('import socket\nsocket.create_connection(("h", 80))\n')
+    assert any("create_connection" in item for item in sock)
+    connect = audit_source('import socket\nsocket.socket().connect(("h", 80))\n')
+    assert any("connect" in item for item in connect)
 
 
 SYNTHETIC_RATE_CAVEAT = (
@@ -604,7 +624,7 @@ def test_harness_process_does_not_import_referee_modules():
     floor from ``receipt.py`` as text and does not import ``qor_receipt.receipt``, so
     the trust root never loads. Dropping it from this list would hide that import.
     """
-    assert "trusted_referees" in _FORBIDDEN_MODULE_TOKENS
+    assert _FORBIDDEN_MODULE_TOKENS == ("qor_receipt.referee", "referee_service", "trusted_referees")
     code = (
         "import json, sys\n"
         "sys.path.insert(0, 'tests')\n"
@@ -633,6 +653,49 @@ def test_harness_process_does_not_import_referee_modules():
         assert name not in loaded
     assert "qor_receipt.review.motion" in loaded
     assert "qor_receipt.review.media" in loaded
+
+
+def test_socket_and_requests_blocked_while_harness_runs():
+    """The network guard is on while evaluate() scores, including dynamic imports."""
+    code = (
+        "import json, sys\n"
+        "sys.path.insert(0, 'tests')\n"
+        "from redteam.aimbot_harness import evaluate\n"
+        "from redteam.imports_guard import install_network_guard\n"
+        "install_network_guard()\n"
+        "report = evaluate()\n"
+        "assert len(report.variants) == 11\n"
+        "import importlib, builtins\n"
+        "sys.modules.pop('socket', None)\n"
+        "sys.modules.pop('requests', None)\n"
+        "sys.modules.pop('http.client', None)\n"
+        "blocked = []\n"
+        "def attempt(label, fn):\n"
+        "    try:\n"
+        "        fn()\n"
+        "    except ImportError as exc:\n"
+        "        if 'blocked import' not in str(exc):\n"
+        "            raise\n"
+        "        blocked.append(label)\n"
+        "    else:\n"
+        "        raise SystemExit('not blocked: ' + label)\n"
+        "attempt('socket', lambda: __import__('socket'))\n"
+        "attempt('requests', lambda: __import__('requests'))\n"
+        "attempt('importlib.import_module', lambda: importlib.import_module('socket'))\n"
+        "attempt('builtins.__import__', lambda: builtins.__import__('http.client'))\n"
+        "print(json.dumps({'variants': len(report.variants), 'blocked': blocked}))\n"
+    )
+    proc = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(proc.stdout)
+    assert payload["variants"] == 11
+    assert payload["blocked"] == ["socket", "requests", "importlib.import_module", "builtins.__import__"]
 
 
 def test_report_prints_and_matches_the_committed_doc(capsys):

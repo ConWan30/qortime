@@ -702,6 +702,8 @@ def render_report(report: Report | None = None) -> str:
         "",
         f"Harness `{report.harness_version}` for package `qor-receipt=={report.package_version}`. Harness sha256 `{report.harness_sha256}` over {len(report.harness_files)} files.",
         "",
+        "The harness sha256 moved because `tests/redteam/scorers.py` and `tests/redteam/aimbot_harness.py` changed. It is still the package version plus the sorted in-repo Python files reachable from the harness. It does not include scorer settings.",
+        "",
         "## Headline: honest USB log, assisted screen",
         "",
         "A passthrough adapter injects aim into the console. QorCap's USB log records the human and is sealed at capture, so chunk hashes and checkpoint `input_hash` match the logged rows. Input proof passes. The screen shows the injected aim. Motion rule v3 correlates row counts with frame-difference energy and does not read stick axes.",
@@ -742,7 +744,18 @@ def render_report(report: Report | None = None) -> str:
         "",
         "Catch rate is flagged attacks divided by decided attacks. False-alarm rate is flagged benign divided by decided benign. An abstention is neither. The rates below are the honest-seal cohort, which is the traffic input proof would let through. Log-tamper rates are in the JSON block.",
         "",
-        f"Each scorer sha256 is the hash of `qor-receipt=={report.package_version}`, the scorer and estimator version strings, and the sorted repo-relative path plus bytes of the scorer module and its transitive in-repo imports.",
+        (
+            f"Each scorer sha256 is the hash of `qor-receipt=={report.package_version}`, the scorer and estimator version strings, "
+            "the canonical JSON of runtime settings (such as `min_confidence` and any thresholds passed at construction), "
+            "a self-reported estimator sha256 only when it is a property whose value is exactly 64 lowercase hex characters (a copied string is not stored), "
+            "the sorted repo-relative path plus bytes of the scorer module and its transitive in-repo imports, "
+            "the source of an injected estimator or `core` (a hash of that class's own source, and, outside the repo, a path relative to the module root), "
+            "and declared non-Python weight, model, or data files hashed by bytes. "
+            "A file that cannot be read is recorded as `unhashed` and is not dropped. "
+            "An invalid self-reported hash, or an implementation whose file cannot be resolved or read, "
+            "makes the identity `unhashed` so the bad value is never interpolated. "
+            "The hashes in the table moved because that coverage is new and because `tests/redteam/scorers.py` changed."
+        ),
         "",
         "**SYNTHETIC-DATA CAVEAT:** these rates come from synthetic data with only one benign sample (n=1 control) and are NOT real-world or measured detection/false-alarm rates; '0/1 false alarms' is not a false-alarm rate.",
         "",
