@@ -700,7 +700,11 @@ def render_report(report: Report | None = None) -> str:
         "",
         "Test-only harness under `tests/redteam/`. It scores controller logs by calling `input_energy_series`, `score_motion`, `check_inputs`, `check_checkpoints`, and `check_input_files` in process. It does not sign a receipt, does not hold a referee key, and does not open a network connection. Nothing here is a submission.",
         "",
+        "The network guard a test can install around a run is a tripwire. It refuses network modules and a few process calls (socket, subprocess.Popen, os.system, os.spawn, ctypes) for the rest of that process.",
+        "",
         f"Harness `{report.harness_version}` for package `qor-receipt=={report.package_version}`. Harness sha256 `{report.harness_sha256}` over {len(report.harness_files)} files.",
+        "",
+        "The harness sha256 moved because `tests/redteam/scorers.py` and `tests/redteam/aimbot_harness.py` changed. It is still the package version plus the sorted in-repo Python files reachable from the harness. It does not include scorer settings.",
         "",
         "## Headline: honest USB log, assisted screen",
         "",
@@ -742,7 +746,17 @@ def render_report(report: Report | None = None) -> str:
         "",
         "Catch rate is flagged attacks divided by decided attacks. False-alarm rate is flagged benign divided by decided benign. An abstention is neither. The rates below are the honest-seal cohort, which is the traffic input proof would let through. Log-tamper rates are in the JSON block.",
         "",
-        f"Each scorer sha256 is the hash of `qor-receipt=={report.package_version}`, the scorer and estimator version strings, and the sorted repo-relative path plus bytes of the scorer module and its transitive in-repo imports.",
+        (
+            f"Each scorer sha256 is the hash of `qor-receipt=={report.package_version}`, the scorer and estimator version strings, "
+            "the canonical JSON of runtime settings (such as `min_confidence` and any thresholds passed at construction), "
+            "an estimator sha256 only when the class object is OpticalFlowPanEstimator, recomputed from that module's source (a copied attribute, property, __module__, or __qualname__ is not trusted), "
+            "the sorted repo-relative path plus bytes of the scorer module and its transitive in-repo imports, "
+            "the source of an injected estimator or `core` (a hash of that class's own source, and, outside the repo, a path relative to the module root), "
+            "and declared non-Python weight, model, or data files hashed by bytes. "
+            "A file that cannot be read is recorded as `unhashed` and is not dropped. "
+            "An implementation whose file cannot be resolved or read makes the identity `unhashed`, and an unhashed result is not cached. "
+            "The hashes in the table moved because that coverage is new and because `tests/redteam/scorers.py` changed."
+        ),
         "",
         "**SYNTHETIC-DATA CAVEAT:** these rates come from synthetic data with only one benign sample (n=1 control) and are NOT real-world or measured detection/false-alarm rates; '0/1 false alarms' is not a false-alarm rate.",
         "",

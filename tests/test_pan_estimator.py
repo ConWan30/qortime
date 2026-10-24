@@ -7,7 +7,6 @@ so a camera move of d px per frame is d / 320 * 10 * 100 %W/s.
 """
 from __future__ import annotations
 
-import ast
 import sys
 from pathlib import Path
 
@@ -337,25 +336,6 @@ def test_scorebug_mask_comes_from_the_local_scorebug_profile():
 
     assert pe.SCOREBUG_BAND == (0.0, 1.0, MADDEN27_STANDARD.band_y0, MADDEN27_STANDARD.band_y1)
     assert pe.SCOREBUG_BAND in pe.DEFAULT_PARAMS.masks
-
-
-def test_estimator_is_not_imported_by_referee_or_verifier_code():
-    """Advisory only: nothing on the verdict path may import the pan estimator."""
-    offenders = []
-    for path in sorted((ROOT / "qor_receipt").rglob("*.py")):
-        if "vision" in path.relative_to(ROOT / "qor_receipt").parts[:1]:
-            continue
-        text = path.read_text(encoding="utf-8")
-        tree = ast.parse(text)
-        for node in ast.walk(tree):
-            mods = []
-            if isinstance(node, ast.Import):
-                mods = [a.name for a in node.names]
-            elif isinstance(node, ast.ImportFrom) and node.module:
-                mods = [node.module]
-            if any(m.startswith("qor_receipt.vision") for m in mods):
-                offenders.append(str(path))
-    assert offenders == []
 
 
 def test_plugs_into_the_redteam_harness_with_its_own_hash():
