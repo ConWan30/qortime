@@ -10,7 +10,14 @@ way when the module name is a string literal.
 ``install_network_guard`` rejects those imports for the rest of the process and
 installs an audit hook for ``socket.*``, ``subprocess.Popen``, ``os.system``,
 ``os.spawn*``, and ``ctypes.*``. A later call raises. The hook cannot be
-removed, and it does not confine the process.
+removed, and it does not confine the process. ``os.fork`` followed by
+``os.execv`` does not raise one of those audit events, so it slips past the hook.
+
+The static verdict-path scan also treats ``exec`` / ``eval``, ``runpy``,
+``importlib.util.spec_from_file_location``, ``getattr`` on ``importlib``, and
+``__builtins__.__import__`` as loaders. A non-constant argument is an offender.
+A loader hidden in a C extension, or a name built and passed through a function
+this scan does not recognize, is not visible in the file.
 """
 from __future__ import annotations
 
@@ -210,6 +217,7 @@ def install_network_guard() -> None:
     stops a later import of ``socket``, ``requests``, or ``urllib.request``.
     The audit hook is the same kind of tripwire for ``socket.*``,
     ``subprocess.Popen``, ``os.system``, ``os.spawn*``, and ``ctypes.*``.
+    ``os.fork`` followed by ``os.execv`` does not trip that hook.
     """
     global _GUARD_INSTALLED
     if _GUARD_INSTALLED:
@@ -244,9 +252,11 @@ _SCAN_SKIP = frozenset({
 
 
 def _banned_module(name: str, *, redteam: bool) -> bool:
+    if name == "runpy" or name.startswith("runpy."):
+        return True
     if name == _VISION or name.startswith(_VISION + "."):
         return True
-    if redteam and (name == _REDTEAM or name.startswith(_REDTEAM + ".")):
+    if redteam and (_REDTEAM == name or name.startswith(_REDTEAM + ".") or _REDTEAM in name.split(".")):
         return True
     return False
 
@@ -274,8 +284,11 @@ def _resolve_relative(name: str, package: str) -> str | None:
 def _expr_name(node: ast.expr) -> str | None:
     if isinstance(node, ast.Name):
         return node.id
-    if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
-        return f"{node.value.id}.{node.attr}"
+    if isinstance(node, ast.Attribute):
+        base = _expr_name(node.value)
+        if base is None:
+            return None
+        return f"{base}.{node.attr}"
     return None
 
 
@@ -298,31 +311,60 @@ def _str_elts(node: ast.expr | None) -> list[str] | None:
 
 
 def _import_aliases(tree: ast.AST) -> dict[str, str]:
-    """Map local names to ``import_module`` or ``__import__``, following aliases."""
+    """Map local names to a loader kind, following aliases and ``getattr``."""
     known = {
         "import_module": "import_module",
         "importlib.import_module": "import_module",
         "__import__": "__import__",
         "builtins.__import__": "__import__",
+        "__builtins__.__import__": "__import__",
+        "importlib.util.spec_from_file_location": "spec",
+        "runpy.run_path": "runpy",
+        "runpy.run_module": "runpy",
     }
     assigns: list[tuple[str, str]] = []
+    getattr_assigns: list[tuple[str, str, str | None]] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                local = alias.asname or alias.name.split(".")[-1]
+                local = alias.asname or alias.name
+                leaf = alias.asname or alias.name.split(".")[-1]
                 if alias.name == "importlib":
-                    known[f"{alias.asname or alias.name}.import_module"] = "import_module"
+                    bound = alias.asname or alias.name
+                    known[f"{bound}.import_module"] = "import_module"
+                    known[f"{bound}.util.spec_from_file_location"] = "spec"
+                elif alias.name == "importlib.util":
+                    known[f"{leaf}.spec_from_file_location"] = "spec"
                 elif alias.name == "importlib.import_module":
                     known[alias.asname or "import_module"] = "import_module"
                 elif alias.name == "builtins":
                     known[f"{alias.asname or alias.name}.__import__"] = "__import__"
+                elif alias.name == "runpy":
+                    known[f"{leaf}.run_path"] = "runpy"
+                    known[f"{leaf}.run_module"] = "runpy"
                 elif alias.name in {"import_module", "__import__"}:
                     known[local] = alias.name
-        elif isinstance(node, ast.ImportFrom) and node.module in {"importlib", "builtins"}:
+        elif isinstance(node, ast.ImportFrom) and node.module in {"importlib", "builtins", "runpy"}:
             for alias in node.names:
                 if alias.name in {"import_module", "__import__"}:
                     known[alias.asname or alias.name] = alias.name
+                elif node.module == "importlib" and alias.name == "util":
+                    known[f"{alias.asname or alias.name}.spec_from_file_location"] = "spec"
+                elif node.module == "runpy" and alias.name in {"run_path", "run_module"}:
+                    known[alias.asname or alias.name] = "runpy"
+        elif isinstance(node, ast.ImportFrom) and node.module == "importlib.util":
+            for alias in node.names:
+                if alias.name == "spec_from_file_location":
+                    known[alias.asname or alias.name] = "spec"
         elif isinstance(node, ast.Assign):
+            got = _getattr_parts(node.value)
+            if got is not None:
+                base, attr = got
+                for target in node.targets:
+                    name = _expr_name(target)
+                    if name:
+                        getattr_assigns.append((name, base, attr))
+                continue
             src = _expr_name(node.value)
             if src is None:
                 continue
@@ -337,7 +379,42 @@ def _import_aliases(tree: ast.AST) -> dict[str, str]:
             if src in known and known.get(name) != known[src]:
                 known[name] = known[src]
                 changed = True
+        for name, base, attr in getattr_assigns:
+            if not _is_loader_base(base, known):
+                continue
+            kind = _loader_attr_kind(attr)
+            if known.get(name) != kind:
+                known[name] = kind
+                changed = True
     return known
+
+
+def _getattr_parts(node: ast.expr) -> tuple[str, str | None] | None:
+    """``(base, attr)`` for ``getattr(base, attr)``. ``attr`` is None when it is not a string."""
+    if not isinstance(node, ast.Call) or _expr_name(node.func) != "getattr" or len(node.args) < 2:
+        return None
+    base = _expr_name(node.args[0])
+    if base is None:
+        return None
+    return base, _const_text(node.args[1])
+
+
+def _is_loader_base(base: str, known: dict[str, str]) -> bool:
+    if base in {"importlib", "builtins", "__builtins__", "importlib.util"}:
+        return True
+    return any(name.startswith(base + ".") and known[name] in {"import_module", "__import__", "spec", "runpy"} for name in known)
+
+
+def _loader_attr_kind(attr: str | None) -> str:
+    if attr == "import_module":
+        return "import_module"
+    if attr == "__import__":
+        return "__import__"
+    if attr == "spec_from_file_location":
+        return "spec"
+    if attr in {"run_path", "run_module"}:
+        return "runpy"
+    return "<dynamic>"
 
 
 def _from_targets(path: Path, root: Path, node: ast.ImportFrom) -> list[str]:
@@ -411,6 +488,53 @@ def _dynamic_targets(node: ast.Call, aliases: dict[str, str], path: Path, root: 
     return targets
 
 
+def _getattr_loader(node: ast.expr, aliases: dict[str, str]) -> str | None:
+    """Loader kind for ``getattr`` on ``importlib`` or ``builtins``, or ``'<dynamic>'``."""
+    got = _getattr_parts(node)
+    if got is None:
+        return None
+    base, attr = got
+    if not _is_loader_base(base, aliases):
+        return None
+    return _loader_attr_kind(attr)
+
+
+def _call_loader(node: ast.Call, aliases: dict[str, str]) -> str | None:
+    kind = aliases.get(_expr_name(node.func) or "")
+    if kind in {"spec", "import_module", "__import__", "runpy", "<dynamic>"}:
+        return kind
+    got = _getattr_loader(node.func, aliases)
+    if got is not None:
+        return got
+    name = _expr_name(node.func) or ""
+    if name in {"exec", "eval", "builtins.exec", "builtins.eval", "__builtins__.exec", "__builtins__.eval"}:
+        return "exec"
+    if name == "spec_from_file_location" or name.endswith(".spec_from_file_location"):
+        return "spec"
+    if name in {"runpy.run_path", "runpy.run_module"} or name.endswith(".run_path") or name.endswith(".run_module"):
+        if name.startswith("runpy.") or aliases.get(name) == "runpy" or "." not in name:
+            return "runpy"
+    return None
+
+
+def _exec_targets(node: ast.Call, path: Path, root: Path, *, redteam: bool, allow_vision: bool) -> list[str]:
+    """Scan a literal ``exec``/``eval`` string. A non-literal is ``<dynamic>``."""
+    arg = node.args[0] if node.args else None
+    for kw in node.keywords:
+        if kw.arg in {None, "source", "expression"} and arg is None:
+            arg = kw.value
+    text = _const_text(arg)
+    if text is None:
+        return ["<dynamic>"]
+    try:
+        inner = ast.parse(text, filename=path.name)
+    except SyntaxError:
+        return ["<dynamic>"]
+    if _tree_imports_banned(inner, path, root, redteam=redteam, allow_vision=allow_vision):
+        return ["<dynamic>"]
+    return []
+
+
 def _tree_imports_banned(tree: ast.AST, path: Path, root: Path, *, redteam: bool, allow_vision: bool = False) -> bool:
     aliases = _import_aliases(tree)
     for node in ast.walk(tree):
@@ -420,10 +544,23 @@ def _tree_imports_banned(tree: ast.AST, path: Path, root: Path, *, redteam: bool
         elif isinstance(node, ast.ImportFrom):
             targets = _from_targets(path, root, node)
         elif isinstance(node, ast.Call):
-            dynamic = _dynamic_targets(node, aliases, path, root)
-            if dynamic is None:
-                continue
-            targets = dynamic
+            loader = _call_loader(node, aliases)
+            if loader == "exec":
+                targets = _exec_targets(node, path, root, redteam=redteam, allow_vision=allow_vision)
+            elif loader in {"spec", "runpy", "<dynamic>"}:
+                targets = ["<dynamic>"]
+            elif loader in {"import_module", "__import__"}:
+                dynamic = _dynamic_targets(node, aliases, path, root)
+                if dynamic is None and isinstance(node.func, ast.Call):
+                    dynamic = _dynamic_targets_from_args(node, loader, path, root)
+                if dynamic is None:
+                    continue
+                targets = dynamic
+            else:
+                dynamic = _dynamic_targets(node, aliases, path, root)
+                if dynamic is None:
+                    continue
+                targets = dynamic
         else:
             continue
         if "<unresolved-relative>" in targets or "<dynamic>" in targets:
@@ -434,6 +571,13 @@ def _tree_imports_banned(tree: ast.AST, path: Path, root: Path, *, redteam: bool
             if _banned_module(target, redteam=redteam):
                 return True
     return False
+
+
+def _dynamic_targets_from_args(node: ast.Call, kind: str, path: Path, root: Path) -> list[str]:
+    """Module names from ``getattr(...)(name)`` using the same literal rules as a direct call."""
+    fake_name = "__import__" if kind == "__import__" else "import_module"
+    fake = ast.Call(func=ast.Name(id=fake_name), args=node.args, keywords=node.keywords)
+    return _dynamic_targets(fake, {fake_name: fake_name}, path, root) or ["<dynamic>"]
 
 
 def _python_under(root: Path, *parts: str) -> list[Path]:
@@ -459,7 +603,10 @@ def verdict_path_import_offenders(root: Path) -> list[str]:
     under ``services/`` and ``scripts/`` (vision imports and ``redteam`` imports),
     and any other referee path outside ``qor_receipt/``. A file that is not UTF-8
     or does not parse is an offender. A non-literal ``import_module`` or
-    ``__import__`` is an offender. ``scripts/pan_estimate_clips.py`` may import
+    ``__import__``, ``exec`` / ``eval``, ``runpy``, ``spec_from_file_location``,
+    and ``getattr`` on ``importlib`` or ``builtins`` are offenders. A loader
+    hidden in a C extension, or a name passed through a function this scan does
+    not recognize, is not visible. ``scripts/pan_estimate_clips.py`` may import
     the vision package; a dynamic import or a ``redteam`` import there is still
     an offender. Published pages, the browser verifier, and the receipt schema
     are not scanned.

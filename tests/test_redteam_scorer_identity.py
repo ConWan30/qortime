@@ -334,6 +334,18 @@ def test_raw_byte_frames_are_length_prefixed():
     assert one != two
 
 
+def test_frame_chunk_type_tag_separates_bytes_and_bytearray():
+    def produce(sample):
+        return sample
+
+    raw = frame_source_identity(produce, (b"ab",))
+    mutable = frame_source_identity(produce, (bytearray(b"ab"),))
+    viewed = frame_source_identity(produce, (memoryview(b"ab"),))
+    as_tuple = frame_source_identity(produce, ((0, b"ab"),))
+    as_list = frame_source_identity(produce, ([0, b"ab"],))
+    assert len({raw, mutable, viewed, as_tuple, as_list}) == 5
+
+
 def test_factory_classes_with_different_closures_do_not_hash_the_same():
     def factory(secret):
         class Closed:
@@ -350,6 +362,70 @@ def test_factory_classes_with_different_closures_do_not_hash_the_same():
     same = factory(1)()
     assert source_identity(first, first).sha256 != source_identity(second, second).sha256
     assert source_identity(first, first).sha256 == source_identity(same, same).sha256
+
+
+def test_same_named_subclasses_of_different_bases_differ():
+    """The class block of ``Core`` is the same text. The base it inherits is not."""
+
+    class BaseA:
+        def yaw(self):
+            return 1
+
+    class BaseB:
+        def yaw(self):
+            return 2
+
+    def make(base):
+        class Core(base):
+            name = "core"
+            version = "v0"
+
+            def estimate(self, sample):
+                return self.yaw()
+
+        return Core
+
+    left = make(BaseA)()
+    right = make(BaseB)()
+    again = make(BaseA)()
+    assert type(left).__name__ == type(right).__name__ == "Core"
+    left_id = source_identity(left, left)
+    right_id = source_identity(right, right)
+    assert left_id.sha256 != "unhashed"
+    assert right_id.sha256 != "unhashed"
+    assert left_id.sha256 != right_id.sha256
+    assert left_id.sha256 == source_identity(again, again).sha256
+
+
+def test_instance_method_patch_misses_the_cache():
+    class Core:
+        name = "core"
+        version = "v0"
+
+        def yaw(self):
+            return 1
+
+    host = _CachingHost(Core(), (b"frame",))
+
+    def estimate():
+        key = estimate_cache_key(host, host.core, host.produce, host.frames)
+        hit = host.cache.get(key)
+        if hit is not None:
+            return hit
+        host._computes += 1
+        value = (host.core.yaw(),)
+        host.cache.put(key, value)
+        return value
+
+    assert estimate() == (1,)
+    assert host._computes == 1
+
+    def patched(self):
+        return 9
+
+    host.core.yaw = patched.__get__(host.core, Core)
+    assert estimate() == (9,)
+    assert host._computes == 2
 
 
 def test_mutating_an_estimator_attribute_misses_the_cache():

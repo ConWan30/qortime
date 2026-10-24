@@ -700,7 +700,7 @@ def render_report(report: Report | None = None) -> str:
         "",
         "Test-only harness under `tests/redteam/`. It scores controller logs by calling `input_energy_series`, `score_motion`, `check_inputs`, `check_checkpoints`, and `check_input_files` in process. It does not sign a receipt, does not hold a referee key, and does not open a network connection. Nothing here is a submission.",
         "",
-        "The network guard a test can install around a run is a tripwire. It refuses network modules and a few process calls (socket, subprocess.Popen, os.system, os.spawn, ctypes) for the rest of that process.",
+        "The network guard a test can install around a run is a tripwire. It refuses network modules and a few process calls (socket, subprocess.Popen, os.system, os.spawn, ctypes) for the rest of that process. os.fork followed by os.execv does not trip that hook.",
         "",
         f"Harness `{report.harness_version}` for package `qor-receipt=={report.package_version}`. Harness sha256 `{report.harness_sha256}` over {len(report.harness_files)} files.",
         "",
@@ -751,7 +751,7 @@ def render_report(report: Report | None = None) -> str:
             "the canonical JSON of runtime settings (such as `min_confidence` and any thresholds passed at construction), "
             "an estimator sha256 only when the class object is OpticalFlowPanEstimator, recomputed from that module's source (a copied attribute, property, __module__, or __qualname__ is not trusted), "
             "the sorted repo-relative path plus bytes of the scorer module and its transitive in-repo imports, "
-            "the source of an injected estimator or `core` (a hash of that class's own source, and, outside the repo, a path relative to the module root), "
+            "the source of an injected estimator or `core` (a hash of that class's own source plus the source of each class it inherits, and, outside the repo, a path relative to the module root), "
             "and declared non-Python weight, model, or data files hashed by bytes. "
             "A file that cannot be read is recorded as `unhashed` and is not dropped. "
             "An implementation whose file cannot be resolved or read makes the identity `unhashed`, and an unhashed result is not cached. "
