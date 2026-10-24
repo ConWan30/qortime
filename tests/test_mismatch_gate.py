@@ -99,6 +99,77 @@ def test_mixin_cannot_bypass_the_final_class():
             pass
 
 
+def test_final_flag_rejects_ordinary_assignment_and_deletion():
+    result_cls = mg.MismatchGateResult
+    with pytest.raises(AttributeError):
+        result_cls._mismatch_gate_final = False
+    with pytest.raises(AttributeError):
+        del result_cls._mismatch_gate_final
+    assert result_cls._mismatch_gate_final is True
+
+
+def test_in_process_bypasses_are_not_a_seal():
+    """The holes named in the docs still go through. Each one is restored."""
+    result_cls = mg.MismatchGateResult
+    original = result_cls(mg.R_NO_BUNDLE_VERIFIER)
+
+    class Other(tuple):
+        __slots__ = ()
+        allowed = property(lambda self: True)
+
+        def __new__(cls, reason):
+            return tuple.__new__(cls, (reason,))
+
+    swapped = result_cls(mg.R_NO_BUNDLE_VERIFIER)
+    object.__setattr__(swapped, "__class__", Other)
+    assert swapped.allowed is True
+    object.__setattr__(swapped, "__class__", result_cls)
+    assert type(swapped) is result_cls and swapped.allowed is False
+
+    saved_init = result_cls.__dict__["__init_subclass__"]
+    try:
+        del result_cls.__init_subclass__
+        created = type.__new__(type(result_cls), "Hole", (result_cls,), {"__slots__": ()})
+        assert issubclass(created, result_cls)
+    finally:
+        type.__setattr__(result_cls, "__init_subclass__", saved_init)
+
+    class HoleMeta(type(result_cls)):
+        def __new__(mcls, name, bases, namespace, **kwargs):
+            saved = {}
+            for base in bases:
+                if "__init_subclass__" in base.__dict__:
+                    saved[base] = base.__dict__["__init_subclass__"]
+                    type.__setattr__(base, "__init_subclass__", classmethod(lambda cls, **kw: None))
+            try:
+                return type.__new__(mcls, name, bases, namespace)
+            finally:
+                for base, fn in saved.items():
+                    type.__setattr__(base, "__init_subclass__", fn)
+
+    def _new(cls, reason):
+        return tuple.__new__(cls, (reason,))
+
+    hole = HoleMeta("Hole", (result_cls,), {"__slots__": (), "__new__": _new, "allowed": property(lambda self: True)})
+    assert hole(mg.R_NO_BUNDLE_VERIFIER).allowed is True
+
+    original_allowed = result_cls.__dict__["allowed"]
+    try:
+        result_cls.allowed = property(lambda self: True)
+        assert result_cls(mg.R_NO_BUNDLE_VERIFIER).allowed is True
+    finally:
+        result_cls.allowed = original_allowed
+    assert result_cls(mg.R_NO_BUNDLE_VERIFIER).allowed is False
+
+    try:
+        type.__setattr__(result_cls, "_mismatch_gate_final", False)
+        assert result_cls._mismatch_gate_final is False
+    finally:
+        type.__setattr__(result_cls, "_mismatch_gate_final", True)
+    assert result_cls._mismatch_gate_final is True
+    assert original.allowed is False and original.reason == mg.R_NO_BUNDLE_VERIFIER
+
+
 def test_lookalike_result_never_compares_equal_to_a_real_one():
     class LookAlike:
         __slots__ = ("_reason",)

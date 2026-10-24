@@ -41,7 +41,9 @@ Every bin is ``no_claim`` (reason ``unknown_estimator_hash``) unless
 ``estimator_known()`` is True: the in-process hash is in the fixed allowlist in
 ``estimator_allowlist.py`` and OpenCV matches its pin. ``pairs`` and
 ``bin_pairs`` use the same check. ``estimator_known`` accepts only an exact
-``PanParams`` instance, not a look-alike whose ``to_json`` matches.
+``PanParams`` instance whose fields are exact ``int`` and ``float`` values, not
+a look-alike whose ``to_json`` matches and not an ``int`` or ``float`` subclass.
+A subclass of ``OpticalFlowPanEstimator`` that overrides ``pairs`` is not known.
 
 Determinism
 -----------
@@ -68,7 +70,7 @@ import hashlib
 import json
 import math
 from collections.abc import Iterable, Sequence
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
@@ -229,18 +231,54 @@ UNKNOWN_ESTIMATOR_WARNING = (
 )
 
 
+_INT_FIELDS = frozenset({
+    "work_width", "max_corners", "min_distance", "block_size", "lk_win", "lk_levels", "lk_iters",
+    "min_features", "full_features", "hist_bins", "max_gap_ms",
+})
+_FLOAT_FIELDS = frozenset({
+    "border_frac", "quality_level", "lk_eps", "fb_max_err_px", "inlier_tol_px", "min_inlier_ratio",
+    "max_residual_px", "min_confidence", "black_mean", "flat_std", "cut_bhattacharyya",
+})
+
+
+def _params_field_types_exact(params: PanParams) -> bool:
+    """Every field is an exact ``int`` or ``float``, not a subclass such as ``bool``."""
+    seen: set[str] = set()
+    for item in fields(params):
+        seen.add(item.name)
+        value = getattr(params, item.name)
+        if item.name == "masks":
+            if type(value) is not tuple:
+                return False
+            for box in value:
+                if type(box) is not tuple or len(box) != 4 or any(type(coord) is not float for coord in box):
+                    return False
+        elif item.name in _INT_FIELDS:
+            if type(value) is not int:
+                return False
+        elif item.name in _FLOAT_FIELDS:
+            if type(value) is not float:
+                return False
+        else:
+            return False
+    return seen == _INT_FIELDS | _FLOAT_FIELDS | {"masks"}
+
+
 def estimator_known(params: PanParams = DEFAULT_PARAMS) -> bool:
     """True only if this process's estimator hash is allowlisted AND OpenCV matches its pin.
 
-    ``params`` must be an exact ``PanParams`` (``type(params) is PanParams``).
-    A subclass or any other object with a matching ``to_json`` is False. The
-    hash is recomputed here; no caller-supplied hash is accepted. Any exception
-    gives False. Separate from ``opencv_matches_pin()``. It unlocks nothing:
-    the mismatch gate still has no allow path. Same-process patching of numpy,
-    OpenCV, or this function after the check is not something this can seal.
+    ``params`` must be an exact ``PanParams`` (``type(params) is PanParams``) and
+    each field must be an exact ``int`` or ``float`` (``type(v) is int`` /
+    ``type(v) is float``). A subclass, a ``to_json`` look-alike, or a field that
+    is an ``int`` or ``float`` subclass is False. The hash is recomputed here; no
+    caller-supplied hash is accepted. Any exception gives False. Separate from
+    ``opencv_matches_pin()``. It unlocks nothing: the mismatch gate still has no
+    allow path. Same-process patching of numpy, OpenCV, or this function after
+    the check is not something this can seal. Whether the running object is the
+    real estimator class is ``_running_estimator_known``.
     """
     try:
-        if type(params) is not PanParams:
+        if type(params) is not PanParams or not _params_field_types_exact(params):
             return False
         known = estimator_allowlist.KNOWN_ESTIMATOR_SHA256
         if type(known) is not frozenset or not all(_is_hex64(h) for h in known):
@@ -249,6 +287,17 @@ def estimator_known(params: PanParams = DEFAULT_PARAMS) -> bool:
         return _is_hex64(sha) and sha in known and opencv_matches_pin() is True
     except Exception:
         return False
+
+
+def _running_estimator_known(estimator: object) -> bool:
+    """True only for an exact ``OpticalFlowPanEstimator`` whose ``pairs`` was not replaced."""
+    cls = OpticalFlowPanEstimator
+    if type(estimator) is not cls:
+        return False
+    pairs = getattr(estimator, "pairs", None)
+    if getattr(pairs, "__func__", None) is not cls.pairs:
+        return False
+    return estimator_known(getattr(estimator, "params", None))
 
 
 def _r(value: float) -> float:
@@ -291,7 +340,7 @@ class OpticalFlowPanEstimator:
             "params": self.params.to_json(),
             "opencv": opencv_identity(),
             "opencv_pinned": opencv_matches_pin(),
-            "estimator_known": estimator_known(self.params),
+            "estimator_known": _running_estimator_known(self),
         }
 
     # -- frame preparation -------------------------------------------------
@@ -405,7 +454,7 @@ class OpticalFlowPanEstimator:
     # -- public --------------------------------------------------------------
     def pairs(self, frames: Iterable[tuple[int, Any]]) -> list[PairResult]:
         """Per-pair motion. ``frames`` yields ``(mono_ms, BGR-or-gray ndarray or None)`` in time order."""
-        if not estimator_known(self.params):
+        if not _running_estimator_known(self):
             out: list[PairResult] = []
             seen = False
             for mono_ms, _frame in frames:
@@ -440,9 +489,10 @@ class OpticalFlowPanEstimator:
         """One ``PanBin`` per 100 ms in ``[start_ms, end_ms)``; ``start_ms`` must be a multiple of 100."""
         if start_ms % BIN_MS != 0 or end_ms < start_ms:
             raise ValueError("start_ms must be a multiple of 100 and end_ms >= start_ms")
-        if not estimator_known(self.params):
+        if not _running_estimator_known(self):
             # Fail closed: an estimator hash not on the allowlist for this interpreter
             # (other numpy/OpenCV, edited source or parameters) never produces a claim.
+            # A subclass, or an instance whose pairs method was replaced, is the same.
             return [PanBin(t, None, None, None, True, "unknown_estimator_hash") for t in range(start_ms, end_ms, BIN_MS)]
         try:
             pair_results = self.pairs(frames)

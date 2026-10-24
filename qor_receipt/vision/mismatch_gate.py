@@ -71,13 +71,28 @@ MAX_PLAUSIBLE_ENCODE_LATENCY_MS = 2_000.0
 
 
 class _FinalResultMeta(type):
-    """Rejects subclasses even when a mixin ``__init_subclass__`` skips ``super()``."""
+    """Rejects subclasses even when a mixin ``__init_subclass__`` skips ``super()``.
+
+    Ordinary assignment cannot change ``_mismatch_gate_final`` once it is True.
+    ``type.__setattr__`` still can. That, and the other in-process holes listed on
+    ``MismatchGateResult``, are not a seal.
+    """
 
     def __new__(mcls, name: str, bases: tuple[type, ...], namespace: dict[str, Any], **kwargs: Any) -> type:
         for base in bases:
             if base.__dict__.get("_mismatch_gate_final") is True:
                 raise TypeError(f"{base.__name__} is final and cannot be subclassed")
         return super().__new__(mcls, name, bases, namespace, **kwargs)
+
+    def __setattr__(cls, name: str, value: Any) -> None:
+        if name == "_mismatch_gate_final" and cls.__dict__.get("_mismatch_gate_final") is True:
+            raise AttributeError("_mismatch_gate_final is read-only")
+        super().__setattr__(name, value)
+
+    def __delattr__(cls, name: str) -> None:
+        if name == "_mismatch_gate_final" and cls.__dict__.get("_mismatch_gate_final") is True:
+            raise AttributeError("_mismatch_gate_final is read-only")
+        super().__delattr__(name)
 
 
 # Documentation only. The result object returns the literal "PARTIAL" and never
@@ -128,13 +143,19 @@ class MismatchGateResult(tuple, metaclass=_FinalResultMeta):
 
     The reason is stored as the single item of an immutable tuple, not in a slot
     or ``__dict__``. There is no attribute storage at all (``__slots__ = ()``), so
-    neither ``setattr`` nor ``object.__setattr__`` can change it. The reason is
-    validated in ``__new__`` and re-checked on every read.
+    neither ``setattr`` nor ``object.__setattr__`` can replace that item. The
+    reason is validated in ``__new__`` and re-checked on every read.
+    ``object.__setattr__`` can still assign ``__class__``. That assignment is not
+    blocked, and the new class's ``allowed`` is what a later read uses.
 
-    The class is final. A metaclass rejects subclasses, including a mixin whose
-    ``__init_subclass__`` does not call ``super()``. A same-process ``__class__``
-    assignment is not blocked. Equality and hashing need this exact type on both
-    sides; a plain tuple, a look-alike, or anything else never compares equal.
+    The class is final against ordinary subclassing. A metaclass rejects
+    subclasses, including a mixin whose ``__init_subclass__`` does not call
+    ``super()``, and ``_mismatch_gate_final`` rejects ordinary assignment and
+    deletion once it is True. This is not exhaustive. ``type.__new__`` after
+    deleting ``__init_subclass__``, a metaclass subclass that skips this check,
+    patching ``allowed`` on the class, and ``type.__setattr__`` on the final flag
+    still go through. Equality and hashing need this exact type on both sides; a
+    plain tuple, a look-alike, or anything else never compares equal.
     ``copy``, ``deepcopy`` and ``pickle`` go through ``__reduce__``, which rebuilds
     via ``__new__`` and so re-validates the reason; a forged payload with an
     unknown reason raises ``ValueError``.

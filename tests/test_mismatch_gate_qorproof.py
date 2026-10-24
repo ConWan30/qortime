@@ -15,10 +15,12 @@ Ported as written where possible. Changes:
   The cache is per instance and keyed by ``estimate_cache_key``. An estimator
   sha256 is stored only when the class object is ``OpticalFlowPanEstimator`` and
   the digest is recomputed from source. An ``unhashed`` identity is not cached.
-  D1 runs only when that estimator is on the allowlist.
+  D1 runs when that estimator is on the allowlist. Off the pin it skips.
+  When ``CI=true``, an unknown hash fails the test instead of skipping.
   Their sys.path points at this repo's tests/ instead of QorProof's checkout.
 """
 import enum
+import os
 import sys
 from pathlib import Path
 
@@ -353,7 +355,10 @@ def test_unhashed_cores_do_not_share_cached_bins(tmp_path: Path):
 def test_D1_harness_cache_shared_across_frame_sources():
     """Opposite pans must not share cached bins. Requires an allowlisted estimator."""
     if not pe.estimator_known():
-        pytest.skip("estimator hash is not on the allowlist")
+        message = "estimator hash is not on the allowlist"
+        if os.environ.get("CI") == "true":
+            pytest.fail(message)
+        pytest.skip(message)
     _harness_path()
     from redteam.optical_flow import OpticalFlowHarnessEstimator
     from redteam.pan_frames import pan_frames

@@ -79,7 +79,7 @@ The tested wheel is **`opencv-python-headless==5.0.0.93`** (OpenCV 5.0.0, `cp37-
 
 `qor_receipt/vision/estimator_allowlist.py` holds `KNOWN_ESTIMATOR_SHA256`, a fixed `frozenset` of exact 64-character lowercase hex digests. It is a separate file because the hash covers `pan_estimator.py`'s own source. It currently holds one entry, recorded on CPython 3.11 and 3.13 with numpy 2.4.6, `opencv-python-headless==5.0.0.93`, and `cv2.useOptimized()` True:
 
-`c33339f29b1c8de21439c4d51c7b1cbf93ffee21062e1e0a88f25bd073d321f1`
+`518f6f70e88646a4dc54ba5061b73feab820264dddde6d880026b2f376c8f5e9`
 
 How the check works:
 
@@ -88,7 +88,8 @@ How the check works:
 - `identity()` reports `estimator_known` separately from `opencv_pinned`.
 - Any other numpy, OpenCV version or build, `useOptimized` setting, parameters, or edited source makes `estimate_frames` return only `no_claim` bins with reason `unknown_estimator_hash`.
 - Being known unlocks nothing: the mismatch gate still has no allow path.
-- Same-process patching cannot be fully blocked. The check recomputes the hash when it is called. Patching numpy, OpenCV, or the allowlist in the same process, or assigning `__class__` on a gate result, is outside what this check seals. A `__class__` swap is not treated as impossible.
+- `estimator_known` accepts only an exact `PanParams` whose fields are exact `int` and `float` values. An `int` or `float` subclass is rejected. `identity()["estimator_known"]` is false for a subclass that overrides `pairs`.
+- Same-process patching cannot be fully blocked, and the list of holes is not exhaustive. It includes a `__class__` swap via `object.__setattr__`, `type.__new__` after deleting `__init_subclass__`, a metaclass subclass that skips the finality check, patching `MismatchGateResult.allowed`, and writing `_mismatch_gate_final` with `type.__setattr__`. Ordinary assignment of that flag is rejected. Patching numpy, OpenCV, or the allowlist in the same process is also outside what this check seals.
 
 Tests check that:
 
@@ -105,27 +106,20 @@ The current hash is the allowlist entry above. Earlier revisions reported:
 - `b0c8f40d…`, before the status, coverage, and encode-latency conditions;
 - `b85405bd…`, before the gate moved out of this module and numpy and `useOptimized` joined the hash;
 - `c5e8ddfd…` (CPython 3.13, numpy 2.5.4), before the allowlist check and the numpy pin;
-- `8f049000…`, before `pairs` / `bin_pairs` fail closed on an unknown hash and `estimator_known` requires an exact `PanParams`.
+- `8f049000…`, before `pairs` / `bin_pairs` fail closed on an unknown hash and `estimator_known` requires an exact `PanParams`;
+- `c33339f2…`, before each `PanParams` field had to be an exact `int` or `float` and a subclass overriding `pairs` stopped counting as known.
 
 The per-bin outputs on the three clips are byte-identical across all of them.
 
 ## Harness plug-in
 
-`tests/redteam/optical_flow.py` adapts the estimator to #67's `CameraPanEstimator` protocol. The harness's `VariantSample` carries no pixels, so the adapter takes a frame source. When the estimator has a `sha256`, `source_identity` folds it in and records it as `estimator_sha256`.
+`tests/redteam/optical_flow.py` adapts the estimator to #67's `CameraPanEstimator` protocol. The harness's `VariantSample` carries no pixels, so the adapter takes a frame source. `source_identity` records an estimator sha256 only when the class object is `OpticalFlowPanEstimator` and the digest is recomputed from that module's source. A copied attribute, property, `__module__`, or `__qualname__` is not trusted.
 
-That identity is caller-reported and is not verified. QorProof's E1–E3 show an estimator can claim any sha256, and D1 shows the adapter cache is shared across frame sources. Those tests are in `tests/test_mismatch_gate_qorproof.py` as `xfail(strict=True)`. QorVolution Bot's follow-up PR fixes that code; this PR does not touch it.
+QorProof's E1–E3 and D1 are in `tests/test_mismatch_gate_qorproof.py`. #71, now merged, turned those tests from `xfail(strict=True)` into real checks: a copied sha256 is not stored, and two frame sources do not share cached bins.
 
 The committed red-team report (`motion-rule-v3-aimbot.md`) still uses the no_claim stubs. A test plugs this estimator in on synthetic frames and checks only the contract, the identity, and determinism. No catch rate is asserted or published, because pan versus right stick is not a valid Madden aimbot signal (see below).
 
-Before the allowlist check, the box (Python 3.13, numpy 2.5.4, the pinned wheel) reported `c5e8ddfdcae2e20a12cd77b87e520abbf73cc20af1b146768eea895b2c5b695f`. That numpy is not the pin, so the hash is unknown. Earlier revisions reported:
-
-- `e225c50d…`, before the OpenCV identity was hashed;
-- `dcb9d149…`, before the clock gate;
-- `2d236634…`, before the per-bundle frame_bind gate;
-- `b0c8f40d…`, before the status, coverage, and encode-latency conditions;
-- `b85405bd…`, before the gate moved out of this module and numpy and `useOptimized` joined the hash.
-
-The per-bin outputs on the three clips are byte-identical across all of them.
+The hash history above is the only list. It includes `8f049000…` and the pre-allowlist box hash `c5e8ddfd…` (Python 3.13, numpy 2.5.4, which is not the pin).
 
 ## Claim gate for video-vs-log detectors: no allow path
 
@@ -140,7 +134,7 @@ Any video-vs-log mismatch detector must call it. Examples are a skill move, a us
 **The result always has `allowed=False` and `ceiling="PARTIAL"`, for every input.**
 
 - `MismatchGateResult` is frozen, its `allowed` is a read-only property, and the object is falsy.
-- The class is final. A metaclass rejects a subclass, including a mixin whose `__init_subclass__` does not call `super()`. A same-process `__class__` assignment is not blocked. Equality and hashing require the exact type on both sides, so a plain tuple or a look-alike never compares equal.
+- The class is final against ordinary subclassing. A metaclass rejects a subclass, including a mixin whose `__init_subclass__` does not call `super()`, and ordinary assignment cannot clear `_mismatch_gate_final`. That is not an exhaustive seal. `object.__setattr__` can still swap `__class__`. `type.__new__` after deleting `__init_subclass__`, a metaclass subclass that skips the check, patching `allowed` on the class, and `type.__setattr__` on the final flag still go through. Equality and hashing require the exact type on both sides, so a plain tuple or a look-alike never compares equal.
 - `ceiling`, `repr` and `to_dict()` use the literal `"PARTIAL"`. Patching the module's `CEILING` name changes nothing.
 - The reason is the single item of an immutable tuple. There are no slots and no `__dict__`, so `object.__setattr__` cannot change it, and it is re-validated on every read.
 - `copy`, `deepcopy` and `pickle` round-trip through `__reduce__`, which rebuilds the object via `__new__` and re-validates the reason, so a forged pickle with an unknown reason is rejected.
