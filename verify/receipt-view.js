@@ -20,6 +20,14 @@ const KNOWN_CHECKS = {
 const PHASES = ["kickoff", "halftime", "end"];
 const PHASE_LABEL = { kickoff: "Game start", halftime: "Second half", end: "Q4" };
 
+/** Product name only. Instance ids and local paths stay off the page. The receipt bytes are unchanged. */
+export function publicDevice(value) {
+  if (typeof value !== "string") return null;
+  const name = value.split(" id=")[0].trim();
+  if (!name || name.includes("\\") || name.includes("HID#") || name.includes("@device") || name.includes("/Users/") || name.includes(":/")) return null;
+  return name;
+}
+
 /** Human label for a verdict. Status codes stay in the raw output; this copy never says "attested". */
 export function verdictLabel(status) {
   return {
@@ -305,7 +313,7 @@ export function buildPanels(receipt, v, extras = {}) {
   const integ = rv && isObj(rv.checks) && isObj(rv.checks.input_integrity) ? rv.checks.input_integrity : null;
   panels.push({ id: "input", title: "Controller evidence", advisory: true,
     state: !inp ? "absent" : integ && integ.state === "fail" ? "fail" : adv && adv.ok === false ? "partial" : "info",
-    device: inp && typeof inp.device === "string" && inp.device ? inp.device : null,
+    device: publicDevice(inp && inp.device),
     human: inp && Number.isInteger(inp.human_permille) ? inp.human_permille : null, human_label: inp && inp.human_label,
     align: inp && Number.isInteger(inp.match_permille) && Number.isInteger(inp.chance_permille) ? { match: inp.match_permille, chance: inp.chance_permille } : null,
     haptics: inp && Number.isInteger(inp.haptic_events) ? { events: inp.haptic_events, high: inp.haptic_high_confidence } : null,
@@ -378,7 +386,7 @@ export function buildPanels(receipt, v, extras = {}) {
     facts: [["match id", m.match_id], ["game", m.game], ["platform", m.platform], ["scorebug profile", m.scorebug_profile], ["mode", m.mode],
       ["length", Number.isFinite(m.ended_ms - m.started_ms) ? `${Math.round((m.ended_ms - m.started_ms) / 1000)} s` : undefined],
       ["qorcap", rv && isObj(rv.bundle) ? rv.bundle.qorcap_version : undefined],
-      ["controller", inp && typeof inp.device === "string" ? inp.device : undefined]],
+      ["controller", publicDevice(inp && inp.device) || undefined]],
     note: "Shown as written in the receipt. Any HDMI console and any controller name QorCap records are listed as given." });
 
   // unknown evidence: fields the page does not know are shown raw, never dropped and never scored

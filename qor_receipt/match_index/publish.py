@@ -191,18 +191,87 @@ def chain_rail(receipt: dict, events: list[dict], status: str, errors: list[str]
 
 def publish(bundle: str | Path, site: str | Path, video: str | Path | None = None, highlights: str | Path | None = None,
             slug: str | None = None, allow_fail: bool = False, frames: bool = True, now_ms: int | None = None,
-            include_names: bool = False) -> dict:
+            include_names: bool = False, keep_receipt: bool = False) -> dict:
     bdir, tmp = open_bundle(bundle)
     try:
         return _publish(bdir, Path(site), Path(video) if video else None, Path(highlights) if highlights else None,
-                        slug, allow_fail, frames, now_ms, include_names)
+                        slug, allow_fail, frames, now_ms, include_names, keep_receipt)
     finally:
         if tmp:
             shutil.rmtree(tmp, ignore_errors=True)
 
 
+def _check_line(name: str, check: dict) -> str | None:
+    """Short line from fields already on the signed review. No extra numbers."""
+    detail = check.get("detail")
+    if isinstance(detail, str) and detail:
+        return detail
+    if not isinstance(detail, dict):
+        return None
+    if name == "video_bytes" and detail.get("segments_verified") is not None and detail.get("segments_total") is not None:
+        method = detail.get("method") or "check"
+        return f"{method} {detail['segments_verified']}/{detail['segments_total']} segments"
+    if name == "challenges" and detail.get("count") is not None:
+        rule = detail.get("rule")
+        return f"{detail['count']} challenges" + (f", rule {rule}" if rule is not None else "")
+    if name == "motion" and detail.get("motion_permille") is not None:
+        bits = []
+        if detail.get("rule") is not None:
+            bits.append(f"rule {detail['rule']}")
+        bits.append(f"{detail['motion_permille']} per mille")
+        if detail.get("bins") is not None:
+            bits.append(f"{detail['bins']} bins")
+        return ", ".join(bits)
+    if name == "input_integrity":
+        bits = []
+        if detail.get("presses") is not None:
+            bits.append(f"{detail['presses']} presses")
+        if detail.get("haptic_events") is not None:
+            bits.append(f"{detail['haptic_events']} haptic events")
+        return ", ".join(bits) or None
+    if name == "final_reread":
+        value = check.get("value") if isinstance(check.get("value"), dict) else {}
+        if value.get("away") is not None and value.get("home") is not None:
+            return f"away {value['away']}, home {value['home']}"
+    return None
+
+
+def _public_corroboration(co: dict) -> dict:
+    """Fields the match page renders. The verifier's detail sentence names status codes and stays off the page."""
+    keep = ("schema", "status", "reasons", "tolerance_ms", "affects_verdict", "pairing_id", "finals")
+    return {k: co[k] for k in keep if k in co}
+
+
+def _review_checks(receipt: dict) -> list[dict]:
+    checks = ((receipt.get("review") or {}) if isinstance(receipt.get("review"), dict) else {}).get("checks")
+    if not isinstance(checks, dict):
+        return []
+    out = []
+    for name, check in checks.items():
+        if not isinstance(check, dict):
+            continue
+        out.append({"name": name, "state": check.get("state"), "line": _check_line(name, check)})
+    return out
+
+
+def _recorded_ct(receipt: dict) -> str | None:
+    """Clock on the match page. The index uses the same fixed US Central offset."""
+    match = receipt.get("match") or {}
+    start = match.get("started_ms")
+    if not isinstance(start, (int, float)):
+        return None
+
+    def _fmt(ms: float, pat: str) -> str:
+        return time.strftime(pat, time.gmtime(ms / 1000 - 5 * 3600))
+    start_s = _fmt(start, "%b %d, %Y, %-I:%M %p")
+    end = match.get("ended_ms")
+    if isinstance(end, (int, float)):
+        return f"Recorded {start_s}–{_fmt(end, '%-I:%M %p')} CT."
+    return f"Recorded {start_s} CT."
+
+
 def _publish(bdir: Path, site: Path, video: Path | None, hdir: Path | None, slug: str | None, allow_fail: bool,
-             frames: bool, now_ms: int | None, include_names: bool = False) -> dict:
+             frames: bool, now_ms: int | None, include_names: bool = False, keep_receipt: bool = False) -> dict:
     rp = bdir / "receipt.json"
     if not rp.exists():
         raise PublishRefused("no receipt.json: pages are published only for matches with a signed receipt")
@@ -212,7 +281,10 @@ def _publish(bdir: Path, site: Path, video: Path | None, hdir: Path | None, slug
         # signature, so publishing it is an explicit choice (the opponent's name would be public)
         raise PublishRefused("receipt carries on-screen PSN names (match.observed_handles) of both players; pass "
                              "include_names to publish them")
-    ver = verify_receipt(receipt)
+    ref = receipt.get("referee") if isinstance(receipt.get("referee"), dict) else {}
+    ref_pub = ref.get("pubkey") if isinstance(ref.get("pubkey"), str) else None
+    # Pin the key named on the receipt. That is the same input the public verifier uses for VERIFIED.
+    ver = verify_receipt(receipt, referee_pub=ref_pub)
     status = ver["status"]
     if status == FAIL and not allow_fail:
         raise PublishRefused(f"receipt does not verify (FAIL: {', '.join(ver['errors'][:4])}); pass allow_fail to publish "
@@ -269,15 +341,25 @@ def _publish(bdir: Path, site: Path, video: Path | None, hdir: Path | None, slug
                  "PARTIAL": "PARTIAL · some checks not covered",
                  "SELF_ATTESTED": "SELF-SIGNED · signed on the player's own PC, not by the QorTime referee",
                  "FAIL": "FAIL · this receipt does not verify; nothing on this page is a verified result"}[status]
+        if status == "VERIFIED" and ver.get("referee_id"):
+            deleg = ver.get("delegation") if isinstance(ver.get("delegation"), dict) else {}
+            label = f"VERIFIED · co-signed by {ver['referee_id']}"
+            if deleg.get("serial") is not None and deleg.get("delegated_by"):
+                label += f" (delegation serial {deleg['serial']} from root {deleg['delegated_by']})"
         idx["result"]["trust_tier"] = label
         idx["publish"] = {
             "slug": slug, "generated_ms": now_ms or int(time.time() * 1000),
             "receipt": {"url": "receipt.json", "status": status, "label": label, "errors": ver["errors"],
-                        "partial": ver["partial"], "trust_tier": ver.get("trust_tier"),
+                        "partial": ver["partial"],
+                        "trust_tier": {"single-attested": "one-player tier", "dual-attested": "two-player tier"}.get(
+                            ver.get("trust_tier"), ver.get("trust_tier")),
                         "referee_kind": (receipt.get("referee") or {}).get("key_kind"),
                         "result": {k: res.get(k) for k in ("away_score", "home_score", "winner", "method", "final_confirmed", "quarter")},
                         "verify_url": "../../verify/",
-                        **({"corroboration": ver["corroboration"]} if isinstance(ver.get("corroboration"), dict) else {}),
+                        **({"referee_pub": ref_pub} if ref_pub else {}),
+                        **({"not_proven": list(ver["review"]["not_proven"])} if isinstance((ver.get("review") or {}).get("not_proven"), list) else {}),
+                        **({"checks": _review_checks(receipt)} if _review_checks(receipt) else {}),
+                        **({"corroboration": _public_corroboration(ver["corroboration"])} if isinstance(ver.get("corroboration"), dict) else {}),
                         **({"device_key": ver["device_key"]} if isinstance(ver.get("device_key"), dict) else {})},
             "highlights": clips_pub, "highlights_manifest": "clips/manifest.json" if hman else None,
             "advisory": PUBLIC_ADVISORY,
@@ -286,12 +368,24 @@ def _publish(bdir: Path, site: Path, video: Path | None, hdir: Path | None, slug
         idx["claims"] = (f"Receipt status (computed by the QorTime verifier when this page was built): {label}. " + idx["claims"])
         match = receipt.get("match") or {}
         idx["capture"] = {k: match[k] for k in ("platform", "game", "mode", "scorebug_profile") if match.get(k) not in (None, "")}
+        recorded = _recorded_ct(receipt)
+        if recorded:
+            idx["publish"]["recorded"] = recorded
+        if not clips_pub and not any(e.get("frames") for e in idx["events"]):
+            note = ("Footage is not published. The recording stays on the player's PC. "
+                    "This page has the signed receipt, the score timeline, and the proof chain.")
+            idx["publish"]["footage_note"] = note
+            for e in idx["events"]:
+                if not e.get("frames"):
+                    e["frames_missing_reason"] = "Footage is not published. The recording stays on the player's PC."
         blob = json.dumps(idx)
         bad = privacy_problems(blob)
         if bad:
             raise PublishRefused(f"privacy scan matched {bad}; refusing to publish")
         rtext = rp.read_text(encoding="utf-8")
-        publish_receipt = not privacy_problems(rtext)
+        receipt_private = privacy_problems(rtext)
+        # keep_receipt writes the signed file unchanged. The page blob above is still refused if it leaks.
+        publish_receipt = keep_receipt or not receipt_private
 
         if out.exists():
             shutil.rmtree(out)
@@ -327,7 +421,7 @@ def _publish(bdir: Path, site: Path, video: Path | None, hdir: Path | None, slug
                     c["poster"] = f"clips/{c['id']}_poster.jpg"
             (out / "clips" / "manifest.json").write_text(json.dumps(hman, indent=2), encoding="utf-8")
         if publish_receipt:
-            (out / "receipt.json").write_text(rtext, encoding="utf-8")
+            (out / "receipt.json").write_bytes(rp.read_bytes())
         else:
             idx["publish"]["receipt"]["url"] = None
         from qor_receipt.match_index.viewer import write_viewer
@@ -342,6 +436,8 @@ def _publish(bdir: Path, site: Path, video: Path | None, hdir: Path | None, slug
             "receipt_status": status, "receipt_label": label, "clips": len(clips_pub),
             "events": len(idx["events"]), "touchdowns": sum(1 for e in idx["events"] if "touchdown" in str(e.get("play") or "")),
         }
+        if idx["publish"].get("footage_note"):
+            summary["note"] = idx["publish"]["footage_note"]
         (out / "match.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
         write_index(site)
         return summary
@@ -358,7 +454,7 @@ def _card(m: dict) -> str:
     st = m.get("receipt_status") or "?"
     # gold is a referee-verified seal, not "we read a final on the recording"
     gold = bool(fin) and st == "VERIFIED"
-    cls = "a" if st == "VERIFIED" else "x" if st == "FAIL" else "w" if st in ("SELF_ATTESTED", "PARTIAL") else ""
+    cls = "g" if st == "VERIFIED" else "x" if st == "FAIL" else "w" if st in ("SELF_ATTESTED", "PARTIAL") else ""
     tag = "SELF-SIGNED" if st == "SELF_ATTESTED" else st
     when = time.strftime("%b %d, %Y", time.gmtime((m.get("started_ms") or 0) / 1000 - 5 * 3600)) if m.get("started_ms") else ""
     score = (f'<span class="{"lockg" if gold else "unl"}">{e(str(shown["away"]))}<i>–</i>{e(str(shown["home"]))}</span>'
@@ -387,16 +483,21 @@ def write_index(site: str | Path) -> Path:
             ms.append(m)
     ms.sort(key=lambda m: m.get("started_ms") or 0, reverse=True)
     cards = "\n".join(_card(m) for m in ms) or '<p class="miss">No published matches yet.</p>'
+    base = "These pages are separate recordings, not a ranking."
+    verified = [m for m in ms if m.get("receipt_status") == "VERIFIED"]
     if not ms:
         compare = ""
-    elif any(m.get("receipt_status") == "VERIFIED" for m in ms):
-        compare = "These pages are separate recordings, not a ranking."
+    elif not verified:
+        compare = html.escape(base + " No page here is referee-verified, so the scores are not a verified comparison.")
     else:
-        compare = ("These pages are separate recordings, not a ranking. "
-                   "No page here is referee-verified, so the scores are not a verified comparison.")
+        links = ", ".join(
+            f'<a href="{html.escape(str(m.get("url") or ""))}">{html.escape(str(m.get("match_id") or m.get("slug") or "match"))}</a>'
+            for m in verified)
+        lead = " The first card is the referee-verified match." if ms[0].get("receipt_status") == "VERIFIED" else ""
+        compare = html.escape(f"{base} Referee-verified receipts on this list: n = {len(verified)}.") + lead + " " + links + "."
     p = root / "index.html"
     root.mkdir(parents=True, exist_ok=True)
-    p.write_text(INDEX_TEMPLATE.replace("__CARDS__", cards).replace("__N__", str(len(ms))).replace("__COMPARE__", html.escape(compare)),
+    p.write_text(INDEX_TEMPLATE.replace("__CARDS__", cards).replace("__N__", str(len(ms))).replace("__COMPARE__", compare),
                  encoding="utf-8")
     return p
 

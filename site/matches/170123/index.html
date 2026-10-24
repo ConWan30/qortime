@@ -1,0 +1,1034 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>QorTime · what the AI saw · local-20261023-170123</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="color-scheme" content="dark"><meta name="theme-color" content="#04080f">
+<!--
+Motion spec (transform / opacity only, except the one-shot scorebug color and the static chain canvas):
+  digit roll        560ms  cubic-bezier(.2,.8,.2,1)   60ms stagger per digit
+  scoring-side bump 700ms  cubic-bezier(.34,1.56,.64,1)   scale 1 → 1.18 → 1
+  light sweep       640ms  cubic-bezier(.2,.8,.2,1)   translateX across the scoring side
+  marker shockwave  720ms  cubic-bezier(.2,.8,.2,1)   scale .4 → 2.6, opacity 1 → 0
+  gold seal stamp   520ms  cubic-bezier(.34,1.56,.64,1)   only when receipt status is VERIFIED
+  chain link slide  280ms  cubic-bezier(.34,1.56,.64,1)   one link, when playback crosses a 2s checkpoint
+  chain boot        16ms stagger, 280ms spring, first paint only
+  entrance          420ms  cubic-bezier(.2,.8,.2,1)   ticker 0, player 80ms, rail 160ms, panels 240ms
+  FLIP into player  420ms (280ms on touch) cubic-bezier(.22,.8,.2,1)
+  playhead spring   stiffness 320, damping 26, only on moment jumps; playback tracks live
+  burst crossfade   160ms linear; frame hold 260ms before the read, 340ms after
+  chip / marker     320ms spring
+  confidence bar    600ms cubic-bezier(.2,.8,.2,1)   scaleX
+  proof link light  280ms spring on the pin, opacity on the bar, when playback reaches a checkpoint whose hash linked in this browser
+  controller needle transform only, one update per frame, no duration
+  prefers-reduced-motion: no animation, no autoplay, ticker snaps, chain is static
+-->
+<style>
+@font-face{font-family:"QorScore";src:url("../../assets/fonts/barlow-condensed-700.woff2") format("woff2");font-weight:700;font-style:normal;font-display:swap;unicode-range:U+20,U+2D,U+30-39,U+2013-2014}
+:root{--bg:#04080f;--panel:#0b1424;--line:rgba(130,170,210,.16);--line2:rgba(130,170,210,.28);
+--ink:#e7eef8;--mute:#8b9bb0;--dim:#5d6d84;--aqua:#3fe0d0;--aqua2:#1aa89b;--steel:#9fb2cc;--gold:#f0c95c;--warn:#f0a06a;--bad:#ff6d6d;
+--ease:cubic-bezier(.2,.8,.2,1);--spring:cubic-bezier(.34,1.56,.64,1);--flip:cubic-bezier(.22,.8,.2,1);
+--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;--score:"QorScore","Arial Narrow","Helvetica Neue",sans-serif;
+--sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Inter,Roboto,sans-serif}
+[hidden]{display:none!important}
+*{box-sizing:border-box}
+/* clip (hidden only where clip is unsupported): hidden on html/body is a scroll container, so position:sticky never pins */
+html{-webkit-text-size-adjust:100%;max-width:100%;overflow-x:hidden;overflow-x:clip}
+body{margin:0;max-width:100%;background:
+ radial-gradient(70% 46% at 80% -8%, rgba(24,58,92,.5), transparent 55%),
+ radial-gradient(50% 36% at 0% 100%, rgba(14,48,52,.4), transparent 50%),
+ #04080f;color:var(--ink);font:13.5px/1.45 var(--sans);font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased;overflow-x:hidden;overflow-x:clip}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:40;opacity:.22;
+ background:repeating-linear-gradient(to bottom, rgba(255,255,255,.05) 0 1px, transparent 1px 4px);mix-blend-mode:overlay}
+a{color:var(--aqua)}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+:focus-visible{outline:2px solid var(--aqua);outline-offset:2px;border-radius:8px}
+.mono{font-family:var(--mono)}
+.lbl{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--mute);font-weight:650}
+.sub{color:var(--dim);font-size:12px}
+.tag{display:inline-flex;align-items:center;gap:5px;font-size:10px;letter-spacing:.12em;text-transform:uppercase;padding:2px 8px;border-radius:99px;border:1px solid var(--line2);color:var(--mute);white-space:nowrap}
+.tag.a{color:var(--aqua);border-color:rgba(63,224,208,.45)}.tag.g{color:var(--gold);border-color:rgba(240,201,92,.55)}.tag.w{color:var(--warn);border-color:rgba(240,160,106,.5)}.tag.x{color:var(--bad);border-color:rgba(255,109,109,.55)}
+.ind{margin-top:10px;padding:8px 10px;border-radius:10px;border:1px solid var(--line2);color:var(--mute);font-size:12px;line-height:1.45}
+.ind .tag{margin-right:6px}
+.ind.cy{border-color:rgba(63,224,208,.45)}
+.ind.bad{border-color:rgba(255,109,109,.55);color:#ffb4b0}
+.ind.warn{border-color:rgba(210,153,34,.7);color:#e6c07b}
+.miss{color:var(--warn);font-style:italic}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 14px;min-width:0}
+.h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.btn{border:1px solid var(--line2);border-radius:99px;padding:8px 12px;min-height:44px;color:var(--aqua);font-size:12.5px}
+.btn:hover{border-color:var(--aqua)}.btn.round{width:44px;height:44px;padding:0;display:grid;place-items:center;font-size:22px;line-height:1}
+.btn:disabled,.btn[aria-busy="true"]{opacity:.35;cursor:default}
+.enter{opacity:0;transform:translateY(12px)}
+body.ready .enter{opacity:1;transform:none;transition:opacity 420ms var(--ease),transform 420ms var(--ease)}
+body.ready .d1{transition-delay:80ms}body.ready .d2{transition-delay:160ms}body.ready .d3{transition-delay:240ms}
+/* sticky broadcast header */
+.top{position:sticky;top:0;z-index:30;display:grid;grid-template-columns:minmax(140px,1fr) auto minmax(140px,1fr);align-items:center;gap:12px;
+ padding:max(8px,env(safe-area-inset-top)) clamp(10px,2vw,22px) 10px;background:rgba(4,8,15,.94);border-bottom:1px solid var(--line)}
+.brand-row{display:flex;align-items:center;gap:10px;min-width:0}
+.brand{display:inline-flex;align-items:center;min-height:44px;font-weight:750;letter-spacing:.22em;font-size:12px;text-decoration:none;color:var(--ink);white-space:nowrap}.brand span{color:var(--aqua)}
+.mid{font:11px var(--mono);color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ticker{position:relative;display:grid;grid-template-columns:1fr auto 1fr;align-items:stretch;min-width:min(440px,70vw);
+ background:linear-gradient(#101a2e,#070d18);border:1px solid rgba(140,180,220,.28);border-radius:12px;overflow:hidden}
+.ticker::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:linear-gradient(90deg,var(--steel),var(--aqua))}
+.ticker .side{position:relative;display:flex;align-items:center;gap:8px;padding:8px 14px 10px;overflow:hidden}
+.ticker .away{justify-content:flex-start}.ticker .home{justify-content:flex-end}
+.ticker .nm{font-size:10px;letter-spacing:.18em;color:var(--mute)}
+.ticker .dg{position:relative;font:700 42px/1 var(--score);letter-spacing:.01em;color:var(--aqua);display:inline-flex}
+.sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.ticker .away .dg{color:var(--steel)}
+.ticker .ctr{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:6px 12px 8px;background:rgba(0,0,0,.28);min-width:72px}
+.ticker .q{font:11px var(--mono);letter-spacing:.14em;color:var(--mute)}
+.ticker .clk{font:600 16px/1.1 var(--mono);color:var(--ink)}
+.ticker .tstate{margin-top:3px;font-size:8.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);text-align:center;max-width:120px;line-height:1.25}
+.ticker.gold::before{background:var(--gold)}
+.ticker.gold .dg{color:var(--gold)}
+.ticker.gold .tstate{color:var(--gold)}
+.status{justify-self:end;font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:7px 10px;border-radius:10px;border:1px solid rgba(240,160,106,.55);color:var(--warn);max-width:280px;text-align:right}
+.status.fail{border-color:rgba(255,109,109,.6);color:var(--bad)}.status.ok{border-color:rgba(240,201,92,.6);color:var(--gold)}
+.seal{position:absolute;right:8px;top:6px;z-index:2;font-size:9px;letter-spacing:.16em;color:var(--gold);border:1px solid rgba(240,201,92,.7);background:#140f04;border-radius:99px;padding:2px 6px;opacity:0}
+.seal.go{animation:stamp 520ms var(--spring) forwards}
+@keyframes stamp{0%{opacity:0;transform:scale(1.4) rotate(-8deg)}100%{opacity:1;transform:none}}
+.col{display:inline-block;height:1em;overflow:hidden;line-height:1}
+.col i{display:block;font-style:normal;transition:transform 560ms var(--ease);will-change:transform}
+.col i b{display:block;height:1em;font-weight:inherit;text-align:center}
+.bump{animation:bump 700ms var(--spring)}
+@keyframes bump{0%{transform:scale(1)}30%{transform:scale(1.18)}100%{transform:scale(1)}}
+.sweep{position:absolute;top:0;bottom:0;width:46%;left:0;pointer-events:none;opacity:0;transform:translateX(-140%);
+ background:linear-gradient(90deg,transparent,rgba(220,255,250,.5),transparent)}
+.side.hot .sweep{animation:sweep 640ms var(--ease)}
+@keyframes sweep{0%{opacity:0;transform:translateX(-140%)}18%{opacity:1}100%{opacity:0;transform:translateX(250%)}}
+/* page */
+.grid{display:grid;gap:14px;max-width:1440px;margin:0 auto;padding:14px clamp(12px,2.2vw,28px) 36px;min-width:0;
+ grid-template-columns:minmax(0,1fr) 372px;grid-template-areas:"stage side" "rail side" "clips clips" "foot foot"}
+.stage-card{grid-area:stage;position:relative;background:transparent;border:0;padding:0;box-shadow:none;min-width:0}
+.rail-card{grid-area:rail;min-width:0}.side-col{grid-area:side;display:flex;flex-direction:column;gap:12px;min-width:0}
+.clips-card{grid-area:clips;min-width:0}.foot{grid-area:foot;min-width:0}
+.bleed{position:absolute;z-index:0;left:6%;right:6%;top:8%;height:62%;pointer-events:none;
+ background:radial-gradient(55% 70% at 50% 40%, var(--bleed, transparent), transparent 72%)}
+.stage,.ctl,.aisaw{position:relative;z-index:1}
+.stage{position:relative;aspect-ratio:16/9;border-radius:12px;overflow:hidden;background:#02050a;border:1px solid var(--line);contain:layout paint;touch-action:pan-y}
+.stage .fr,.stage video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000;display:block}
+.stage .fr{opacity:0;transition:opacity 160ms linear}.stage .fr.on{opacity:1}
+.stage .fr:not([src]),.stage .fr[src=""]{display:none}
+.burn{position:absolute;z-index:4;left:0.8%;top:1.4%;width:56%;min-height:20%;background:#081122;border-left:2px solid var(--aqua);
+ display:flex;flex-direction:column;gap:1px;padding:4px 8px 5px;pointer-events:none}
+.burn b{font-size:9px;letter-spacing:.14em;color:var(--aqua);font-weight:700}
+.burn .sc{font:700 clamp(13px,1.6vw,18px)/1 var(--score);color:var(--aqua);letter-spacing:.02em}
+.burn .meta{font:9px/1.3 var(--mono);color:#b8c7da}
+.burn.seal{border-left-color:var(--gold)}.burn.seal b,.burn.seal .sc{color:var(--gold)}
+.ov{position:absolute;z-index:3;top:8px;right:8px;display:flex;flex-direction:column;align-items:flex-end;gap:4px;pointer-events:none}
+.mode{font-size:10px;letter-spacing:.12em;text-transform:uppercase;padding:3px 8px;border-radius:99px;background:rgba(4,8,15,.82);border:1px solid var(--line2)}
+.mode.clip{border-color:rgba(63,224,208,.5);color:var(--aqua)}
+.dt{font:700 15px var(--mono);padding:1px 7px;border-radius:7px;background:rgba(4,8,15,.72)}
+.dt.zero{color:var(--aqua)}
+.readpop{position:absolute;z-index:3;right:8px;bottom:10px;display:flex;flex-direction:column;align-items:flex-end;gap:1px;
+ background:rgba(4,8,15,.86);border:1px solid rgba(63,224,208,.45);border-radius:10px;padding:6px 10px;pointer-events:none}
+.readpop b{color:var(--aqua);font-weight:650;font-size:12px}.readpop span{font:11px var(--mono);color:var(--mute)}
+.readpop.go{animation:pop 320ms var(--spring)}
+@keyframes pop{from{opacity:0;transform:translateY(8px) scale(.94)}to{opacity:1;transform:none}}
+.flash{position:absolute;inset:0;z-index:2;pointer-events:none;opacity:0;box-shadow:inset 0 0 0 2px var(--aqua)}
+.flash.go{animation:flash 900ms var(--ease)}
+@keyframes flash{0%{opacity:0}12%{opacity:1}100%{opacity:0}}
+.empty{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:20px;color:var(--mute)}
+.ctl{display:flex;align-items:center;gap:8px;margin-top:8px}
+.prog{position:relative;flex:1;height:44px;display:flex;align-items:center;cursor:pointer;touch-action:pan-y}
+.prog .bar{position:relative;height:4px;width:100%;border-radius:4px;background:var(--line2);overflow:hidden}
+.prog .bar i{position:absolute;inset:0;transform-origin:0 50%;transform:scaleX(0);background:linear-gradient(90deg,var(--aqua2),var(--aqua))}
+.lockpin{position:absolute;top:50%;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;border:2px solid var(--aqua);background:#04080f;pointer-events:none}
+.lockpin.g{border-color:var(--gold);background:var(--gold)}
+.pos{color:var(--mute);min-width:72px;text-align:right;font:12px var(--mono)}
+.strip{display:flex;gap:6px;overflow-x:auto;padding:2px 2px 6px;scrollbar-width:thin;-webkit-overflow-scrolling:touch;max-width:100%;min-width:0}
+.strip button{flex:0 0 auto;width:96px;min-height:44px;border-radius:8px;overflow:hidden;border:1px solid var(--line);opacity:.55;position:relative;transition:opacity 160ms,transform 320ms var(--spring)}
+.strip button img{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;background:#02050a}
+.strip button span{position:absolute;right:3px;bottom:1px;font:10px var(--mono);text-shadow:0 1px 2px #000}
+.strip button.on{opacity:1;border-color:var(--aqua);transform:translateY(-3px)}
+.strip button.z span{color:var(--aqua);font-weight:700}
+.strip button.z::after{content:"read";position:absolute;left:3px;top:1px;font:9px var(--mono);color:var(--aqua);text-shadow:0 1px 2px #000}
+/* proof chain + score worm */
+.chainClip{overflow:hidden;height:34px;display:flex;justify-content:center;margin:2px 0 6px;width:100%;min-width:0;max-width:100%}
+.chainWin{display:flex;height:34px;will-change:transform}
+.chainClip:not(.booted) .link{opacity:0;transform:translateY(-10px)}
+.chainClip.booted .link{transition:transform 280ms var(--spring),opacity 220ms var(--ease)}
+.link{width:32px;flex:0 0 32px;display:flex;align-items:center;color:var(--steel);opacity:.95}
+.link .pin{width:7px;height:7px;border:1.5px solid currentColor;border-radius:50%;flex:none}
+.link .bar{flex:1;height:2px;background:currentColor;margin:0 -1px}
+.link.future{transform:translateY(-6px);opacity:.38}
+.link.now{color:var(--aqua)}
+.link.now .pin{transform:scale(1.25)}
+.link.ok{color:var(--aqua);opacity:1}
+.link.ok .bar{opacity:1}
+.link.ok .pin{transform:scale(1.15)}
+.link.now.ok .pin{transform:scale(1.35)}
+.link .pin{transition:transform 280ms var(--spring)}
+.link.crack{color:var(--bad)}
+.link.crack .bar{background:linear-gradient(90deg,currentColor 0 34%,transparent 34% 66%,currentColor 66%);transform:rotate(-16deg) scaleX(.55)}
+.link.pad{opacity:0}
+.rail-card.seal .link.past{color:var(--aqua)}
+.rail-card.seal .link.crack{color:var(--bad)}
+.tl{position:relative;margin-top:2px;min-width:0;max-width:100%}
+.macro{position:relative;height:28px}
+.crackbtns{position:absolute;inset:0;z-index:3}
+.crackbtn{position:absolute;top:0;left:0;width:44px;height:44px;margin:-8px 0 0 -22px;display:grid;place-items:center}
+.crackbtn i{width:3px;height:18px;border-radius:1px;background:var(--bad);box-shadow:0 0 0 3px rgba(255,109,109,.3)}
+#rail{display:block;width:100%;height:28px}
+.ph{position:absolute;top:0;bottom:0;left:0;width:2px;margin-left:-1px;pointer-events:none;will-change:transform;z-index:2}
+.ph i{position:absolute;inset:0;background:linear-gradient(180deg,transparent,var(--aqua) 18%,var(--aqua) 82%,transparent)}
+.worm-wrap{position:relative;height:132px;min-width:0;max-width:100%}
+#worm{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+#worm .qline{stroke:rgba(130,170,210,.28);stroke-dasharray:3 4}
+#worm .ln{fill:none;stroke-width:2.2;vector-effect:non-scaling-stroke;stroke-linejoin:round;stroke-linecap:round}
+#worm .ln.a{stroke:var(--steel)}#worm .ln.h{stroke:var(--aqua)}
+#worm .ghost{opacity:.28}
+.mks{position:absolute;inset:0}
+.mk{position:absolute;width:44px;height:44px;margin:-22px 0 0 -22px;border-radius:50%;display:grid;place-items:center}
+.mk::before{content:"";width:11px;height:11px;border-radius:50%;border:2px solid currentColor;background:#04080f;transition:transform 320ms var(--spring)}
+.mk.a{color:var(--steel)}.mk.h{color:var(--aqua)}.mk.g{color:var(--gold)}
+.mk.sel::before{transform:scale(1.5)}
+.mk .t{position:absolute;top:-14px;font:600 11px var(--mono);white-space:nowrap;color:var(--ink);opacity:0;transition:opacity 160ms}
+.mk.sel .t{opacity:1}
+.qlab{position:absolute;top:2px;font:10px var(--mono);color:var(--dim);pointer-events:none}
+#shock{position:absolute;left:0;top:0;width:0;height:0;pointer-events:none;z-index:3}
+#shock i{position:absolute;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;border:2px solid var(--aqua);opacity:0}
+#shock.go i{animation:shock 720ms var(--ease)}
+@keyframes shock{0%{opacity:.9;transform:scale(.4)}100%{opacity:0;transform:scale(2.6)}}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--mute);margin-top:2px}
+.legend i{display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:5px;vertical-align:middle}
+.legend .la{background:var(--steel)}.legend .lh{background:var(--aqua)}.legend .lg{background:var(--gold)}.legend .lc{background:var(--bad)}.legend .lk{background:var(--aqua);box-shadow:0 0 0 1px rgba(63,224,208,.45)}
+.proofnote{margin-top:8px;display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--mute)}
+.proofnote .ok{color:var(--aqua)}.proofnote .bad{color:var(--bad)}
+.pad{margin-top:10px}
+.padstage{position:relative;height:56px;border-radius:8px;overflow:hidden;background:rgba(0,0,0,.28);border:1px solid var(--line)}
+#padcv{display:block;width:100%;height:56px}
+.padph{position:absolute;top:0;bottom:0;left:0;width:2px;margin-left:-1px;pointer-events:none;will-change:transform}
+.padph i{position:absolute;inset:0;background:var(--aqua)}
+.chips{display:flex;gap:8px;overflow-x:auto;padding:8px 2px 2px;scrollbar-width:thin;-webkit-overflow-scrolling:touch;max-width:100%;min-width:0}
+.chip{flex:0 0 auto;text-align:left;border:1px solid var(--line);border-radius:12px;padding:7px 10px;min-height:44px;background:rgba(8,16,30,.65);transition:transform 320ms var(--spring)}
+.chip .s{font:700 16px/1 var(--score);letter-spacing:.03em}.chip .m{display:block;font-size:11px;color:var(--mute);margin-top:2px}
+.chip.sel{border-color:var(--aqua);transform:translateY(-2px)}.chip.g .s{color:var(--gold)}
+.chip .c{font-size:10px;color:var(--aqua);margin-left:6px}
+.nav{margin-left:auto;display:flex;gap:6px}
+/* side instrument */
+.big{font:700 64px/0.9 var(--score);letter-spacing:.02em;display:flex;align-items:baseline;gap:.12em}
+.big .dash{opacity:.35}.big .away{color:var(--steel)}.big .home{color:var(--aqua)}
+.big.g .away,.big.g .home{color:var(--gold)}
+.kv{display:grid;grid-template-columns:108px minmax(0,1fr);gap:4px 10px;font-size:12.5px;margin-top:10px}
+.kv b{color:var(--mute);font-weight:500}
+.conf{height:3px;border-radius:3px;background:var(--line2);overflow:hidden;margin-top:4px}
+.conf i{display:block;height:100%;background:var(--aqua);transform-origin:0 50%;transform:scaleX(0);transition:transform 600ms var(--ease)}
+.chk{display:grid;grid-template-columns:16px minmax(0,1fr);gap:3px 8px;font-size:12.5px;padding:7px 0;border-top:1px solid var(--line)}
+.chk:first-of-type{border-top:0}
+.chk .ok{color:var(--aqua)}.chk .no{color:var(--bad)}.chk .na{color:var(--dim)}
+.chk .hx{font:11px var(--mono);color:#c5d2e4;word-break:break-all}
+.errs{margin:4px 0 0;padding-left:16px;font:11px var(--mono);color:var(--bad)}
+.note{font-size:12px;color:var(--mute);border-left:2px solid var(--aqua2);padding:2px 0 2px 10px;margin-top:8px}
+.notproven{margin:0 0 10px;padding:10px 12px;border:1px solid var(--line2);border-radius:12px;background:rgba(0,0,0,.28)}
+.notproven .lbl{color:var(--ink)}
+.notproven ul{margin:6px 0 0;padding-left:18px;color:var(--ink)}
+.notproven li{margin:4px 0}
+details.scope-card summary{cursor:pointer;list-style:none;min-height:44px;display:flex;align-items:center}
+details.scope-card summary::-webkit-details-marker{display:none}
+#scope{width:100%;height:120px;display:block;margin-top:6px}
+.cgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(210px,100%),1fr));gap:10px;min-width:0;max-width:100%}
+.clip{border:1px solid var(--line);border-radius:12px;overflow:hidden;text-align:left;background:rgba(8,16,30,.55);transition:transform 320ms var(--ease);min-width:0}
+.clip button.clipbtn{display:block;width:100%;text-align:left;border:0;border-radius:0;padding:0;color:inherit}
+.clip:hover{transform:translateY(-3px)}.clip.sel{border-color:var(--aqua)}
+.clip .pv{position:relative;display:block}
+.clip .cov{position:absolute;left:0.8%;top:1.4%;width:56%;min-height:20%;background:#081122;border-left:2px solid var(--aqua);color:var(--aqua);font-size:8px;letter-spacing:.12em;padding:3px 5px 2px;pointer-events:none}
+.clip img,.clip .phimg{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;background:#02050a}
+.clip .b{padding:8px 10px}.clip .s{font:700 20px/1 var(--score);color:var(--aqua)}.clip .k{font:10.5px var(--mono);color:var(--dim);margin-top:3px}
+.foot{color:var(--dim);font-size:11.5px;line-height:1.55}
+.finalwrap{max-width:1440px;margin:0 auto;padding:12px clamp(12px,2.2vw,28px) 0;min-width:0}
+.finalrow{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;min-width:0}
+h1.finalsum{margin:0;font:700 clamp(28px,7vw,46px)/1 var(--score);letter-spacing:.02em;color:var(--aqua)}
+h1.finalsum.gold{color:var(--gold)}
+.finalwhy{margin:4px 0 0;color:var(--mute);font-size:13px;max-width:70ch}
+.taphint{position:absolute;z-index:5;left:8px;right:8px;bottom:8px;text-align:center;font-size:12px;color:var(--ink);background:rgba(4,8,15,.82);border:1px solid var(--line2);border-radius:10px;padding:8px 10px;pointer-events:none}
+.clipstat{margin-top:6px;color:var(--mute);font-size:12px;min-height:1.2em}
+.plays{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;max-height:280px;overflow:auto}
+.plays button{width:100%;text-align:left;min-height:44px;border:1px solid var(--line);border-radius:10px;padding:6px 10px;display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center}
+.plays button.on{border-color:var(--aqua)}
+.howto{margin-top:8px}.howto summary{min-height:44px;display:flex;align-items:center;cursor:pointer}
+.howto ol{margin:4px 0 8px;padding-left:18px;color:var(--mute);font-size:12.5px}
+.howto pre{margin:0;white-space:pre-wrap;font:11.5px var(--mono);color:#c5d2e4}
+.clip .dl{display:inline-flex;align-items:center;min-height:44px;margin:0 10px 8px;font-size:12px}
+@media (max-width:1060px){.grid{grid-template-columns:1fr;grid-template-areas:"stage" "rail" "side" "clips" "foot"}}
+@media (max-width:720px){
+ .top{grid-template-columns:1fr;gap:6px;padding:8px 10px 10px}
+ .brand-row{justify-content:space-between}.mid{display:none}
+ .ticker{min-width:0;justify-self:stretch}.ticker .dg{font-size:34px}.ticker .side{padding:6px 10px 8px}
+ .status{justify-self:stretch;text-align:center;max-width:none}
+ .grid{padding:10px 10px 28px;gap:10px}
+ .worm-wrap{height:112px}.big{font-size:52px}.padstage,#padcv{height:48px}.kv{grid-template-columns:92px minmax(0,1fr)}
+ .strip button{width:96px;min-height:44px}
+ .finalrow{align-items:stretch;flex-direction:column}
+ #share{align-self:flex-start}
+ .cgrid{display:flex;overflow-x:auto;grid-template-columns:none;scroll-snap-type:x mandatory}
+ .cgrid .clip{flex:0 0 min(78%,280px);scroll-snap-align:start}
+ .ctl{position:sticky;bottom:0;z-index:15;background:rgba(4,8,15,.94);margin:8px -10px 0;padding:6px 10px calc(8px + env(safe-area-inset-bottom))}
+ .mode .lng{display:none}.legend span:last-child{display:none}
+ .burn{width:58%}.burn .meta{display:none}
+}
+@media (pointer:coarse){body::before{display:none}}
+.sig{display:grid}
+.sigrow{display:grid;grid-template-columns:12px minmax(0,1fr);gap:8px;align-items:start;padding:8px 0;border-top:1px solid var(--line);opacity:0;transform:translateY(8px)}
+.sigrow:first-child{border-top:0}
+body.ready .sigrow{opacity:1;transform:none;transition:opacity .4s var(--ease),transform .5s var(--ease);transition-delay:calc(var(--k,0) * 70ms + 180ms)}
+.sigrow .pip{width:8px;height:8px;margin-top:4px;border-radius:50%;background:var(--dim)}
+.sigrow.pass .pip{background:var(--aqua)}.sigrow.fail .pip{background:var(--bad)}.sigrow.partial .pip{background:var(--warn)}
+.sigrow.info .pip{background:var(--steel)}.sigrow.absent .pip{background:transparent;box-shadow:inset 0 0 0 1.5px var(--dim)}
+.sigrow .nm{font-weight:650}.sigrow .st{float:right;margin-left:8px;font:10px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--mute)}
+.sigrow.fail .st{color:var(--bad)}.sigrow.partial .st{color:var(--warn)}.sigrow.pass .st{color:var(--aqua)}
+.meter{height:4px;border-radius:4px;background:var(--line2);overflow:hidden;margin-top:6px}
+.meter i{display:block;height:100%;background:var(--aqua);transform-origin:0 50%;transform:scaleX(0)}
+body.ready .meter i{transform:scaleX(var(--f,0));transition:transform .7s var(--ease) .4s}
+.chk .code{color:var(--dim)}
+@media (prefers-reduced-motion:reduce){
+ *,*::before,*::after{animation:none!important;transition:none!important}
+ .enter,.sigrow{opacity:1;transform:none}
+ .chainClip:not(.booted) .link{opacity:1;transform:none}
+ .meter i{transform:scaleX(var(--f,0))}
+}
+</style><link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PGNpcmNsZSBjeD0iMzIiIGN5PSIzMiIgcj0iMjciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzJlZjJmZiIgc3Ryb2tlLXdpZHRoPSI1Ii8+PGcgc3Ryb2tlPSIjMmVmMmZmIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCI+PHBhdGggZD0iTTMyIDl2NU01NSAzMmgtNU0zMiA1NXYtNU05IDMyaDUiLz48L2c+PHBhdGggZD0iTTMyIDMyVjE5IiBzdHJva2U9IiNmZmYiIHN0cm9rZS13aWR0aD0iNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PHBhdGggZD0iTTMyIDMybDE3IDE3IiBzdHJva2U9IiNmZjJlODgiIHN0cm9rZS13aWR0aD0iNiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PGNpcmNsZSBjeD0iMzIiIGN5PSIzMiIgcj0iNSIgZmlsbD0iI2ZmMmU4OCIvPjwvc3ZnPgo="><link rel="canonical" href="https://conwan30.github.io/qortime/matches/170123/"><meta name="description" content="local-20261023-170123. Final 10–0. Receipt VERIFIED. Referee-verified."><meta property="og:title" content="QorTime · local-20261023-170123"><meta property="og:description" content="local-20261023-170123. Final 10–0. Receipt VERIFIED. Referee-verified."><meta property="og:url" content="https://conwan30.github.io/qortime/matches/170123/"><meta property="og:image" content="https://conwan30.github.io/qortime/matches/170123/og.png"><meta property="og:type" content="website"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="QorTime · local-20261023-170123"><meta name="twitter:description" content="local-20261023-170123. Final 10–0. Receipt VERIFIED. Referee-verified."><meta name="twitter:image" content="https://conwan30.github.io/qortime/matches/170123/og.png"></head><body>
+<header class="top enter d0">
+ <div class="brand-row"><a class="brand" href="../">QOR<span>TIME</span></a><div class="mid" id="mid"></div></div>
+ <div class="ticker" id="ticker" aria-live="polite">
+  <div class="side away" id="sideA"><span class="nm">AWAY</span><span class="dg" id="tA"></span><i class="sweep" aria-hidden="true"></i></div>
+  <div class="ctr"><span class="q" id="tQ">Q–</span><span class="clk" id="tC">–:––</span><span class="tstate" id="tState"></span></div>
+  <div class="side home" id="sideH"><span class="dg" id="tH"></span><span class="nm">HOME</span><i class="sweep" aria-hidden="true"></i></div>
+  <span class="seal" id="seal" hidden>SEAL</span>
+ </div>
+ <div class="status" id="status"></div>
+</header>
+<div class="finalwrap enter d0"><div class="finalrow">
+ <div><h1 class="finalsum" id="finalSum">QorTime match</h1><p class="finalwhy" id="finalWhy"></p></div>
+ <button class="btn" id="share" type="button">Share</button>
+</div></div>
+<main class="grid">
+ <section class="stage-card enter d1" aria-label="Footage">
+  <div class="bleed" id="bleed" aria-hidden="true"></div>
+  <div class="stage" id="stage">
+   <img class="fr" id="frA" alt=""><img class="fr" id="frB" alt="">
+   <video id="vid" playsinline muted preload="none"></video>
+   <div class="burn" id="burn" hidden></div>
+   <div class="flash" id="flash" aria-hidden="true"></div>
+   <div class="ov"><span class="mode" id="mode"></span><span class="dt" id="dt"></span></div>
+   <div class="readpop" id="readMsg" hidden><b>scorebug read changed</b><span id="readSub"></span></div>
+   <div class="empty" id="empty" hidden></div>
+   <div class="taphint" id="tapHint" hidden></div>
+  </div>
+  <div class="ctl">
+   <button class="btn round" id="play" aria-label="Play"><svg viewBox="0 0 12 12" width="13" height="13"><path id="pico" d="M2 1l9 5-9 5z" fill="currentColor"/></svg></button>
+   <div class="prog" id="prog" role="slider" tabindex="0" aria-label="Position in this moment" aria-valuemin="0" aria-valuemax="100"><div class="bar"><i id="progFill"></i></div><span class="lockpin" id="lockPin" title="score change"></span></div>
+   <span class="pos" id="pos"></span>
+   <button class="btn" id="srcBtn" hidden>Stills</button>
+  </div>
+  <div class="clipstat" id="clipStat"></div>
+  <div class="pad" id="pad">
+   <div class="h"><span class="lbl">Controller</span><span class="sub" id="padDev">advisory evidence, not proof · the referee does not check who held the controller</span></div>
+   <div class="padstage"><canvas id="padcv" aria-label="Controller presses and haptics aligned to the playhead"></canvas><div class="padph" id="padPh" hidden><i></i></div></div>
+   <div class="sub" id="padSub"></div>
+  </div>
+  <div class="aisaw">
+   <div class="h"><span class="lbl">What the AI saw</span><span class="sub" id="aiSub"></span></div>
+   <div class="strip" id="strip" role="group" aria-label="Frames the score reader looked at"></div>
+  </div>
+ </section>
+ <section class="card rail-card enter d2" id="railCard" aria-label="Proof chain and score timeline">
+  <div class="h"><span class="lbl">Proof chain</span><span class="sub" id="railSub"></span>
+   <span class="nav"><button class="btn round" id="prv" aria-label="Previous score change">‹</button><button class="btn round" id="nxt" aria-label="Next score change">›</button></span></div>
+  <div class="chainClip" id="chainClip"><div class="chainWin" id="chainWin"></div></div>
+  <div class="tl" id="tl">
+   <div class="macro"><canvas id="rail" width="600" height="28" aria-hidden="true"></canvas><div class="crackbtns" id="crackBtns"></div></div>
+   <div class="ph" id="ph"><i></i></div>
+   <div class="worm-wrap" id="wormWrap"><svg id="worm" preserveAspectRatio="none" aria-hidden="true"></svg><div class="mks" id="mks"></div><div id="shock" aria-hidden="true"><i></i></div></div>
+  </div>
+  <div class="legend"><span><i class="la"></i>away</span><span><i class="lh"></i>home</span><span><i class="lk"></i>hash linked here</span><span><i class="lc"></i>cracked link</span><span><i class="lg"></i>gold = referee-verified seal</span></div>
+  <div class="proofnote" id="proofNote">
+   <button class="btn" id="proofGo" type="button">Check hashes in this browser</button>
+   <div id="proofLive">Checkpoint hashes have not been recomputed in this browser yet.</div>
+   <div id="proofFile"></div>
+   <div class="sub" id="proofLimit">A lit link means this browser recomputed that checkpoint's SHA-256 and its link to the previous checkpoint. Video segment bytes are not on this page. Highlight clips are re-encoded, so a lit link is not a check of the picture. Full per-chunk picture checks need the original segment files (the sha256 values on each clip's source segments) or the captured frame bytes inside frames_hash, published beside the page.</div>
+  </div>
+  <div class="chips" id="chips" role="listbox" aria-label="Score changes"></div>
+ </section>
+ <aside class="side-col enter d3">
+  <section class="card" id="evCard" aria-label="Selected moment"></section>
+  <section class="card" id="playsCard" aria-label="Plays in this match"></section>
+  <section class="card" id="rcCard" aria-label="Receipt and verification"></section>
+  <section class="card" id="sigCard" aria-label="Signals in this recording"></section>
+  <details class="card scope-card" id="scopeCard">
+   <summary class="lbl">Inputs &amp; haptics · advisory evidence, not proof</summary>
+   <canvas id="scope" aria-label="Button presses and haptic energy around this moment"></canvas>
+   <div class="sub" id="adv"></div>
+  </details>
+ </aside>
+ <section class="card clips-card enter d3" id="clipsCard" aria-label="Highlight clips"></section>
+ <footer class="foot" id="foot"></footer>
+</main>
+<script>
+(()=>{"use strict";
+const D={"schema": "qortime-match-index/v0", "match_id": "local-20261023-170123", "role": "away", "qorcap_version": "0.3.31", "claims": "Receipt status (computed by the QorTime verifier when this page was built): VERIFIED \u00b7 co-signed by qortime-online-s2 (delegation serial 2 from root qortime-v1). Play-by-play derived from the QorCap scorebug timeline and checkpoint chain. Frames are what the reader looked at; scores are reads, not signed results. Advisory evidence only: controller inputs/haptics show activity in sync with the video, not who played or what happened.", "chain": {"chain_head": "a7a9af1997c512c064078bbdc0b69deb6c0056ce56371f074bc3b0b9ee53e5c0", "checkpoint_head": "becaaf749825d497511db7c8961d4fb9ac7d28cfe6b0d272e697570d1a4faf61", "checkpoints": 542, "segments": 525}, "result": {"final": {"home": 0, "away": 10, "quarter": 4, "t_ms": 1792793932144, "basis": "end_menu", "method": "end_menu_read", "end_menu": {"away": 10, "home": 0, "t_ms": 1792793932144, "until_ms": 1792793932982, "frames": 3, "conf_permille": 912, "margin_permille": 229, "template_sources": ["real"], "xcheck": "qortime_scorebug_pack"}, "scorebug_last": {"home": 0, "away": 10, "quarter": 4, "clock_s": null, "t_ms": 1792793907322}, "notes": [], "final_confirmed": true, "delta_corroboration": {"kind": "exact_match"}, "amends": {"basis": "final_screen", "home": 0, "away": 10, "t_ms": 1792793907322}}, "final_confirmed": true, "receipt_result": {"home_score": 0, "away_score": 10, "quarter": 4, "final_t_ms": 1792793925340, "winner": "away", "method": "end_menu_read", "final_basis": "end_menu", "final_confirmed": true}, "trust_tier": "VERIFIED \u00b7 co-signed by qortime-online-s2 (delegation serial 2 from root qortime-v1)"}, "input_summary": {"status": "ok", "human_label": "consistent with human play", "human_permille": 950, "match_permille": 522, "chance_permille": 447, "offset_ms": 1100, "haptic_events": 1084, "device": "DualSense Edge (USB)", "advisory": "Advisory evidence only: controller inputs/haptics show activity in sync with the video, not who played or what happened.", "input_proof_present": true, "wall_anchor_ms": 1792792890967, "presses": 950, "haptics": 1084}, "video": {"file": null, "duration_s": null, "alignment": "none", "recording_offset_s": 0.0, "recording_duration_s": 1045.7666666666667, "alignment_note": "video time = cumulative manifest frames/30 interpolated by wall clock; tail videos assume they end where the recording ends (+-~2 s)"}, "missing": [], "events": [{"kind": "kickoff", "t_ms": 1792792960192, "score_after": {"away": 0, "home": 0}, "quarter": 1, "clock_s": 104, "basis": "first scorebug read with a running Q1 clock", "confidence": 0.6, "id": "e00_kickoff", "confidence_note": "heuristic from scorebug read stability; not a signed result", "recording_s": 68.077, "checkpoints": {"before": {"seq": 36, "t_ms": 1792792959966, "hash": "4f104f6a399a4ba427def6123f27c67aef8862b39758bd4003dc2565f3b38eba", "prev": "9a4ecca0152a12d46f447540c6305d0b429da4c8c16f6e5cb9a5c22edc8e80d2", "frames_hash": "c47ac5f5bdd916f53cf709ac8cda4b8c75f9642c56b6c4972122c059fe6ccec0", "frames_hash_matches_evidence": true, "trigger": "segment", "segment_seq": 34, "segment_hash": "1257725b201b7aec33377ab19828b17829d35ce7aa8e0bd343c6839456d68af5", "chain_head": "0934536588409052419339259790605dc49ffdc0706d0a619e348bce93ef2c92", "score_in_evidence": {"home": 0, "away": 0, "quarter": 1, "clock_s": null, "clock_red": false}}, "after": {"seq": 37, "t_ms": 1792792961963, "hash": "f827a9b76554127e3264b945fe66ed4655fd81ec2a15ea3aeed08c02a1891562", "prev": "4f104f6a399a4ba427def6123f27c67aef8862b39758bd4003dc2565f3b38eba", "frames_hash": "59a1bc80a9dd7c7ede0d3afbe65ac01c6d921bcc3c8080fcaa87bf2422f6e4b4", "frames_hash_matches_evidence": true, "trigger": "segment", "segment_seq": 35, "segment_hash": "7a71352b98ccb6e41ebe02a57d7cc67793fefb0edd0b7ff40d47dbc28bd6e063", "chain_head": "60fa7917d78456411cda68e0f27b0c3476eb65d474923c380560e7d32cdaa1b4", "score_in_evidence": {"home": 0, "away": 0, "quarter": 1, "clock_s": null, "clock_red": false}}, "trigger_match": null, "clip": null}, "inputs": {"advisory": "Advisory evidence only: controller inputs/haptics show activity in sync with the video, not who played or what happened.", "presses": [{"dt_ms": -4351, "buttons": ["L2"]}, {"dt_ms": -3186, "buttons": ["R2"]}, {"dt_ms": -65, "buttons": ["L2"]}, {"dt_ms": 137, "buttons": ["R3"]}, {"dt_ms": 1038, "buttons": ["R2"]}, {"dt_ms": 1208, "buttons": ["L2"]}, {"dt_ms": 1714, "buttons": ["CIRCLE"]}, {"dt_ms": 1730, "buttons": ["TRIANGLE"]}, {"dt_ms": 2188, "buttons": ["CROSS"]}, {"dt_ms": 2330, "buttons": ["CROSS"]}, {"dt_ms": 2437, "buttons": ["CROSS"]}, {"dt_ms": 2551, "buttons": ["CROSS"]}, {"dt_ms": 2661, "buttons": ["CROSS"]}, {"dt_ms": 2778, "buttons": ["CROSS"]}, {"dt_ms": 2889, "buttons": ["CROSS"]}], "haptics": [{"dt_ms": -4830, "duration_ms": 382, "energy": 22113, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident", "hand_motion"]}, {"dt_ms": -4360, "duration_ms": 174, "energy": 3633, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident"]}, {"dt_ms": -4080, "duration_ms": 724, "energy": 42297, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident", "hand_motion"]}, {"dt_ms": -3289, "duration_ms": 211, "energy": 3620, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident", "grip_jolt"]}, {"dt_ms": -2733, "duration_ms": 301, "energy": 5845, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident"]}, {"dt_ms": -121, "duration_ms": 682, "energy": 36503, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident", "hand_motion"]}, {"dt_ms": 1060, "duration_ms": 2646, "energy": 7235882, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident", "hand_motion"]}], "strip": {"t0_s": -10.0, "bin_s": 0.25, "presses": [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 2, 0, 2, 0, 1, 2, 2, 2, 2, 1, 0, 0, 0, 0, 0, 0], "haptic_energy": [0, 0, 0, 48939, 0, 752, 366, 563, 0, 154368, 0, 0, 0, 0, 0, 0, 0, 10979, 0, 0, 22113, 0, 3633, 42297, 0, 0, 3620, 0, 0, 5845, 0, 0, 0, 0, 0, 0, 0, 0, 0, 36503, 0, 0, 0, 0, 7235882, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}}, "locked": false, "frames": [], "contact_sheet": null, "cuts_video_s": null, "frames_missing_reason": "Footage is not published. The recording stays on the player's PC."}, {"kind": "quarter_change", "t_ms": 1792793119551, "quarter": 2, "clock_s": null, "score_after": {"away": 0, "home": 0}, "basis": "scorebug quarter 1->2 (held 2 reads)", "confidence": 0.6, "id": "e01_quarter_change", "confidence_note": "heuristic from scorebug read stability; not a signed result", "recording_s": 226.909, "checkpoints": {"before": {"seq": 116, "t_ms": 1792793117934, "hash": "c93df8a9edbb4f1ebc32f7257b3266c7e3ea662c7cf9ae0f2ebe90a6f65380e2", "prev": "ed65f97566dfe32479e68d77b30b3989860e60ad48f3001e904cf16454e99ae2", "frames_hash": "d54eec0ac13d3c5596ddda2d9f8e564deb8e6db47c74a26f378f9a4531e773f6", "frames_hash_matches_evidence": true, "trigger": "segment", "segment_seq": 113, "segment_hash": "182393ee8f1fcc25455455b9b1a56581c72d6a553a0ed5f04d1077c133380edd", "chain_head": "df7b63be8c183daa8480dec35fe2e03798155825d267c495526ec10ed6b0d8b7", "score_in_evidence": {"home": 0, "away": 0, "quarter": 1, "clock_s": null, "clock_red": false}}, "after": {"seq": 117, "t_ms": 1792793119588, "hash": "0c5daed61a9eed2c6358dc4f636c9d60840232601957c880e54e31c707cb61b7", "prev": "c93df8a9edbb4f1ebc32f7257b3266c7e3ea662c7cf9ae0f2ebe90a6f65380e2", "frames_hash": "8043c09c3ba160bfb6880efc74a6f30224aec05f93c1639895c2ace90d2b3dc0", "frames_hash_matches_evidence": true, "trigger": "score_change", "segment_seq": 113, "segment_hash": "182393ee8f1fcc25455455b9b1a56581c72d6a553a0ed5f04d1077c133380edd", "chain_head": "df7b63be8c183daa8480dec35fe2e03798155825d267c495526ec10ed6b0d8b7", "score_in_evidence": {"home": 0, "away": 0, "quarter": 2, "clock_s": null, "clock_red": false}}, "trigger_match": null, "clip": null}, "inputs": {"advisory": "Advisory evidence only: controller inputs/haptics show activity in sync with the video, not who played or what happened.", "presses": [{"dt_ms": -3992, "buttons": ["CROSS"]}, {"dt_ms": -3021, "buttons": ["CROSS"]}, {"dt_ms": -1755, "buttons": ["CROSS"]}, {"dt_ms": -207, "buttons": ["CROSS"]}, {"dt_ms": 569, "buttons": ["R2"]}, {"dt_ms": 1469, "buttons": ["CROSS"]}, {"dt_ms": 1800, "buttons": ["R2"]}, {"dt_ms": 2329, "buttons": ["TRIANGLE"]}], "haptics": [{"dt_ms": -4421, "duration_ms": 64, "energy": 1173, "confidence": 250, "confidence_label": "low", "flags": ["grip_jolt"]}, {"dt_ms": -4042, "duration_ms": 115, "energy": 7561, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident", "grip_jolt", "hand_motion"]}, {"dt_ms": -3323, "duration_ms": 112, "energy": 6800, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident", "hand_motion"]}, {"dt_ms": -3036, "duration_ms": 93, "energy": 9801, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident", "grip_jolt", "hand_motion"]}, {"dt_ms": -2128, "duration_ms": 138, "energy": 5466, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident"]}, {"dt_ms": -1771, "duration_ms": 260, "energy": 20518, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident", "hand_motion"]}, {"dt_ms": -252, "duration_ms": 130, "energy": 8529, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident", "hand_motion"]}, {"dt_ms": -41, "duration_ms": 102, "energy": 7358, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident"]}, {"dt_ms": 612, "duration_ms": 95, "energy": 2875, "confidence": 250, "confidence_label": "low", "flags": ["grip_jolt"]}, {"dt_ms": 1386, "duration_ms": 214, "energy": 17046, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident", "hand_motion"]}, {"dt_ms": 1630, "duration_ms": 143, "energy": 6657, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident"]}, {"dt_ms": 1837, "duration_ms": 93, "energy": 7366, "confidence": 250, "confidence_label": "low", "flags": ["hand_motion"]}, {"dt_ms": 2168, "duration_ms": 405, "energy": 64122, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident", "hand_motion"]}, {"dt_ms": 2918, "duration_ms": 560, "energy": 17717, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident"]}], "strip": {"t0_s": -10.0, "bin_s": 0.25, "presses": [0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 1, 0, 0, 0, 1, 1, 0], "haptic_energy": [0, 283, 9965, 0, 10172, 10523, 0, 0, 0, 0, 0, 0, 0, 47810, 0, 0, 0, 0, 0, 18028, 0, 0, 1173, 7561, 0, 0, 6800, 9801, 0, 0, 0, 5466, 20518, 0, 0, 0, 0, 0, 8529, 7358, 0, 0, 2875, 0, 0, 17046, 6657, 7366, 64122, 0, 0, 17717, 0, 0, 1442, 0, 1350, 24078, 15633, 0]}}, "locked": false, "frames": [], "contact_sheet": null, "cuts_video_s": null, "frames_missing_reason": "Footage is not published. The recording stays on the player's PC."}, {"kind": "quarter_change", "t_ms": 1792793335733, "quarter": 3, "clock_s": null, "score_after": {"away": 0, "home": 0}, "basis": "scorebug quarter 2->3 (held 2 reads)", "confidence": 0.6, "id": "e02_quarter_change", "confidence_note": "heuristic from scorebug read stability; not a signed result", "recording_s": 443.141, "checkpoints": {"before": {"seq": 226, "t_ms": 1792793334084, "hash": "09bef6ceae3306c1039c9184d5ca6adacf5f6a2a6a70dea901b6eaf153ff7c28", "prev": "8b61d4d29eb2adc78eb1ee35c75d31e7185e56709bd4b69e4b1afffabc28e6e4", "frames_hash": "f3ff7beb8daa7ef84396761c23410f85828b34c4d1b8e817c7ef0c7fbdc13f83", "frames_hash_matches_evidence": true, "trigger": "segment", "segment_seq": 221, "segment_hash": "7b2f402dbeb327b0f1e019984710d55f368ce78eafa45f3e4f0efc896d5407d2", "chain_head": "28968d9c86b3a5c34802be360662a43f4bca0af53f94b473065e56eb63aca62f", "score_in_evidence": {"home": 0, "away": 0, "quarter": 2, "clock_s": null, "clock_red": true}}, "after": {"seq": 227, "t_ms": 1792793335766, "hash": "bed69d844c59192f9f36df8c6081efb26437ea1ab8ac152b47056963df9167e1", "prev": "09bef6ceae3306c1039c9184d5ca6adacf5f6a2a6a70dea901b6eaf153ff7c28", "frames_hash": "b315e3004df54cf376290ce2f2578735d6dfe88b7ef7491b18e92764a92ff6ad", "frames_hash_matches_evidence": true, "trigger": "score_change", "segment_seq": 221, "segment_hash": "7b2f402dbeb327b0f1e019984710d55f368ce78eafa45f3e4f0efc896d5407d2", "chain_head": "28968d9c86b3a5c34802be360662a43f4bca0af53f94b473065e56eb63aca62f", "score_in_evidence": {"home": 0, "away": 0, "quarter": 3, "clock_s": null, "clock_red": false}}, "trigger_match": null, "clip": null}, "inputs": {"advisory": "Advisory evidence only: controller inputs/haptics show activity in sync with the video, not who played or what happened.", "presses": [{"dt_ms": -4258, "buttons": ["CROSS"]}, {"dt_ms": -2232, "buttons": ["TRIANGLE"]}, {"dt_ms": -1095, "buttons": ["CROSS"]}, {"dt_ms": -318, "buttons": ["CROSS"]}], "haptics": [{"dt_ms": -4921, "duration_ms": 2025, "energy": 6933025, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident", "hand_motion"]}, {"dt_ms": -2522, "duration_ms": 45, "energy": 379, "confidence": 250, "confidence_label": "low", "flags": ["grip_jolt"]}, {"dt_ms": -2233, "duration_ms": 220, "energy": 17974, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident", "hand_motion"]}, {"dt_ms": -1833, "duration_ms": 367, "energy": 16309, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident", "hand_motion"]}, {"dt_ms": -1335, "duration_ms": 120, "energy": 704, "confidence": 250, "confidence_label": "low", "flags": ["grip_jolt"]}, {"dt_ms": -1128, "duration_ms": 130, "energy": 8201, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident", "hand_motion"]}, {"dt_ms": -913, "duration_ms": 169, "energy": 7988, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident", "hand_motion"]}, {"dt_ms": -331, "duration_ms": 140, "energy": 25137, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident", "hand_motion"]}, {"dt_ms": -23, "duration_ms": 222, "energy": 1124, "confidence": 250, "confidence_label": "low", "flags": ["grip_jolt"]}, {"dt_ms": 562, "duration_ms": 199, "energy": 7047, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident", "hand_motion"]}, {"dt_ms": 812, "duration_ms": 84, "energy": 699, "confidence": 250, "confidence_label": "low", "flags": ["grip_jolt"]}], "strip": {"t0_s": -10.0, "bin_s": 0.25, "presses": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "haptic_energy": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6688, 17568, 1465, 396437, 0, 0, 0, 6268, 0, 6933025, 0, 0, 0, 0, 0, 0, 0, 0, 379, 0, 17974, 16309, 0, 704, 8201, 7988, 0, 25137, 1124, 0, 0, 7047, 699, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}}, "locked": false, "frames": [], "contact_sheet": null, "cuts_video_s": null, "frames_missing_reason": "Footage is not published. The recording stays on the player's PC."}, {"kind": "score_change", "t_ms": 1792793488053, "quarter": 3, "clock_s": null, "score_before": {"away": 0, "home": 0}, "score_after": {"away": 3, "home": 0}, "delta": {"away": 3, "home": 0}, "legal_step": true, "reads_agreeing": 228, "basis": "scorebug change held 228 consecutive reads", "confidence": 1.0, "last_old_read_t_ms": 1792793483249, "play": "field goal (+3)", "id": "e03_score_change", "confidence_note": "heuristic from scorebug read stability; not a signed result", "recording_s": 595.321, "checkpoints": {"before": {"seq": 305, "t_ms": 1792793487818, "hash": "e7b22005abf3c3163c476a5448104bb7b66b4d1d1c9cf4c37134ffe70e74e02b", "prev": "696f4d2470cef14b1553c9a9b963b1b1fcff2d1d26a15d2cf82acd6202ed5444", "frames_hash": "4b33b4a5f3ee2aa786b231ff0968dcecfcc0040270a44c4d90a8f302fbffb6b4", "frames_hash_matches_evidence": true, "trigger": "segment", "segment_seq": 298, "segment_hash": "352f49cedcef8d57db67505b79ec554d62a2af3844c55b807caf39aa13d4b933", "chain_head": "9be621970b5f5f4fde4372ad6e8412f09020c5005e0a3bbbecf5db7dabfb5e07", "score_in_evidence": {"home": 0, "away": 0, "quarter": 3, "clock_s": null, "clock_red": false}}, "after": {"seq": 306, "t_ms": 1792793488090, "hash": "255d214be88e3e98906ecf2ccb37530268a8d8a5fc91ec37183e62947f1d80b3", "prev": "e7b22005abf3c3163c476a5448104bb7b66b4d1d1c9cf4c37134ffe70e74e02b", "frames_hash": "945b7f8beb4ba0f8234ca24e6e10b88070b62404d713d4ce0ad31f163efc3b97", "frames_hash_matches_evidence": true, "trigger": "score_change", "segment_seq": 298, "segment_hash": "352f49cedcef8d57db67505b79ec554d62a2af3844c55b807caf39aa13d4b933", "chain_head": "9be621970b5f5f4fde4372ad6e8412f09020c5005e0a3bbbecf5db7dabfb5e07", "score_in_evidence": {"home": 0, "away": 3, "quarter": 3, "clock_s": null, "clock_red": false}}, "trigger_match": {"seq": 306, "t_ms": 1792793488090, "hash": "255d214be88e3e98906ecf2ccb37530268a8d8a5fc91ec37183e62947f1d80b3", "prev": "e7b22005abf3c3163c476a5448104bb7b66b4d1d1c9cf4c37134ffe70e74e02b", "frames_hash": "945b7f8beb4ba0f8234ca24e6e10b88070b62404d713d4ce0ad31f163efc3b97", "frames_hash_matches_evidence": true, "trigger": "score_change", "segment_seq": 298, "segment_hash": "352f49cedcef8d57db67505b79ec554d62a2af3844c55b807caf39aa13d4b933", "chain_head": "9be621970b5f5f4fde4372ad6e8412f09020c5005e0a3bbbecf5db7dabfb5e07", "score_in_evidence": {"home": 0, "away": 3, "quarter": 3, "clock_s": null, "clock_red": false}}, "clip": {"name": "score-a3-h0-q3", "sha256": "2317c7343bc68653ec20b613cd68b72028751fdfc1ebdb76d15933f696098204", "wall_ms": 1792793488256, "secs": 20}}, "inputs": {"advisory": "Advisory evidence only: controller inputs/haptics show activity in sync with the video, not who played or what happened.", "presses": [{"dt_ms": -967, "buttons": ["CROSS"]}, {"dt_ms": 1655, "buttons": ["CROSS"]}, {"dt_ms": 2725, "buttons": ["CROSS"]}], "haptics": [{"dt_ms": -3591, "duration_ms": 78, "energy": 459, "confidence": 250, "confidence_label": "low", "flags": ["grip_jolt"]}, {"dt_ms": -2039, "duration_ms": 939, "energy": 144487, "confidence": 250, "confidence_label": "low", "flags": ["hand_motion"]}, {"dt_ms": -976, "duration_ms": 322, "energy": 54064, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident", "hand_motion"]}, {"dt_ms": 358, "duration_ms": 121, "energy": 3486, "confidence": 945, "confidence_label": "high", "flags": []}, {"dt_ms": 549, "duration_ms": 33, "energy": 231, "confidence": 250, "confidence_label": "low", "flags": ["grip_jolt"]}, {"dt_ms": 1642, "duration_ms": 296, "energy": 32027, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident", "hand_motion"]}, {"dt_ms": 2725, "duration_ms": 243, "energy": 31536, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident", "hand_motion"]}], "strip": {"t0_s": -10.0, "bin_s": 0.25, "presses": [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0], "haptic_energy": [0, 0, 24577, 0, 5160939, 0, 0, 0, 0, 1140236, 0, 0, 0, 95560, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 459, 0, 0, 0, 0, 0, 144487, 0, 0, 0, 0, 54064, 0, 0, 0, 0, 3486, 231, 0, 0, 0, 32027, 0, 0, 0, 31536, 0, 0, 0, 0, 0, 8357, 4376, 0, 0]}}, "locked": true, "frames": [], "contact_sheet": null, "cuts_video_s": null, "frames_missing_reason": "Footage is not published. The recording stays on the player's PC."}, {"kind": "quarter_change", "t_ms": 1792793610089, "quarter": 4, "clock_s": null, "score_after": {"away": 3, "home": 0}, "basis": "scorebug quarter 3->4 (held 2 reads)", "confidence": 0.6, "id": "e04_quarter_change", "confidence_note": "heuristic from scorebug read stability; not a signed result", "recording_s": 718.182, "checkpoints": {"before": {"seq": 367, "t_ms": 1792793609846, "hash": "c965a109c2333fdcef2b4a3975d9f0fa0cf8b2c4d48d3219bf9ff060c079e858", "prev": "c0332b45e7b6cd68a9d60d0c8b8882648ed9ef4a4049a83053857dbd19987cae", "frames_hash": "6b6ba0b7c425517d3f0f5735d563ce56cbe447f9d567e9625e483e4067918c41", "frames_hash_matches_evidence": true, "trigger": "segment", "segment_seq": 359, "segment_hash": "0052deeaeef15e2ed5e168d2acd3886a04fc8ff7899282503004c4674cfe757b", "chain_head": "7a1a5cebe21a54619e311715b6d97a3d64b9bb15a953a7dfaaef76e94745cf46", "score_in_evidence": {"home": 0, "away": 3, "quarter": 3, "clock_s": null, "clock_red": false}}, "after": {"seq": 368, "t_ms": 1792793610099, "hash": "64ecbe45f45d9aed4157167d361028082b2b2474efeba737a5af8776638a8f24", "prev": "c965a109c2333fdcef2b4a3975d9f0fa0cf8b2c4d48d3219bf9ff060c079e858", "frames_hash": "896c08d10e4db1496875f896ad4786cfa82de2cbd1cf6b9ba6f71a86101cc9d7", "frames_hash_matches_evidence": true, "trigger": "score_change", "segment_seq": 359, "segment_hash": "0052deeaeef15e2ed5e168d2acd3886a04fc8ff7899282503004c4674cfe757b", "chain_head": "7a1a5cebe21a54619e311715b6d97a3d64b9bb15a953a7dfaaef76e94745cf46", "score_in_evidence": {"home": 0, "away": 3, "quarter": 4, "clock_s": null, "clock_red": false}}, "trigger_match": null, "clip": null}, "inputs": {"advisory": "Advisory evidence only: controller inputs/haptics show activity in sync with the video, not who played or what happened.", "presses": [{"dt_ms": -4580, "buttons": ["CROSS"]}, {"dt_ms": -2102, "buttons": ["TRIANGLE"]}, {"dt_ms": 1001, "buttons": ["R1"]}, {"dt_ms": 1182, "buttons": ["SQUARE"]}, {"dt_ms": 1417, "buttons": ["R1"]}, {"dt_ms": 1777, "buttons": ["L1"]}, {"dt_ms": 2528, "buttons": ["CIRCLE"]}, {"dt_ms": 2786, "buttons": ["R2"]}], "haptics": [{"dt_ms": -4608, "duration_ms": 121, "energy": 9826, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident", "hand_motion"]}, {"dt_ms": -3381, "duration_ms": 150, "energy": 6801, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident", "hand_motion"]}, {"dt_ms": -2187, "duration_ms": 649, "energy": 53234, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident", "hand_motion"]}, {"dt_ms": -1422, "duration_ms": 121, "energy": 6758, "confidence": 975, "confidence_label": "high", "flags": []}, {"dt_ms": 467, "duration_ms": 89, "energy": 606, "confidence": 250, "confidence_label": "low", "flags": ["grip_jolt"]}, {"dt_ms": 683, "duration_ms": 970, "energy": 172512, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident", "hand_motion"]}, {"dt_ms": 1757, "duration_ms": 1182, "energy": 71800, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident", "hand_motion"]}], "strip": {"t0_s": -10.0, "bin_s": 0.25, "presses": [1, 6, 5, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 0, 1, 0, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 0], "haptic_energy": [0, 0, 0, 0, 0, 4460, 0, 633, 0, 16680, 0, 0, 0, 0, 0, 6700, 8443, 0, 0, 0, 0, 9826, 0, 0, 0, 0, 6801, 0, 0, 0, 0, 53234, 0, 0, 6758, 0, 0, 0, 0, 0, 0, 606, 172512, 0, 0, 0, 0, 71800, 0, 0, 0, 0, 5277, 0, 109979, 0, 0, 0, 0, 0]}}, "locked": false, "frames": [], "contact_sheet": null, "cuts_video_s": null, "frames_missing_reason": "Footage is not published. The recording stays on the player's PC."}, {"kind": "score_change", "t_ms": 1792793788761, "quarter": 4, "clock_s": null, "score_before": {"away": 3, "home": 0}, "score_after": {"away": 9, "home": 0}, "delta": {"away": 6, "home": 0}, "legal_step": true, "reads_agreeing": 13, "basis": "scorebug change held 13 consecutive reads", "confidence": 1.0, "last_old_read_t_ms": 1792793784975, "play": "touchdown (+6, try not yet on the scorebug)", "id": "e05_score_change", "confidence_note": "heuristic from scorebug read stability; not a signed result", "recording_s": 896.621, "checkpoints": {"before": {"seq": 458, "t_ms": 1792793787851, "hash": "2618c996cde277a34a2e7b4d2421affb01143ec62eac391ed11f1b00e520f3ee", "prev": "4de503d5ac1312519a2807dc6c4ae3456e045559be0ec64d704cfb3adb816b62", "frames_hash": "eea6b98e95d58bf61d4cbc84af9c57c27fa6bbd2f213172b783973483f10054c", "frames_hash_matches_evidence": true, "trigger": "segment", "segment_seq": 448, "segment_hash": "59c112bafe34b9602ed398c25e2216b1a5f0a86a81eee8ed4e6987b971f93447", "chain_head": "3671797e7de58f22a8917c1942f6db51fd0b5fe002de70b881c40124cf08bc9d", "score_in_evidence": {"home": 0, "away": 3, "quarter": 4, "clock_s": null, "clock_red": false}}, "after": {"seq": 459, "t_ms": 1792793788788, "hash": "b89d944536b6293156ee6fa87e4c34f93ab531bd7be62e3cf016c5d99a6c7a7f", "prev": "2618c996cde277a34a2e7b4d2421affb01143ec62eac391ed11f1b00e520f3ee", "frames_hash": "7df5274f9efd69fa7eac05a7b13c7f33671932127f84837d456cb302befff659", "frames_hash_matches_evidence": true, "trigger": "score_change", "segment_seq": 448, "segment_hash": "59c112bafe34b9602ed398c25e2216b1a5f0a86a81eee8ed4e6987b971f93447", "chain_head": "3671797e7de58f22a8917c1942f6db51fd0b5fe002de70b881c40124cf08bc9d", "score_in_evidence": {"home": 0, "away": 9, "quarter": 4, "clock_s": null, "clock_red": false}}, "trigger_match": {"seq": 459, "t_ms": 1792793788788, "hash": "b89d944536b6293156ee6fa87e4c34f93ab531bd7be62e3cf016c5d99a6c7a7f", "prev": "2618c996cde277a34a2e7b4d2421affb01143ec62eac391ed11f1b00e520f3ee", "frames_hash": "7df5274f9efd69fa7eac05a7b13c7f33671932127f84837d456cb302befff659", "frames_hash_matches_evidence": true, "trigger": "score_change", "segment_seq": 448, "segment_hash": "59c112bafe34b9602ed398c25e2216b1a5f0a86a81eee8ed4e6987b971f93447", "chain_head": "3671797e7de58f22a8917c1942f6db51fd0b5fe002de70b881c40124cf08bc9d", "score_in_evidence": {"home": 0, "away": 9, "quarter": 4, "clock_s": null, "clock_red": false}}, "clip": {"name": "score-a9-h0-q4", "sha256": "a9d146f6c8a81f9d366847dbb2b9a2172135dfea536174eeab424b52891acad1", "wall_ms": 1792793788971, "secs": 20}}, "inputs": {"advisory": "Advisory evidence only: controller inputs/haptics show activity in sync with the video, not who played or what happened.", "presses": [{"dt_ms": 2053, "buttons": ["CROSS"]}], "haptics": [{"dt_ms": -4137, "duration_ms": 775, "energy": 9818, "confidence": 250, "confidence_label": "low", "flags": ["grip_jolt"]}, {"dt_ms": -2956, "duration_ms": 147, "energy": 1055, "confidence": 250, "confidence_label": "low", "flags": ["grip_jolt"]}, {"dt_ms": -2545, "duration_ms": 503, "energy": 349939, "confidence": 250, "confidence_label": "low", "flags": ["hand_motion"]}, {"dt_ms": -1525, "duration_ms": 447, "energy": 149157, "confidence": 250, "confidence_label": "low", "flags": ["hand_motion"]}, {"dt_ms": -735, "duration_ms": 356, "energy": 41104, "confidence": 996, "confidence_label": "high", "flags": []}, {"dt_ms": -281, "duration_ms": 215, "energy": 1133, "confidence": 250, "confidence_label": "low", "flags": ["grip_jolt"]}, {"dt_ms": 2055, "duration_ms": 97, "energy": 10388, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident", "grip_jolt"]}, {"dt_ms": 2193, "duration_ms": 110, "energy": 11809, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident", "hand_motion"]}], "strip": {"t0_s": -10.0, "bin_s": 0.25, "presses": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 3, 1, 0, 5, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0], "haptic_energy": [0, 0, 0, 0, 0, 0, 0, 37359, 32605, 5948, 0, 2095, 0, 3314530, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9818, 0, 0, 0, 0, 1055, 349939, 0, 0, 0, 149157, 0, 0, 0, 41104, 1133, 0, 0, 0, 0, 0, 0, 0, 0, 0, 22197, 0, 0, 0, 0, 0, 0, 0, 70749, 0, 0, 0]}}, "locked": true, "frames": [], "contact_sheet": null, "cuts_video_s": null, "frames_missing_reason": "Footage is not published. The recording stays on the player's PC."}, {"kind": "score_change", "t_ms": 1792793803632, "quarter": 4, "clock_s": null, "score_before": {"away": 9, "home": 0}, "score_after": {"away": 10, "home": 0}, "delta": {"away": 1, "home": 0}, "legal_step": true, "reads_agreeing": 87, "basis": "scorebug change held 87 consecutive reads", "confidence": 1.0, "last_old_read_t_ms": 1792793801987, "play": "extra point (PAT kick, +1)", "id": "e06_score_change", "confidence_note": "heuristic from scorebug read stability; not a signed result", "recording_s": 911.719, "checkpoints": {"before": {"seq": 466, "t_ms": 1792793801845, "hash": "ac2cbf4757591ef5f3bd6a149f87ca5de1cffdfe3b9dfd8635336d57cba5d1b1", "prev": "c81ce7cb67a44fadb133c5957bfbf998f021eadb02b8d754983da02839f6e705", "frames_hash": "3e9e63a51c295859ece98ddac5e5a4e95217285a46bac3db47a9a8aeed24e490", "frames_hash_matches_evidence": true, "trigger": "segment", "segment_seq": 455, "segment_hash": "e2ac75f3f30916859b64670997005dea54e122785e15c00c21094b96d9edf384", "chain_head": "660f7c2dea6cc5a552ee0aee9f5cb060db0072d6304886418597ce4f70f0e4e9", "score_in_evidence": {"home": 0, "away": 9, "quarter": 4, "clock_s": null, "clock_red": false}}, "after": {"seq": 467, "t_ms": 1792793803653, "hash": "b72fa5714901f58bd2ecd74c073487b4811072e288e4cb34d5c90d506fe0889b", "prev": "ac2cbf4757591ef5f3bd6a149f87ca5de1cffdfe3b9dfd8635336d57cba5d1b1", "frames_hash": "7c239fb4fc46452847c65acc24ea2581f24b13c0f3cfad8af3c9ef15792ab18a", "frames_hash_matches_evidence": true, "trigger": "score_change", "segment_seq": 455, "segment_hash": "e2ac75f3f30916859b64670997005dea54e122785e15c00c21094b96d9edf384", "chain_head": "660f7c2dea6cc5a552ee0aee9f5cb060db0072d6304886418597ce4f70f0e4e9", "score_in_evidence": {"home": 0, "away": 10, "quarter": 4, "clock_s": null, "clock_red": false}}, "trigger_match": {"seq": 467, "t_ms": 1792793803653, "hash": "b72fa5714901f58bd2ecd74c073487b4811072e288e4cb34d5c90d506fe0889b", "prev": "ac2cbf4757591ef5f3bd6a149f87ca5de1cffdfe3b9dfd8635336d57cba5d1b1", "frames_hash": "7c239fb4fc46452847c65acc24ea2581f24b13c0f3cfad8af3c9ef15792ab18a", "frames_hash_matches_evidence": true, "trigger": "score_change", "segment_seq": 455, "segment_hash": "e2ac75f3f30916859b64670997005dea54e122785e15c00c21094b96d9edf384", "chain_head": "660f7c2dea6cc5a552ee0aee9f5cb060db0072d6304886418597ce4f70f0e4e9", "score_in_evidence": {"home": 0, "away": 10, "quarter": 4, "clock_s": null, "clock_red": false}}, "clip": {"name": "score-a10-h0-q4", "sha256": "7a9f6bf8e5e2d26d82ed9536bb6ec48ab32ee6fee7ea56180c0f9ba1ba108b3e", "wall_ms": 1792793803815, "secs": 20}}, "inputs": {"advisory": "Advisory evidence only: controller inputs/haptics show activity in sync with the video, not who played or what happened.", "presses": [{"dt_ms": -4663, "buttons": ["CROSS"]}, {"dt_ms": -348, "buttons": ["CROSS"]}, {"dt_ms": 776, "buttons": ["CROSS"]}, {"dt_ms": 2939, "buttons": ["CROSS"]}], "haptics": [{"dt_ms": -4688, "duration_ms": 1067, "energy": 9316183, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident", "hand_motion"]}, {"dt_ms": -3247, "duration_ms": 277, "energy": 2051772, "confidence": 250, "confidence_label": "low", "flags": ["hand_motion"]}, {"dt_ms": -368, "duration_ms": 355, "energy": 60030, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident", "hand_motion"]}, {"dt_ms": 750, "duration_ms": 127, "energy": 24265, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident", "grip_jolt", "hand_motion"]}, {"dt_ms": 2576, "duration_ms": 178, "energy": 7852, "confidence": 982, "confidence_label": "high", "flags": []}, {"dt_ms": 2926, "duration_ms": 124, "energy": 22249, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident", "hand_motion"]}], "strip": {"t0_s": -10.0, "bin_s": 0.25, "presses": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0], "haptic_energy": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 66229, 0, 0, 0, 47831, 0, 0, 0, 0, 0, 9316183, 0, 0, 0, 0, 0, 2051772, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 60030, 0, 0, 0, 0, 24265, 0, 0, 0, 0, 0, 0, 7852, 22249, 0, 14267, 0, 0, 0, 0, 20432, 0]}}, "locked": true, "frames": [], "contact_sheet": null, "cuts_video_s": null, "frames_missing_reason": "Footage is not published. The recording stays on the player's PC."}, {"kind": "end_of_game", "t_ms": 1792793908185, "quarter": 4, "clock_s": null, "score_before": {"away": 10, "home": 0}, "score_after": {"away": 10, "home": 0}, "final_confirmed": true, "final_method": "end_menu_read", "receipt_result": {"away": 10, "home": 0, "final_t_ms": 1792793925340}, "end_window_ms": [1792793908185, 1792793925340], "basis": "bundle.final (end-of-game menu read)", "confidence": 0.9, "id": "e07_end_of_game", "confidence_note": "heuristic from scorebug read stability; not a signed result", "recording_s": 1015.724, "checkpoints": {"before": {"seq": 521, "t_ms": 1792793907912, "hash": "ed59def71be5847e89b95f9075602d09cd9374e2cef716cbf490a4f76d306877", "prev": "c46bb1381a042e8069fd32a147f074da62b96f989525db43b300ea315a6f2e86", "frames_hash": "9342d6789bad23eed8be76ba6a35ecc8dde40f36d3a3a1a1b6b48b702cc141c8", "frames_hash_matches_evidence": true, "trigger": "segment", "segment_seq": 508, "segment_hash": "78b9aef7b9592fc43f3e855b431678d896c6f56b49fbd83d955cd230a547f662", "chain_head": "401bb7527150f33981ded8bdcd90db088de07dadaa0b73c5c023c6599279c979", "score_in_evidence": {"home": 0, "away": 10, "quarter": 4, "clock_s": null, "clock_red": true}}, "after": {"seq": 522, "t_ms": 1792793909947, "hash": "22e71f3fdfc50f7bfdb3cd2cad7166019ba01d064cc13023b557b51aa2b6e38e", "prev": "ed59def71be5847e89b95f9075602d09cd9374e2cef716cbf490a4f76d306877", "frames_hash": "0949b2ab8234ad3b4e88967b5ffbde54fe45f1ff35ea46f7cd31bf43f3f24f4e", "frames_hash_matches_evidence": true, "trigger": "segment", "segment_seq": 509, "segment_hash": "a688854a16d619dce2765901c85a8905c81f9a5f174dc689a1f481251eb9d3db", "chain_head": "9b5a3dfd5096994d7f6a55b2e82d4d051a6bf159a6cfa4e5df7ee5fb2251710e", "score_in_evidence": {"home": 0, "away": 10, "quarter": 4, "clock_s": null, "clock_red": true}}, "trigger_match": null, "clip": null}, "inputs": {"advisory": "Advisory evidence only: controller inputs/haptics show activity in sync with the video, not who played or what happened.", "presses": [{"dt_ms": -4464, "buttons": ["TRIANGLE"]}, {"dt_ms": -4262, "buttons": ["L3"]}, {"dt_ms": -4258, "buttons": ["L3"]}, {"dt_ms": -4099, "buttons": ["L3"]}, {"dt_ms": -4069, "buttons": ["L3"]}, {"dt_ms": -3825, "buttons": ["CROSS"]}, {"dt_ms": -2808, "buttons": ["CROSS"]}], "haptics": [{"dt_ms": -3457, "duration_ms": 68, "energy": 556, "confidence": 250, "confidence_label": "low", "flags": ["grip_jolt"]}, {"dt_ms": -3215, "duration_ms": 81, "energy": 917, "confidence": 250, "confidence_label": "low", "flags": ["grip_jolt"]}, {"dt_ms": -2805, "duration_ms": 111, "energy": 5490, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident", "hand_motion"]}, {"dt_ms": -2621, "duration_ms": 71, "energy": 4685, "confidence": 250, "confidence_label": "low", "flags": ["button_coincident", "hand_motion"]}], "strip": {"t0_s": -10.0, "bin_s": 0.25, "presses": [1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 4, 0, 0, 3, 2, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "haptic_energy": [3327, 410, 40377, 0, 0, 0, 2129, 40109, 0, 0, 0, 1580562, 0, 0, 0, 0, 0, 151791, 0, 0, 0, 0, 0, 0, 0, 0, 556, 917, 5490, 4685, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}}, "locked": true, "frames": [], "contact_sheet": null, "cuts_video_s": null, "frames_missing_reason": "Footage is not published. The recording stays on the player's PC."}], "publish": {"slug": "170123", "generated_ms": 1792802440588, "receipt": {"url": "receipt.json", "status": "VERIFIED", "label": "VERIFIED \u00b7 co-signed by qortime-online-s2 (delegation serial 2 from root qortime-v1)", "errors": [], "partial": [], "trust_tier": "one-player tier", "referee_kind": "qortime-official-review", "result": {"away_score": 10, "home_score": 0, "winner": "away", "method": "end_menu_read", "final_confirmed": true, "quarter": 4}, "verify_url": "../../verify/", "referee_pub": "b283cffb9279f2f90859268c64ef21861ef7e5d9fc773bdb8061af0e80624889", "not_proven": ["who was holding the controller (identity)", "that the laptop's local countersignatures were made live: they come from a key on the player's own PC", "that the footage was not fabricated or edited before QorCap hashed it, except where an official challenge or anchor timestamps the chain", "content of video segments the referee did not receive (spot-check mode)"], "checks": [{"name": "bundle_structure", "state": "pass", "line": "manifest chain, checkpoint chain, inputs chain and receipt binding recomputed by the referee"}, {"name": "capture_chain", "state": "pass", "line": "laptop checkpoint countersignatures valid under the capture key; gaps/skew within limits (timing is the laptop's own clock)"}, {"name": "video_bytes", "state": "pass", "line": "spot-check 166/525 segments"}, {"name": "final_reread", "state": "pass", "line": "end-of-game menu re-read by the referee matches the claimed final"}, {"name": "challenges", "state": "pass", "line": "3 challenges, rule 2"}, {"name": "motion", "state": "pass", "line": "rule 3, 521 per mille, 63 bins"}, {"name": "input_integrity", "state": "pass", "line": "950 presses, 1084 haptic events"}], "corroboration": {"schema": "qortime-corroboration/v0", "status": "single_sided", "reasons": [], "tolerance_ms": 5000, "affects_verdict": false}}, "highlights": [], "highlights_manifest": null, "advisory": "Controller input and haptic signals are advisory evidence, not proof: they show activity in sync with the video, not who was holding the controller or what happened on the field.", "chain_rail": {"n": 542, "dt_s": 2.0, "t0_s": -1.113, "t1_s": 1045.998, "cracks": [], "seal": true, "sparse": false, "note": "Each link is one checkpoint, about 2 seconds of the recording. Referee-verified seal."}, "recorded": "Recorded Oct 23, 2026, 5:01 PM\u20135:18 PM CT.", "footage_note": "Footage is not published. The recording stays on the player's PC. This page has the signed receipt, the score timeline, and the proof chain."}, "capture": {"platform": "ps5", "game": "madden27", "mode": "single", "scorebug_profile": "madden27_standard"}};
+const $=s=>document.querySelector(s);
+const RM=matchMedia("(prefers-reduced-motion: reduce)").matches;
+const COARSE=matchMedia("(pointer:coarse)").matches;
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const nil=x=>x===null||x===undefined;
+const MISS='<span class="miss">missing</span>';
+const v=x=>nil(x)?MISS:esc(x);
+const clk=s=>nil(s)?"–:––":`${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,"0")}`;
+const mmss=s=>nil(s)?"–":`${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,"0")}`;
+const sc=s=>s&&!nil(s.away)&&!nil(s.home)?`${s.away}–${s.home}`:null;
+const short=h=>h?esc(String(h).slice(0,12))+"…":MISS;
+/* display wording only: the data blob keeps the verifier's status codes byte for byte */
+const human=s=>String(s??"").replace(/SELF_ATTESTED/g,"SELF-SIGNED").replace(/\bself-attested\b/gi,"self-signed")
+ .replace(/\(single-attested\)/g,"(one-player tier)").replace(/\(dual-attested\)/g,"(two-player tier)");
+const hx=s=>esc(human(s));
+const CODES={gap_too_long:"two checkpoints more than 10 s apart",clock_skew:"checkpoint time more than 3 s from its countersign",prev_mismatch:"does not link to the checkpoint before it",
+ hash_mismatch:"hash does not recompute",seq_gap:"checkpoint numbers skip",bad_referee_sig:"countersignature does not check",chain_ends_before_match_end:"chain stops more than 10 s before the match ended",
+ referee_key_not_pinned:"no referee key pinned",referee_not_on_allowlist:"signing key is not on QorTime's trusted list",referee_local_self_attested:"signed by a local key on the player's own PC, not the QorTime referee",
+ challenge_missing:"no nonce challenge",motion_signal_missing:"no motion correlation",motion_correlation_low:"motion correlation below the floor",bad_referee_signature:"referee signature does not check"};
+function codeText(c){const s=String(c),p=s.split(":"),k=p.find(x=>CODES[x])||p[p.length-1];
+ const where=p.filter(x=>x!==k).map(x=>x.replace(/^cp\[(\d+)\]$/,"checkpoint $1")).join(" ");
+ const txt=CODES[k]?(where?`${where}: ${CODES[k]}`:CODES[k]):human(s.replace(/_/g," "));
+ return /attest/i.test(s)?esc(txt):`${esc(txt)} <span class="code">${esc(s)}</span>`}
+const EV=Array.isArray(D.events)?D.events:[];
+const P0=D.publish||{};
+const RCPT=P0.receipt||{};
+const STATUS=RCPT.status||"";
+const VERIFIED=STATUS==="VERIFIED";
+const CL=Array.isArray(P0.highlights)?P0.highlights:[];
+const CH=D.chain||{};
+const IS=D.input_summary||{};
+const VD=D.video||{};
+function winCount(){const w=$("#chainClip").clientWidth||320;let n=Math.max(5,Math.min(COARSE?9:17,Math.floor(w/32)));if(n%2===0)n-=1;return n}
+let RAIL=P0.chain_rail||null;
+let CRACKS=new Set();
+let PROOF=[];
+let DUR=1,MAXS=1,NAV=[],sel=-1;
+const S={mode:"burst",i:0,z:0,timer:0,raf:0,ev:null,clip:null,fr:[],shown:false,ci:null,booted:RM,flip:null,win:0};
+const vid=$("#vid"),frA=$("#frA"),frB=$("#frB");
+let front=frA;
+
+/* ---------- digits ---------- */
+function digits(el,n,animate){const s=nil(n)?"–":String(n);
+ let sr=el.querySelector(".sr");if(!sr){sr=document.createElement("span");sr.className="sr"}
+ sr.textContent=s;
+ if(el.dataset.len!==String(s.length)||s==="–"){el.innerHTML=s==="–"?"–":[...s].map(()=>`<span class="col" aria-hidden="true"><i>${[...Array(10).keys()].map(d=>`<b>${d}</b>`).join("")}</i></span>`).join("");el.appendChild(sr);el.dataset.len=s.length;animate=false}
+ if(s==="–")return;
+ [...el.querySelectorAll("i")].forEach((i,k)=>{const y=`translateY(-${s[k]}em)`;
+  if(!animate||RM){i.style.transition="none";i.style.transform=y;i.getBoundingClientRect();i.style.transition=""}
+  else{i.style.transitionDelay=`${k*60}ms`;i.style.transform=y}})}
+function ticker(score,ev,animate){const a=score?score.away:null,h=score?score.home:null;
+ const pa=$("#tA").dataset.v,ph=$("#tH").dataset.v;
+ digits($("#tA"),a,animate);digits($("#tH"),h,animate);
+ if(animate&&!RM){if(pa!==undefined&&String(a)!==pa)$("#tA").classList.remove("bump"),void $("#tA").offsetWidth,$("#tA").classList.add("bump");
+  if(ph!==undefined&&String(h)!==ph)$("#tH").classList.remove("bump"),void $("#tH").offsetWidth,$("#tH").classList.add("bump")}
+ $("#tA").dataset.v=nil(a)?"":String(a);$("#tH").dataset.v=nil(h)?"":String(h);
+ $("#tQ").textContent=ev&&!nil(ev.quarter)?"Q"+ev.quarter:"Q–";
+ $("#tC").textContent=ev?clk(ev.clock_s):"–:––"}
+function tstate(ev,after){const gold=VERIFIED&&after&&ev&&ev.locked===true;
+ $("#ticker").classList.toggle("gold",!!gold);
+ const st=$("#tState");
+ if(!ev||!ev.score_before){st.textContent=ev?"opening read":"";return}
+ st.textContent=gold?"locked · verified":after?"scorebug read · not a verified result":"before the read"}
+function pulse(side){if(RM)return;const el=side==="away"?$("#sideA"):$("#sideH");el.classList.remove("hot");void el.offsetWidth;el.classList.add("hot")}
+function shockAt(ev){if(RM||!ev)return;const wrap=$("#wormWrap");const x=X(ev.recording_s)*wrap.clientWidth;
+ const side=ev.delta&&ev.delta.away>0?"away":"home";
+ const y=(ev.score_after?Y(ev.score_after[side]||0):0.5)*wrap.clientHeight;
+ const s=$("#shock");s.style.transform=`translate(${x}px,${y}px)`;s.classList.remove("go");void s.offsetWidth;s.classList.add("go")}
+function stamp(){if(!(VERIFIED&&S.ev&&S.ev.locked===true)||RM)return;const s=$("#seal");s.hidden=false;s.classList.remove("go");void s.offsetWidth;s.classList.add("go")}
+function showRead(on,ev){const el=$("#readMsg");if(!on||!ev||!ev.score_before){el.hidden=true;return}
+ $("#readSub").textContent=`${sc(ev.score_before)} → ${sc(ev.score_after)}${ev.reads_agreeing?` · held ${ev.reads_agreeing} reads`:""}`;
+ el.hidden=false;if(RM)return;el.classList.remove("go");void el.offsetWidth;el.classList.add("go")}
+function cross(on,animate){const ev=S.ev;if(!ev)return;if(on===S.shown)return;S.shown=on;
+ const after=on&&ev.score_before;
+ ticker(after?ev.score_after:(ev.score_before||ev.score_after),ev,animate&&!!ev.score_before);
+ tstate(ev,after||!ev.score_before);
+ if(after&&animate){const side=ev.delta&&ev.delta.away>0?"away":"home";pulse(side);shockAt(ev);
+  const f=$("#flash");f.classList.remove("go");void f.offsetWidth;f.classList.add("go");showRead(true,ev);stamp()}
+ else showRead(false)}
+
+/* ---------- chain ---------- */
+function sparseRail(){const map=new Map();
+ EV.forEach(e=>{const ck=e.checkpoints||{};["before","after","trigger_match"].forEach(k=>{const c=ck[k];
+  if(!c||nil(c.seq)||nil(e.recording_s))return;const crack=c.frames_hash_matches_evidence===false;
+  const prev=map.get(c.seq);if(!prev)map.set(c.seq,{seq:c.seq,rec:+e.recording_s,crack,why:crack?"frames_hash mismatch":""});else if(crack){prev.crack=true;prev.why="frames_hash mismatch"}})});
+ const rows=[...map.values()].sort((a,b)=>a.rec-b.rec);if(rows.length<2)return null;
+ return {n:rows.length,dt_s:null,t0_s:rows[0].rec,t1_s:rows[rows.length-1].rec,times:rows.map(r=>r.rec),
+  cracks:rows.map((r,i)=>r.crack?{i,why:r.why}:null).filter(Boolean),seal:false,sparse:true,
+  note:"Checkpoints bound to these moments. The full 2-second chain was not published with this page, so this rail is not a seal."}}
+function linkTime(i){if(!RAIL)return 0;if(RAIL.times)return RAIL.times[Math.max(0,Math.min(RAIL.times.length-1,i))]||0;
+ if(RAIL.n<=1)return RAIL.t0_s||0;return RAIL.t0_s+(RAIL.t1_s-RAIL.t0_s)*i/(RAIL.n-1)}
+function linkAt(rec){if(!RAIL||nil(rec))return -1;if(RAIL.times){let b=0,bd=1e9;RAIL.times.forEach((t,i)=>{const d=Math.abs(t-rec);if(d<bd){bd=d;b=i}});return b}
+ if(rec<=RAIL.t0_s)return 0;if(rec>=RAIL.t1_s)return RAIL.n-1;
+ return Math.round((rec-RAIL.t0_s)/(RAIL.t1_s-RAIL.t0_s)*(RAIL.n-1))}
+function paintLinks(i,settle){const WIN=winCount();S.win=WIN;const half=(WIN-1)>>1;let html="";
+ for(let k=-half;k<=half;k++){const j=i+k,inside=j>=0&&j<RAIL.n;
+  const pos=k<0?"past":k>0?"future":"now";
+  const lit=inside&&PROOF[j]&&PROOF[j].lit&&j<=i;
+  const cls=!inside?"pad":(CRACKS.has(j)?"crack "+pos:(lit?"ok "+pos:pos));
+  html+=`<span class="link ${cls}"><i class="pin"></i><i class="bar"></i><i class="pin"></i></span>`}
+ const win=$("#chainWin");win.innerHTML=html;
+ if(!S.booted||settle){S.booted=true;const clip=$("#chainClip");if(RM)clip.classList.add("booted");else{clip.classList.remove("booted");[...win.children].forEach((el,k)=>el.style.transitionDelay=`${k*16}ms`);
+  requestAnimationFrame(()=>{clip.classList.add("booted");setTimeout(()=>win.querySelectorAll(".link").forEach(el=>el.style.transitionDelay=""),700)})}}}
+let chainToken=0;
+function slideChain(dir,i){const win=$("#chainWin"),token=++chainToken;let done=false;
+ const finish=()=>{if(done||token!==chainToken)return;done=true;win.style.transition="none";win.style.transform="none";paintLinks(i)};
+ win.style.transition="transform 280ms var(--spring)".replace("var(--spring)","cubic-bezier(.34,1.56,.64,1)");
+ win.style.transform=`translateX(${dir*32}px)`;
+ win.addEventListener("transitionend",finish,{once:true});setTimeout(finish,400)}
+function renderChain(rec,animate){if(!RAIL){$("#chainClip").hidden=true;return}$("#chainClip").hidden=false;
+ const i=linkAt(rec);if(i<0)return;if(S.ci===i&&$("#chainWin").childElementCount)return;const prev=S.ci;S.ci=i;
+ if(animate&&!RM&&prev!=null&&Math.abs(i-prev)===1&&$("#chainWin").childElementCount){slideChain(prev-i,i);scheduleMacro();return}
+ chainToken++;paintLinks(i);scheduleMacro()}
+function drawMacro(){if(!RAIL)return;const c=$("#rail"),w=c.clientWidth||600,h=28;const dpr=Math.min(2,devicePixelRatio||1);
+ c.width=Math.round(w*dpr);c.height=Math.round(h*dpr);const g=c.getContext("2d");g.setTransform(dpr,0,0,dpr,0,0);g.clearRect(0,0,w,h);
+ g.strokeStyle=RAIL.seal?"rgba(63,224,208,.45)":"rgba(159,178,204,.45)";g.lineWidth=1.4;g.beginPath();g.moveTo(6,h/2);g.lineTo(w-6,h/2);g.stroke();
+ const n=RAIL.n,step=n>220?Math.ceil(n/160):1;
+ g.lineWidth=1.3;
+ for(let i=0;i<n;i+=step){if(CRACKS.has(i))continue;const lit=PROOF[i]&&PROOF[i].lit&&S.ci!=null&&i<=S.ci;
+  g.strokeStyle=lit?"rgba(63,224,208,.95)":(RAIL.seal?"rgba(63,224,208,.55)":"rgba(159,178,204,.55)");
+  const px=X(linkTime(i))*w;const half=Math.max(1.2,Math.min(7,(w/Math.max(1,n/step))*0.28));
+  g.beginPath();g.moveTo(px-half,h/2);g.lineTo(px+half,h/2);g.stroke()}
+ const cracks=crackRows();
+ g.strokeStyle="#04080f";g.lineWidth=8;
+ cracks.forEach(cr=>{const px=X(linkTime(cr.i))*w;g.beginPath();g.moveTo(px-7,h/2);g.lineTo(px+7,h/2);g.stroke()});
+ g.strokeStyle="#ff6d6d";g.lineWidth=1.6;
+ cracks.forEach(cr=>{const px=X(linkTime(cr.i))*w;
+  g.beginPath();g.moveTo(px-5,h/2-5);g.lineTo(px+4,h/2+5);g.stroke();
+  g.beginPath();g.moveTo(px+5,h/2-5);g.lineTo(px-4,h/2+5);g.stroke()});
+ placeCracks()}
+function crackRows(){const published=new Map((RAIL&&RAIL.cracks||[]).map(c=>[c.i,c.why]));
+ return [...CRACKS].sort((a,b)=>a-b).map(i=>({i,why:(PROOF[i]&&PROOF[i].why&&PROOF[i].why.length)?PROOF[i].why.join(", "):(published.get(i)||"crack")}))}
+function placeCracks(){const host=$("#crackBtns");if(!host||!RAIL)return;const w=$("#rail").clientWidth||1;const groups=[];
+ for(const c of crackRows()){const prev=groups[groups.length-1];
+  if(prev&&c.i-prev.last<=3){prev.last=c.i;prev.why.push("#"+c.i+" "+c.why);prev.ids.push(c.i)}
+  else groups.push({last:c.i,why:["#"+c.i+" "+c.why],ids:[c.i]})}
+ host.innerHTML=groups.map(g=>{const mid=g.ids[(g.ids.length-1)>>1];const x=X(linkTime(mid))*w;
+  return `<button type="button" class="crackbtn" style="transform:translateX(${x.toFixed(1)}px)" data-i="${mid}" aria-label="Show cracked link ${esc(g.why.join(", "))}"><i></i></button>`}).join("");
+ host.querySelectorAll("button").forEach(b=>b.onclick=ev=>{ev.stopPropagation();focusCrack(+b.dataset.i)})}
+function focusCrack(i){pause();const t=linkTime(i);S.ci=null;setRec(t,true);paintLinks(linkAt(t),true);
+ document.querySelectorAll(".crackbtn").forEach(b=>b.classList.toggle("on",+b.dataset.i===i))}
+
+/* ---------- worm ---------- */
+const X=t=>Math.max(0,Math.min(1,(t||0)/DUR));
+const Y=s=>1-(s/MAXS)*.82-.06;
+const PH={x:0,v:0,target:0,raf:0};
+function paintPH(){const w=$("#tl").clientWidth||1;$("#ph").style.transform=`translateX(${PH.x*w}px)`;
+ const r=$("#rvr");if(r)r.setAttribute("width",(PH.x*1000).toFixed(1))}
+function setRec(rec,live){movePad(rec);PH.target=X(rec);
+ if(live||RM){PH.x=PH.target;PH.v=0;if(PH.raf){cancelAnimationFrame(PH.raf);PH.raf=0}paintPH();renderChain(rec,!!live&&!RM);return}
+ const step=()=>{const dt=1/60,a=-320*(PH.x-PH.target)-26*PH.v;PH.v+=a*dt;PH.x+=PH.v*dt;paintPH();renderChain(PH.x*DUR,true);
+  if(Math.abs(PH.v)>0.0004||Math.abs(PH.x-PH.target)>0.0004)PH.raf=requestAnimationFrame(step);
+  else{PH.x=PH.target;PH.v=0;paintPH();PH.raf=0}};
+ if(!PH.raf)PH.raf=requestAnimationFrame(step)}
+function drawWorm(){const svg=$("#worm");svg.setAttribute("viewBox","0 0 1000 100");
+ const pts={away:[[0,0]],home:[[0,0]]};
+ EV.forEach(e=>{if(!e.score_after||nil(e.recording_s))return;["away","home"].forEach(s=>{const last=pts[s][pts[s].length-1];
+  if(e.score_after[s]!==last[1]){pts[s].push([e.recording_s,last[1]],[e.recording_s,e.score_after[s]])}})});
+ const path=s=>pts[s].concat([[DUR,pts[s][pts[s].length-1][1]]]).map(([t,y],k)=>`${k?"L":"M"}${(X(t)*1000).toFixed(1)} ${(Y(y)*100).toFixed(2)}`).join("");
+ let g='<defs><clipPath id="rv"><rect id="rvr" x="0" y="-5" width="0" height="110"/></clipPath></defs>';
+ EV.forEach(e=>{if(e.kind!=="quarter_change"||nil(e.recording_s))return;const x=X(e.recording_s)*1000;g+=`<line class="qline" x1="${x}" x2="${x}" y1="0" y2="100" vector-effect="non-scaling-stroke"/>`});
+ g+=`<path class="ln a ghost" d="${path("away")}"/><path class="ln h ghost" d="${path("home")}"/><g clip-path="url(#rv)"><path class="ln a" d="${path("away")}"/><path class="ln h" d="${path("home")}"/></g>`;
+ svg.innerHTML=g;const mk=$("#mks");mk.innerHTML="";
+ EV.forEach((e,i)=>{if(nil(e.recording_s))return;
+  if(e.kind==="quarter_change"){const q=document.createElement("span");q.className="qlab";q.textContent="Q"+(e.quarter??"?");q.dataset.i=i;mk.appendChild(q);return}
+  if(!NAV.includes(i))return;const side=e.delta&&e.delta.away>0?"a":"h";const gold=VERIFIED&&e.locked===true;
+  const b=document.createElement("button");b.className=`mk ${gold?"g":side}`;b.dataset.i=i;
+  b.setAttribute("aria-label",`${e.kind.replace(/_/g," ")} ${sc(e.score_after)||""} Q${e.quarter??"?"} ${clk(e.clock_s)}`);
+  b.innerHTML=`<span class="t">${esc(sc(e.score_after)||e.kind.replace(/_/g," "))}</span>`;
+  b.onclick=ev=>{ev.stopPropagation();S.flip=b;select(i)};mk.appendChild(b)});
+ placeMarkers()}
+function placeMarkers(){const W=$("#wormWrap").clientWidth,H=$("#wormWrap").clientHeight;
+ document.querySelectorAll("#mks .mk").forEach(b=>{const e=EV[+b.dataset.i];const side=e.delta&&e.delta.away>0?"away":"home";
+  const y=e.score_after?Y(e.score_after[side]||0):Y(0);b.style.transform=`translate(${X(e.recording_s)*W}px,${y*H}px)`});
+ document.querySelectorAll("#mks .qlab").forEach(q=>{q.style.transform=`translateX(${X(EV[+q.dataset.i].recording_s)*W}px)`})}
+function chips(){const c=$("#chips");
+ c.innerHTML=NAV.map(i=>{const e=EV[i];const gold=VERIFIED&&e.locked===true;
+  const nm=e.kind==="score_change"?(e.play||"score").replace(/\s*\(.*\)/,""):e.kind.replace(/_/g," ");
+  return `<button class="chip ${gold?"g":""}" role="option" data-i="${i}"><span class="s">${esc(sc(e.score_after)||"—")}</span>${!nil(e.highlight)?'<span class="c">▶ clip</span>':""}<span class="m">Q${v(e.quarter)} ${clk(e.clock_s)} · ${esc(nm)}</span></button>`}).join("");
+ c.querySelectorAll(".chip").forEach(b=>b.onclick=()=>{S.flip=b;select(+b.dataset.i)})}
+function hscroll(box,el){if(!box||!el)return;const l=el.offsetLeft-(box.clientWidth-el.clientWidth)/2;box.scrollTo({left:Math.max(0,l),behavior:RM?"auto":"smooth"})}
+
+/* ---------- stage ---------- */
+function zeroIdx(fr){let b=0,bd=1e9;fr.forEach((f,k)=>{const d=Math.abs(f.dt_s||0);if(d<bd){bd=d;b=k}});return b}
+function icon(on){$("#pico").setAttribute("d",on?"M2 1h3v10H2zM7 1h3v10H7z":"M2 1l9 5-9 5z");$("#play").setAttribute("aria-label",on?"Pause":"Play")}
+function pause(){clearInterval(S.timer);S.timer=0;cancelAnimationFrame(S.raf);S.raf=0;if(!vid.hidden)vid.pause();icon(false)}
+function burn(c){const el=$("#burn");if(S.mode!=="clip"||!c){el.hidden=true;return}
+ const lk=c.lock||{},seal=VERIFIED&&c.locked===true,head=c.overlay_label||(seal?"LOCKED SCORE":"SCOREBUG LOCK");
+ const sa=lk.score_after||{};el.hidden=false;el.classList.toggle("seal",seal);
+ el.innerHTML=`<b>${esc(head)}</b><span class="sc">AWAY ${esc(nil(sa.away)?"?":sa.away)} – HOME ${esc(nil(sa.home)?"?":sa.home)} · Q${esc(nil(lk.quarter)?"?":lk.quarter)} ${esc(clk(lk.clock_s))}</span><span class="meta">lock #${esc(nil(lk.seq)?"?":lk.seq)} ${esc(String(lk.hash||"").slice(0,12))} · receipt ${esc(STATUS||"?")}</span>`}
+function showFrame(k,anim){const fr=S.fr;if(!fr||!fr.length)return;k=Math.max(0,Math.min(fr.length-1,k));S.i=k;const f=fr[k];
+ const back=front===frA?frB:frA;back.alt=`burst frame ${k+1} of ${fr.length}, ${f.dt_s}s from the read`;
+ const swap=()=>{back.classList.add("on");front.classList.remove("on");front=back;bleedFrom(back)};
+ if(back.getAttribute("src")===f.src)swap();else{back.onload=swap;back.src=f.src}
+ const z=Math.abs(+f.dt_s)<0.35;$("#dt").textContent=`${f.dt_s>=0?"+":""}${(+f.dt_s).toFixed(1)}s`;$("#dt").classList.toggle("zero",z);
+ $("#pos").textContent=`${k+1}/${fr.length}`;$("#progFill").style.transform=`scaleX(${k/Math.max(1,fr.length-1)})`;
+ $("#prog").setAttribute("aria-valuenow",String(Math.round(100*k/Math.max(1,fr.length-1))));
+ document.querySelectorAll("#strip button").forEach((b,j)=>b.classList.toggle("on",j===k));
+ const sb=document.querySelectorAll("#strip button")[k];if(sb)hscroll($("#strip"),sb);
+ const rec=nil(f.recording_s)?f.video_s:f.recording_s;setRec(rec,true);cross(k>=S.z,anim)}
+function play(){if(S.mode==="clip"){vid.play().then(loopV).catch(()=>{});icon(true);return}
+ if(!S.fr||!S.fr.length)return;clearInterval(S.timer);if(S.i>=S.fr.length-1)showFrame(0,false);icon(true);
+ const tick=()=>{if(S.i>=S.fr.length-1){pause();return}showFrame(S.i+1,true)};
+ S.timer=setInterval(tick,S.i<S.z?260:340)}
+function vtime(t){const c=S.clip;if(!c)return;const d=c.duration_s||vid.duration||1;
+ $("#progFill").style.transform=`scaleX(${Math.min(1,t/d)})`;$("#pos").textContent=`${t.toFixed(1)}/${(+d).toFixed(0)}s`;
+ const rel=t-(c.lock_at_s||0);$("#dt").textContent=`${rel>=0?"+":""}${rel.toFixed(1)}s`;$("#dt").classList.toggle("zero",Math.abs(rel)<0.35);
+ const start=nil(c.source_start_s)?(S.ev&&S.ev.recording_s||0)-(c.lock_at_s||0):c.source_start_s;
+ setRec(start+t,true);cross(t>=(c.lock_at_s||0),true);
+ if(!S.bleedAt||performance.now()-S.bleedAt>900){S.bleedAt=performance.now();bleedFrom(vid)}}
+function loopV(){icon(true);cancelAnimationFrame(S.raf);const f=()=>{if(vid.paused||vid.ended){icon(false);return}vtime(vid.currentTime||0);S.raf=requestAnimationFrame(f)};S.raf=requestAnimationFrame(f)}
+vid.addEventListener("seeked",()=>{if(S.mode==="clip")vtime(vid.currentTime||0)});
+vid.addEventListener("loadeddata",()=>bleedFrom(vid));
+vid.addEventListener("ended",()=>icon(false));
+function attachTrack(c){[...vid.querySelectorAll("track")].forEach(t=>t.remove());if(!c||!c.vtt)return;
+ const t=document.createElement("track");t.kind="captions";t.label="Scorebug lock";t.srclang="en";t.default=true;t.src=c.vtt;vid.appendChild(t)}
+function clipStatusLine(c){const st=$("#clipStat");if(!st)return;
+ st.textContent=c?`Receipt ${STATUS||"missing"} beside this clip. The file is a re-encoded highlight.`:" "}
+function armClip(c,seek){if(!c||!c.url)return;S.armed=true;S.seek=seek;
+ if(vid.getAttribute("src")!==c.url){vid.preload="metadata";vid.src=c.url;if(c.poster)vid.poster=c.poster;attachTrack(c)}
+ const go=()=>{const t=S.seek;S.seek=null;try{vid.currentTime=(t==null||isNaN(t))?0:Math.max(0,t)}catch(err){}vtime(vid.currentTime||0);
+  $("#tapHint").hidden=true;if(proofStarted)checkClip(c)};
+ if(vid.readyState>=1)go();else vid.addEventListener("loadedmetadata",go,{once:true})}
+function load(mode,first){pause();S.mode=mode;S.shown=false;const e=S.ev;const c=S.clip;
+ ticker(e.score_before||e.score_after,e,false);tstate(e,!e.score_before);S.shown=!e.score_before;
+ $("#readMsg").hidden=true;$("#empty").hidden=true;$("#srcBtn").hidden=!c;
+ $("#srcBtn").textContent=mode==="clip"?"Show burst stills":"Show clip";
+ $("#srcBtn").onclick=()=>load(S.mode==="clip"?"burst":"clip",false);
+ const md=$("#mode");
+ if(mode==="clip"&&c){vid.hidden=false;frA.classList.remove("on");frB.classList.remove("on");
+  const same=S.armed&&vid.getAttribute("src")===c.url;
+  if(!same){S.armed=false;if(vid.getAttribute("src")){vid.removeAttribute("src");try{vid.load()}catch(err){}}
+   [...vid.querySelectorAll("track")].forEach(t=>t.remove());if(c.poster)vid.poster=c.poster}
+  md.className="mode clip";md.innerHTML=`Highlight clip · ${esc(c.duration_s)}s<span class="lng"> · re-encoded from hash-chained video</span>`;
+  $("#lockPin").style.left=((c.lock_at_s||0)/(c.duration_s||1)*100)+"%";$("#lockPin").classList.toggle("g",VERIFIED&&c.locked===true);
+  burn(c);clipStatusLine(c);const start=nil(c.source_start_s)?(e.recording_s||0)-(c.lock_at_s||0):c.source_start_s;setRec(start,first||RM);
+  const hint=$("#tapHint");hint.hidden=!!same;hint.textContent=same?"":`Tap play to load this clip · receipt ${STATUS||"?"}`;
+  if(S.wantClip){const sk=S.wantSeek;S.wantClip=false;S.wantSeek=null;armClip(c,sk);if(!RM)vid.play().then(loopV).catch(()=>{})}
+  if(S.flip){const from=S.flip;S.flip=null;requestAnimationFrame(()=>flip(from))}}
+ else{vid.pause();vid.hidden=true;burn(null);const fr=(e.frames||[]).filter(f=>f.src);S.fr=fr;
+  if(!fr.length){md.className="mode";md.textContent="no footage";$("#empty").hidden=false;frA.removeAttribute("src");frB.removeAttribute("src");
+   const line=P0.footage_note||e.frames_missing_reason||"Footage is not published.";
+   $("#empty").innerHTML=`<div><div class="lbl">Footage not published</div><span>${esc(line)}</span></div>`;
+   setRec(e.recording_s,true);$("#pos").textContent="";$("#progFill").style.transform="scaleX(0)";return}
+  const span=(fr[fr.length-1].video_s||0)-(fr[0].video_s||0);
+  md.className="mode";md.innerHTML=`Burst stills · ${fr.length} frames / ${Math.max(0,span).toFixed(0)}s<span class="lng"> · not continuous video</span>`;
+  const z=zeroIdx(fr);S.z=z;$("#lockPin").style.left=(z/Math.max(1,fr.length-1)*100)+"%";$("#lockPin").classList.toggle("g",false);
+  showFrame(RM?z:0,false);clipStatusLine(null);$("#tapHint").hidden=true;if(!RM)setTimeout(()=>{if(S.mode==="burst"&&S.ev===e)play()},first?420:220);
+  if(S.flip){const from=S.flip;S.flip=null;requestAnimationFrame(()=>flip(from))}}}
+function flip(from){if(RM||!from||!from.getBoundingClientRect)return;const stage=$("#stage");
+ const a=from.getBoundingClientRect(),b=stage.getBoundingClientRect();
+ if(a.width<8||b.width<8||b.bottom<0||b.top>innerHeight)return;
+ const dx=a.left-b.left,dy=a.top-b.top,sx=a.width/b.width,sy=a.height/b.height;
+ stage.style.transformOrigin="0 0";stage.style.transition="none";stage.style.transform=`translate(${dx}px,${dy}px) scale(${sx},${sy})`;
+ requestAnimationFrame(()=>requestAnimationFrame(()=>{stage.style.transition=`transform ${COARSE?280:420}ms cubic-bezier(.22,.8,.2,1)`;stage.style.transform="none"}))}
+const samp=document.createElement("canvas");samp.width=8;samp.height=8;const sx=samp.getContext("2d",{willReadFrequently:true});
+function bleedFrom(src){try{sx.drawImage(src,0,0,8,8);const d=sx.getImageData(0,0,8,8).data;let r=0,g=0,b=0,n=0;
+ for(let i=0;i<d.length;i+=4){if(d[i]+d[i+1]+d[i+2]<48)continue;r+=d[i];g+=d[i+1];b+=d[i+2];n++}
+ if(!n)return;document.documentElement.style.setProperty("--bleed",`rgba(${r/n|0},${g/n|0},${b/n|0},.5)`)}catch(e){}}
+function strip(e){const fr=(e.frames||[]).filter(f=>f.src);const z=zeroIdx(fr);
+ $("#aiSub").textContent=fr.length?`${fr.length} frames the score reader looked at${e.reads_agreeing?` · new score held ${e.reads_agreeing} consecutive reads`:""}. Per-frame digits are not in this bundle.`:
+  (P0.footage_note?"footage is not published":"no burst frames in this bundle");
+ $("#strip").innerHTML=fr.map((f,k)=>`<button class="${k===z?"z":""}" data-k="${k}" aria-label="frame ${k+1}, ${f.dt_s}s from the read"><img loading="lazy" decoding="async" alt="" src="${esc(f.thumb||f.src)}"><span>${f.dt_s>=0?"+":""}${(+f.dt_s).toFixed(1)}</span></button>`).join("");
+ $("#strip").querySelectorAll("button").forEach(b=>b.onclick=()=>{if(S.mode!=="burst")load("burst",false);pause();showFrame(+b.dataset.k,true)})}
+function preloadNext(i){const k=NAV.indexOf(i);const n=EV[NAV[k+1]];const f=n&&(n.frames||[]).find(x=>x.src);if(f){const im=new Image();im.decoding="async";im.src=f.thumb||f.src}}
+
+/* ---------- cards ---------- */
+function evCard(e){const a=e.score_after||{},gold=VERIFIED&&e.locked===true;
+ const wall=nil(e.t_ms)?MISS:esc(new Date(e.t_ms).toLocaleString([],{month:"short",day:"numeric",hour:"numeric",minute:"2-digit",second:"2-digit",timeZoneName:"short"}));
+ $("#evCard").innerHTML=`<div class="h"><span class="lbl">${esc((e.kind||"").replace(/_/g," "))}</span>${gold?'<span class="tag g">referee-verified lock</span>':'<span class="tag a">read · not a verified result</span>'}${e.legal_step===false?'<span class="tag w">not a legal scoring step</span>':""}</div>
+ ${e.play?`<div style="margin-bottom:6px">${esc(e.play)}</div>`:""}
+ <div class="big ${gold?"g":""}"><span class="away">${v(a.away)}</span><span class="dash">–</span><span class="home">${v(a.home)}</span></div>
+ <div class="sub">away – home${e.delta?` · Δ ${esc(e.delta.away)} / ${esc(e.delta.home)}`:""}${e.score_before?` · before ${esc(sc(e.score_before))}`:""}</div>
+ <div class="kv"><b>quarter · clock</b><span>Q${v(e.quarter)} · ${clk(e.clock_s)}</span><b>recording</b><span>${mmss(e.recording_s)}</span><b>wall time</b><span>${wall}</span>
+ <b>confidence</b><span>${v(e.confidence)} <span class="sub">${esc(e.confidence_note||"")}</span><div class="conf"><i style="transform:scaleX(${Math.max(0,Math.min(1,+e.confidence||0))})"></i></div></span>
+ <b>basis</b><span>${v(e.basis)}</span></div>`}
+function chk(ok,title,body){const mark=ok===true&&VERIFIED?"✓":ok===true?"●":ok===false?"✕":"○";
+ const c=ok===true?"ok":ok===false?"no":"na";
+ return `<div class="chk"><span class="${c}">${mark}</span><div><div>${title}</div>${body?`<div class="hx">${body}</div>`:""}</div></div>`}
+function cpLine(x,label){if(!x)return chk(null,label+" checkpoint",MISS);
+ const ok=x.frames_hash_matches_evidence;return chk(ok===true?true:ok===false?false:null,`${label} checkpoint #${esc(x.seq)} · frames_hash ${ok?"matches evidence":ok===false?"does not match":"unchecked"}`,`hash ${short(x.hash)}`)}
+function verifyHref(){const rel=/\/site\/matches\//.test(location.pathname)?"../../../verify/":(RCPT.verify_url||"../../verify/");
+ const u=new URL(rel,location.href);if(RCPT.url)u.searchParams.set("receipt",new URL(RCPT.url,location.href).href);
+ if(RCPT.referee_pub&&!u.searchParams.get("referee"))u.searchParams.set("referee",RCPT.referee_pub);return u.href}
+function reviewBlock(){const rows=Array.isArray(RCPT.checks)?RCPT.checks:[];
+ const np=(Array.isArray(RCPT.not_proven)?RCPT.not_proven:[]).filter(x=>typeof x==="string"&&x);
+ let html="";
+ if(np.length)html+=`<div class="notproven"><div class="lbl">Not proven</div><ul>${np.map(x=>`<li>${esc(x)}</li>`).join("")}</ul></div>`;
+ if(rows.length)html+=rows.map(c=>chk(c.state==="pass"?true:c.state==="fail"?false:null,hx(String(c.name||"").replace(/_/g," ")),c.line?esc(c.line):"")).join("");
+ return html}
+function indicatorBlock(){const c=RCPT.corroboration,d=RCPT.device_key,bits=[];
+ if(c&&typeof c==="object"&&typeof c.status==="string"){
+  const labels={corroborated:"CORROBORATED",disagreed:"DISAGREED",single_sided:"SINGLE-SIDED"};
+  const klass=c.status==="disagreed"?"bad":c.status==="corroborated"?"cy":"";
+  const tag=c.status==="disagreed"?"x":c.status==="corroborated"?"a":"";
+  const reasons=(Array.isArray(c.reasons)?c.reasons:[]).filter(x=>typeof x==="string");
+  const pair=p=>Array.isArray(p)&&p.length===2&&p.every(n=>Number.isSafeInteger(n)&&n>=0)?`home ${p[0]}, away ${p[1]}`:"";
+  const finals=[];
+  if(c.finals&&typeof c.finals==="object"){if(pair(c.finals.home))finals.push("home recording "+pair(c.finals.home));if(pair(c.finals.away))finals.push("away recording "+pair(c.finals.away))}
+  bits.push(`<div class="ind ${klass}"><span class="tag ${tag}">${esc(labels[c.status]||c.status)}</span> Separate indicator. Does not change the receipt status.${c.pairing_id?` Pairing ${esc(c.pairing_id)}.` :""}${finals.length?` Finals: ${esc(finals.join("; "))}.`:""}${reasons.length?` ${esc(reasons.join(", "))}.`:""}</div>`)}
+ if(d&&typeof d==="object"&&["tpm_claimed","software","invalid"].includes(d.status)){
+  const labels={tpm_claimed:"TPM CLAIMED (UNVERIFIED)",software:"SOFTWARE",invalid:"INVALID"};
+  const klass=d.status==="invalid"?"bad":d.status==="tpm_claimed"?"warn":"";
+  const tag=d.status==="invalid"?"x":d.status==="tpm_claimed"?"w":"";
+  const meta=[];
+  if(typeof d.key_provider==="string"&&d.key_provider)meta.push("provider "+d.key_provider);
+  if(typeof d.algorithm==="string"&&d.algorithm)meta.push("algorithm "+d.algorithm);
+  if(typeof d.non_exportable==="boolean")meta.push(d.non_exportable?"non-exportable":"exportable");
+  const flags=(Array.isArray(d.flags)?d.flags:[]).filter(x=>typeof x==="string").map(f=>f==="exportable_key"?"the bundle says this key can be exported":f==="key_provider_unknown"?"the key provider is not recognized":f);
+  bits.push(`<div class="ind ${klass}"><span class="tag ${tag}">DEVICE KEY · ${esc(labels[d.status]||d.status)}</span> Does not change the receipt status.${meta.length?` ${esc(meta.join(" · "))}.`:""}${flags.length?` ${esc(flags.join("; "))}.`:""}</div>`)}
+ else bits.push(`<div class="ind"><span class="tag">not provided</span> Device key. No device key file was reviewed for this receipt.</div>`);
+ if(!(c&&typeof c==="object"&&typeof c.status==="string")) bits.unshift(`<div class="ind"><span class="tag">not provided</span> Two-sided corroboration. No pairing was published with this page. Separate indicator. Does not change the receipt status.</div>`);
+ return bits.join("")}
+function rcCard(e){const ck=e.checkpoints||{},c=!nil(e.highlight)?CL[e.highlight]:null;
+ const partial=RCPT.partial||[];const refNote=partial.find(x=>/referee/i.test(x))||(VERIFIED?"":"not signed by the QorTime referee");
+ const how=`<details class="howto"><summary class="lbl">How to check</summary><ol>
+ <li>sha256 each clip file and compare it with that clip's sha256 in the highlights manifest.</li>
+ <li>sha256 receipt.json and compare it with the receipt sha256 in the highlights manifest, then open that file in the verifier.</li>
+ <li>For each clip, when the lock is in the receipt, lock.hash must appear in the receipt checkpoints, and lock.frames_hash must equal the SHA-256 of the canonical lock evidence.</li>
+ <li>Source segment hashes are checked against the original video by qorcap verify-bundle. Those bytes are not on this page.</li></ol>
+ <pre>qorcap highlights --check manifest.json --bundle BUNDLE</pre>
+ ${RCPT.url?"":`<p class="sub">No receipt.json was published with this page, so the verifier opens without one preloaded.</p>`}</details>`;
+ $("#rcCard").innerHTML=`<div class="h"><span class="lbl">Receipt &amp; verification</span><span class="tag ${STATUS==="FAIL"?"x":VERIFIED?"g":"w"}">${hx(STATUS||"missing")}</span></div>
+ ${reviewBlock()}
+ ${chk(VERIFIED?true:STATUS==="FAIL"?false:null,`Receipt: ${hx(RCPT.label||STATUS||"missing")}`,"")}
+ ${indicatorBlock()}
+ ${(RCPT.errors||[]).length?`<ul class="errs">${RCPT.errors.map(x=>`<li>${codeText(x)}</li>`).join("")}</ul>`:""}
+ ${chk(VERIFIED?true:false,"Referee countersignature",/referee/i.test(refNote)?codeText(refNote):esc(refNote))}
+ ${cpLine(ck.before,"Before")}${cpLine(ck.after,"After")}
+ ${c?chk(c.lock&&c.lock.in_receipt===true,`Clip lock #${esc(c.lock&&c.lock.seq)} ${c.lock&&c.lock.in_receipt?"is in the receipt":"is not in the receipt"}${VERIFIED?"":" · receipt is not a verified result"}`,`lock ${short(c.lock&&c.lock.hash)} · clip sha256 ${short(c.sha256)}`):chk(null,"Highlight clip",P0.footage_note?esc(P0.footage_note):"none for this moment")}
+ ${chk(null,`Chain · ${v(CH.checkpoints)} checkpoints · ${v(CH.segments)} segments`,`head ${short(CH.chain_head)}`)}
+ <div class="note">${RCPT.url?`<a href="${esc(RCPT.url)}">receipt.json</a> · `:""}<a id="verifyLink" href="${esc(verifyHref())}">check it in the verifier</a></div>
+ ${RCPT.submission?`<div class="note">${hx(RCPT.submission)}</div>`:""}
+ ${RCPT.history_url?`<div class="note"><a href="${esc(RCPT.history_url)}">${hx(RCPT.history_label||"earlier receipt")}</a></div>`:""}${how}`}
+function sigRow(k,state,name,label,body){return `<div class="sigrow ${state}" style="--k:${k}"><i class="pip" aria-hidden="true"></i><div><div><span class="nm">${name}</span><span class="st">${label}</span></div>${body?`<div class="sub">${body}</div>`:""}</div></div>`}
+function sigCard(){const box=$("#sigCard");if(!box)return;
+ const rows=[];
+ const rstate=STATUS==="VERIFIED"?"pass":STATUS==="FAIL"?"fail":STATUS==="PARTIAL"?"partial":STATUS?"info":"absent";
+ rows.push(sigRow(0,rstate,"Receipt",STATUS?hx(STATUS):"not provided",hx(RCPT.label||(STATUS?"":"No receipt was published with this page."))));
+ const c=RCPT.corroboration;
+ if(c&&typeof c.status==="string"){const map={corroborated:["pass","corroborated"],disagreed:["fail","disagreed"],single_sided:["info","single-sided"]};
+  const pair=map[c.status]||["info",hx(c.status)];
+  rows.push(sigRow(1,pair[0],"Two-sided corroboration",pair[1],"Separate indicator. Does not change the receipt status."))}
+ else rows.push(sigRow(1,"absent","Two-sided corroboration","not provided","No pairing was published with this page."));
+ const d=RCPT.device_key;
+ if(d&&typeof d.status==="string"){const map={tpm_claimed:["partial","TPM claimed (unverified)"],software:["info","software key"],invalid:["fail","invalid"]};
+  const pair=map[d.status]||["info",hx(d.status)];
+  const who=[d.key_provider,d.algorithm].filter(x=>typeof x==="string"&&x).map(esc).join(" · ");
+  rows.push(sigRow(2,pair[0],"Device key",pair[1],(who?who+" · ":"")+"Does not change the receipt status."))}
+ else rows.push(sigRow(2,"absent","Device key","not provided","No device key file was reviewed. The strongest status the referee gives is TPM claimed (unverified)."));
+ if(typeof IS.device==="string"&&IS.device){const bits=[esc(IS.device)];
+  if(Number.isInteger(IS.human_permille))bits.push("human-likeness "+IS.human_permille+"/1000");
+  if(Number.isInteger(IS.haptic_events))bits.push(IS.haptic_events+" haptic events");
+  const f=Number.isInteger(IS.human_permille)?Math.max(0,Math.min(1,IS.human_permille/1000)):null;
+  rows.push(sigRow(3,"info","Controller","shown as recorded",bits.join(" · ")+" · advisory, not who held it"+(f==null?"":`<div class="meter" role="img" aria-label="human-likeness"><i style="--f:${f.toFixed(3)}"></i></div>`)))}
+ else rows.push(sigRow(3,"absent","Controller","not provided","No controller name in this recording."));
+ const cracks=(RAIL&&Array.isArray(RAIL.cracks)?RAIL.cracks:[]).length;
+ const chainState=!CH.checkpoints?"absent":cracks?"fail":VERIFIED?"pass":"info";
+ rows.push(sigRow(4,chainState,"Hash chain",!CH.checkpoints?"not provided":cracks?cracks+" cracked":VERIFIED?"checks out":"present",
+  CH.checkpoints?`${v(CH.checkpoints)} checkpoints · ${v(CH.segments)} segments`:"No checkpoint chain on this page."));
+ const cap=D.capture&&typeof D.capture==="object"?D.capture:{};
+ const fact=(k,val)=>`${esc(k)} ${val==null||val===""?'<span class="miss">not provided</span>':esc(val)}`;
+ rows.push(sigRow(5,D.match_id?"info":"absent","Capture",cap.platform?"shown as recorded":"partial",
+  [fact("platform",cap.platform),fact("game",cap.game),fact("mode",cap.mode),fact("side",D.role),fact("qorcap",D.qorcap_version),
+   fact("length",Number.isFinite(VD.recording_duration_s)?Math.round(VD.recording_duration_s)+" s":null)].join(" · ")));
+ const learn=D.learning&&typeof D.learning==="object"?D.learning:null;
+ if(learn){const bits=[];
+  if(Number.isInteger(learn.proposals))bits.push(learn.proposals+" proposals");
+  if(Number.isInteger(learn.outcomes))bits.push(learn.outcomes+" outcomes");
+  if(learn.decision==="promoted"||learn.decision==="discarded")bits.push("consolidation "+learn.decision);
+  if(learn.stance==="accept"||learn.stance==="dispute"||learn.stance==="abstain")bits.push("stance "+learn.stance);
+  rows.push(sigRow(6,"info","On-device learning","info",
+   (bits.length?esc(bits.join(" · "))+" · ":"")+"Local files. confirmed is not a pass. promoted is not VERIFIED."))}
+ else rows.push(sigRow(6,"absent","On-device learning","not provided",
+  "ai_proposals.jsonl, ai_outcomes.jsonl, consolidation.json, and ai_stance.json were not published with this page. They stay on the capture machine. confirmed is not a pass. promoted is not VERIFIED."));
+ box.innerHTML=`<div class="h"><span class="lbl">Signals</span><span class="sub">published with this page · a blank row was not in the data</span></div><div class="sig">${rows.join("")}</div>`}
+function drawScope(){const e=S.ev,cv=$("#scope"),cx=cv.getContext("2d");const I=e&&e.inputs,s=I&&I.strip;
+ const dpr=Math.min(2,devicePixelRatio||1),w=cv.clientWidth||320,h=120;
+ if(cv.width!==Math.round(w*dpr)){cv.width=Math.round(w*dpr);cv.height=Math.round(h*dpr)}
+ cx.setTransform(dpr,0,0,dpr,0,0);cx.clearRect(0,0,w,h);
+ cx.strokeStyle="rgba(130,170,210,.16)";for(let gx=0;gx<w;gx+=w/12){cx.beginPath();cx.moveTo(gx+.5,0);cx.lineTo(gx+.5,h);cx.stroke()}
+ const mid=h*0.48;cx.beginPath();cx.moveTo(0,mid);cx.lineTo(w,mid);cx.stroke();
+ cx.font="10px ui-monospace,Menlo,monospace";
+ if(!s||!Array.isArray(s.presses)||!s.presses.length){cx.fillStyle="#f0a06a";cx.fillText("no inputs / haptics in the bundle for this moment",8,mid-6);
+  $("#adv").textContent=IS.advisory||"Advisory evidence, not proof.";return}
+ const n=s.presses.length,bw=w/n,mp=Math.max(1,...s.presses),he=s.haptic_energy||[],mh=Math.max(1,...he,1);
+ cx.fillStyle="#3fe0d0";for(let i=0;i<n;i++){const ph=s.presses[i]/mp*(mid-16);if(ph>0)cx.fillRect(i*bw+1,mid-ph,Math.max(1,bw-2),ph)}
+ cx.beginPath();for(let i=0;i<he.length;i++){const y=mid+6+(he[i]/mh)*(h-mid-16),xx=i*bw+bw/2;i?cx.lineTo(xx,y):cx.moveTo(xx,y)}
+ cx.strokeStyle="#9fb2cc";cx.lineWidth=1.4;cx.stroke();
+ const span=n*(s.bin_s||0.25),zx=((0-(s.t0_s||0))/span)*w;
+ cx.strokeStyle="rgba(227,237,248,.45)";cx.setLineDash([3,3]);cx.beginPath();cx.moveTo(zx,0);cx.lineTo(zx,h);cx.stroke();cx.setLineDash([]);
+ cx.fillStyle="#8b9bb0";cx.fillText("presses",6,12);cx.fillText("haptics",6,h-6);
+ $("#adv").textContent=(IS.advisory||"Advisory evidence, not proof.")+" Device "+(IS.device||"not named")+"."}
+function clipsCard(){const k=$("#clipsCard");
+ if(!CL.length){k.innerHTML=`<div class="h"><span class="lbl">Highlight clips</span><span class="tag w">none</span></div><div class="sub">${esc(P0.footage_note||"No clips for this match. The stage plays burst stills, which are not continuous video.")}</div>`;return}
+ k.innerHTML=`<div class="h"><span class="lbl">Highlight clips · ${CL.length}</span><span class="sub">tap a card · it opens in the player</span></div>
+ <div class="cgrid">${CL.map((c,n)=>{const lk=c.lock||{};const seal=VERIFIED&&c.locked===true;
+  const win=(c.source_start_s!=null&&c.source_end_s!=null)?(" · "+(+c.source_start_s).toFixed(3)+"–"+(+c.source_end_s).toFixed(3)+"s in the recording"):"";
+  return `<div class="clip" data-k="${n}"><button type="button" class="clipbtn" data-k="${n}"><span class="pv">${c.poster?`<img loading="lazy" decoding="async" alt="" src="${esc(c.poster)}">`:`<div class="phimg"></div>`}${seal?"":'<span class="cov">SCOREBUG LOCK</span>'}</span><div class="b"><span class="s ${seal?"g":""}">${esc(sc(lk.score_after)||"?")}</span> <span class="tag">${esc(lk.play||"")}</span>
+  <div class="sub">${esc(c.id||"")} · ${v(c.duration_s)}s · Q${v(lk.quarter)} ${clk(lk.clock_s)} · lock #${v(lk.seq)}</div>
+  <div class="k">${lk.in_receipt?"lock is in the receipt":"lock is not in the receipt"} · receipt ${esc(STATUS||"?")}${esc(win)}</div></div></button>
+  <a class="dl" href="${esc(c.url)}" download>Download clip · receipt ${esc(STATUS||"?")}</a></div>`}).join("")}</div>
+ ${VERIFIED?"":`<div class="note">These clips burn SCOREBUG LOCK. Each file is the 12-second window named on its card. Receipt status stays ${esc(STATUS||"missing")}, so a clip is not a verified result.</div>`}`;
+ k.querySelectorAll(".clipbtn").forEach(b=>b.onclick=()=>{const n=+b.dataset.k;const i=EV.findIndex(e=>e.highlight===n);S.flip=b.querySelector("img")||b;if(i>=0)select(i)})}
+function playsCard(){const box=$("#playsCard");if(!box)return;
+ const rows=EV.map((e,i)=>({e,i})).filter(x=>["score_change","quarter_change","kickoff","end_of_game"].includes(x.e.kind));
+ const tds=rows.filter(x=>/touchdown/i.test(String(x.e.play||""))).length;
+ const scores=rows.filter(x=>x.e.kind==="score_change").length;
+ box.innerHTML=`<div class="h"><span class="lbl">Plays</span><span class="sub">this match only · not a ranking</span></div>
+ <div class="sub">${scores} score changes · ${tds} touchdowns · ${rows.length} listed moments</div>
+ <ol class="plays">${rows.map(({e,i})=>`<li><button type="button" data-i="${i}"><b>${esc(String(e.play||e.kind||"").replace(/_/g," "))}</b><span>${esc(sc(e.score_after)||"—")}</span><span class="sub">Q${v(e.quarter)} ${clk(e.clock_s)}${nil(e.confidence)?"":` · ${esc(e.confidence)}`}</span></button></li>`).join("")}</ol>`;
+ box.querySelectorAll("button").forEach(b=>b.onclick=()=>select(+b.dataset.i))}
+function foot(){const bits=[`<b>Claims.</b> ${hx(D.claims||"")}`,
+ `<b>Missing in the bundle:</b> ${(D.missing||[]).length?(D.missing||[]).map(x=>hx(x)).join(" · "):"none listed"}`];
+ if(P0.footage_note)bits.push(esc(P0.footage_note));
+ bits.push("Per-frame scorebug reads and the scorebug crop box are not in the QorCap bundle yet, so “what the AI saw” is the frames the reader was given, tagged at the new-score frame. Keys ← → moments · Space play.");
+ $("#foot").innerHTML=bits.join("<br>")}
+
+/* ---------- select ---------- */
+function select(i,first){if(!EV.length)return;i=Math.max(0,Math.min(EV.length-1,i));if(i===sel&&!first){S.flip=null;return}sel=i;const e=EV[i];S.ev=e;
+ document.querySelectorAll("#mks .mk").forEach(b=>b.classList.toggle("sel",+b.dataset.i===i));
+ document.querySelectorAll("#chips .chip").forEach(b=>{const on=+b.dataset.i===i;b.classList.toggle("sel",on);b.setAttribute("aria-selected",on?"true":"false");if(on)hscroll($("#chips"),b)});
+ document.querySelectorAll(".clip").forEach(b=>b.classList.toggle("sel",+b.dataset.k===e.highlight));
+ const k=NAV.indexOf(i);$("#prv").disabled=k<=0;$("#nxt").disabled=k<0||k>=NAV.length-1;
+ evCard(e);rcCard(e);strip(e);drawPad();if($("#scopeCard").open)drawScope();
+ S.clip=!nil(e.highlight)&&CL[e.highlight]?CL[e.highlight]:null;
+ load(S.clip?"clip":"burst",!!first);preloadNext(i);writeHash(e);
+ document.querySelectorAll("#playsCard button").forEach(b=>b.classList.toggle("on",+b.dataset.i===i));
+ if(proofStarted&&S.clip&&S.armed)checkClip(S.clip);if(proofStarted&&PF._man)noteLock(PF._man,PROOF._cps||[])}
+function step(d){const k=NAV.indexOf(sel);const n=NAV[Math.max(0,Math.min(NAV.length-1,(k<0?0:k)+d))];if(!nil(n))select(n)}
+
+/* scrub + swipe */
+(()=>{const pr=$("#prog");let dn=false;const at=ev=>{const r=pr.getBoundingClientRect();return Math.max(0,Math.min(1,(ev.clientX-r.left)/r.width))};
+ const go=p=>{if(S.mode==="clip"&&S.clip){const d=S.clip.duration_s||vid.duration||1;if(!S.armed){armClip(S.clip,p*d);return}vid.currentTime=p*d;vtime(vid.currentTime||0)}else if(S.fr&&S.fr.length)showFrame(Math.round(p*(S.fr.length-1)),false)};
+ pr.addEventListener("pointerdown",ev=>{dn=true;pause();try{pr.setPointerCapture(ev.pointerId)}catch(e){}go(at(ev))});
+ pr.addEventListener("pointermove",ev=>{if(dn)go(at(ev))});
+ pr.addEventListener("pointerup",()=>dn=false);pr.addEventListener("pointercancel",()=>dn=false);
+ pr.addEventListener("keydown",ev=>{if(ev.key!=="ArrowRight"&&ev.key!=="ArrowLeft")return;ev.stopPropagation();ev.preventDefault();pause();
+  if(S.mode==="clip"&&S.clip){vid.currentTime=Math.max(0,Math.min(S.clip.duration_s||0,(vid.currentTime||0)+(ev.key==="ArrowRight"?0.4:-0.4)));vtime(vid.currentTime||0)}
+  else showFrame(S.i+(ev.key==="ArrowRight"?1:-1),false)})})();
+(()=>{const tl=$("#tl");let dn=null;
+ tl.addEventListener("pointerdown",ev=>{if(ev.target.closest(".mk,.crackbtn"))return;dn={x:ev.clientX,id:ev.pointerId};pause()});
+ tl.addEventListener("pointermove",ev=>{if(!dn)return;const r=tl.getBoundingClientRect();setRec(Math.max(0,Math.min(1,(ev.clientX-r.left)/r.width))*DUR,true)});
+ const up=ev=>{if(!dn)return;dn=null;const r=tl.getBoundingClientRect();const t=Math.max(0,Math.min(1,(ev.clientX-r.left)/r.width))*DUR;
+  let b=NAV[0],bd=1e15;NAV.forEach(i=>{const d=Math.abs((EV[i].recording_s||0)-t);if(d<bd){bd=d;b=i}});if(!nil(b))select(b)};
+ tl.addEventListener("pointerup",up);tl.addEventListener("pointercancel",()=>dn=null)})();
+(()=>{let sw=null;$("#stage").addEventListener("pointerdown",ev=>{if(ev.target.closest("button"))return;sw={x:ev.clientX,y:ev.clientY}});
+ $("#stage").addEventListener("pointerup",ev=>{if(!sw)return;const dx=ev.clientX-sw.x,dy=ev.clientY-sw.y;sw=null;
+  if(Math.abs(dx)>64&&Math.abs(dx)>Math.abs(dy)*1.25)step(dx<0?1:-1)})})();
+
+/* ---------- controller strip (advisory) ---------- */
+function drawPad(){const cv=$("#padcv");if(!cv)return;if(cv.clientWidth<8){requestAnimationFrame(drawPad);return}
+ const e=S.ev,s=e&&e.inputs&&e.inputs.strip,sub=$("#padSub");
+ const dpr=Math.min(2,devicePixelRatio||1),w=cv.clientWidth,h=cv.clientHeight||56;
+ if(cv.width!==Math.round(w*dpr)||cv.height!==Math.round(h*dpr)){cv.width=Math.round(w*dpr);cv.height=Math.round(h*dpr)}
+ const cx=cv.getContext("2d");cx.setTransform(dpr,0,0,dpr,0,0);cx.clearRect(0,0,w,h);
+ if(!s||!Array.isArray(s.presses)||!s.presses.length){$("#padPh").hidden=true;
+  cx.fillStyle="#8b9bb0";cx.font="11px ui-monospace,Menlo,monospace";cx.fillText("no controller activity in the bundle for this moment",8,h*0.55);
+  sub.dataset.base="Advisory evidence, not proof.";sub.textContent=sub.dataset.base;return}
+ const n=s.presses.length,bw=w/n,mid=h*0.56,mp=Math.max(1,...s.presses),he=s.haptic_energy||[],mh=Math.max(1,...he,1);
+ cx.fillStyle="#3fe0d0";
+ for(let i=0;i<n;i++){const ph=s.presses[i]/mp*(mid-6);if(ph>0)cx.fillRect(i*bw+0.4,mid-ph,Math.max(1,bw-0.8),ph)}
+ cx.beginPath();
+ for(let i=0;i<he.length;i++){const y=mid+3+(he[i]/mh)*(h-mid-6),x=i*bw+bw/2;i?cx.lineTo(x,y):cx.moveTo(x,y)}
+ cx.strokeStyle="#9fb2cc";cx.lineWidth=1.2;cx.stroke();
+ const span=n*(s.bin_s||0.25)||1,zx=((0-(s.t0_s||0))/span)*w;
+ cx.strokeStyle="rgba(227,237,248,.4)";cx.setLineDash([2,3]);cx.beginPath();cx.moveTo(zx,2);cx.lineTo(zx,h-2);cx.stroke();cx.setLineDash([]);
+ sub.dataset.base="Presses above the line, haptic energy below, from 10s before this moment to 5s after. Advisory evidence, not proof — not who played.";
+ sub.textContent=sub.dataset.base;movePad(nil(e.recording_s)?null:PH.x*DUR)}
+function movePad(rec){const e=S.ev,s=e&&e.inputs&&e.inputs.strip,ph=$("#padPh");if(!ph)return;
+ if(!s||!s.presses||!s.presses.length||nil(rec)||!e||nil(e.recording_s)){ph.hidden=true;return}
+ const span=s.presses.length*(s.bin_s||0.25)||1,u=((rec-e.recording_s)-(s.t0_s||0))/span,w=$("#padcv").clientWidth||1;
+ const outside=u<0||u>1;
+ ph.hidden=false;ph.style.opacity=outside?"0.35":"1";ph.style.transform=`translateX(${Math.max(0,Math.min(1,u))*w}px)`;
+ const base=$("#padSub").dataset.base||"",next=outside?base+" Playhead is outside this window.":base;
+ if($("#padSub").textContent!==next) $("#padSub").textContent=next}
+
+/* ---------- in-browser proof check ----------
+   What this can recompute: checkpoint SHA-256 (JCS of seq, t_ms, frames_hash, input_hash, prev),
+   prev linkage, gap and clock skew, the capture key's Ed25519 countersignature, the clip file
+   sha256, and sha256(JCS(lock evidence)) against frames_hash.
+   What it cannot: the original ~2s video segment bytes are not published. Highlight mp4s are
+   re-encoded, so hashing a clip does not test source.segments[].sha256. A lit link is not a
+   picture check and is never a referee seal unless the receipt status is VERIFIED (gold stays
+   on that path only). */
+const enc=new TextEncoder();
+const MAX_GAP=10000,MAX_SKEW=3000,GENESIS="0".repeat(64);
+const PF={clips:null,recHex:"",manHex:"",sigMode:"wait"};
+function cmpUtf16(a,b){const A=[...a],B=[...b],n=Math.min(A.length,B.length);for(let i=0;i<n;i++){const d=A[i].charCodeAt(0)-B[i].charCodeAt(0);if(d)return d}return A.length-B.length}
+function canonicalize(v){if(v===null)return "null";if(v===true)return "true";if(v===false)return "false";
+ if(typeof v==="number"){if(!Number.isSafeInteger(v))throw new Error("unsafe integer");return String(v)}
+ if(typeof v==="string")return JSON.stringify(v);
+ if(Array.isArray(v))return "["+v.map(canonicalize).join(",")+"]";
+ if(typeof v==="object")return "{"+Object.keys(v).sort(cmpUtf16).map(k=>JSON.stringify(k)+":"+canonicalize(v[k])).join(",")+"}";
+ throw new Error("bad type")}
+async function sha256Hex(v){const d=await crypto.subtle.digest("SHA-256",enc.encode(canonicalize(v)));return [...new Uint8Array(d)].map(b=>b.toString(16).padStart(2,"0")).join("")}
+async function sha256Buf(buf){const d=await crypto.subtle.digest("SHA-256",buf);return [...new Uint8Array(d)].map(b=>b.toString(16).padStart(2,"0")).join("")}
+function unhex(h){const u=new Uint8Array(h.length>>1);for(let i=0;i<u.length;i++)u[i]=parseInt(h.substr(i*2,2),16);return u}
+let macroTimer=0,macroAt=0;
+function scheduleMacro(){const now=performance.now();if(now-macroAt<200){if(!macroTimer)macroTimer=setTimeout(()=>{macroTimer=0;macroAt=performance.now();drawMacro()},220);return}macroAt=now;drawMacro()}
+function refreshRail(){scheduleMacro();if(S.ci!=null&&$("#chainWin").childElementCount)paintLinks(S.ci)}
+function judge(i){const p=PROOF[i];if(!p||p.hashOk==null)return;const structural=p.why.length>0||p.hashOk===false;
+ if(structural){p.lit=false;CRACKS.add(i);return}
+ if(p.sig==null){p.lit=false;return}
+ if(p.sig==="bad"){p.lit=false;if(!p.why.includes("bad_referee_sig"))p.why.push("bad_referee_sig");CRACKS.add(i);return}
+ p.lit=true;CRACKS.delete(i)}
+function proofSummary(){const el=$("#proofLive");if(!el)return;if(!PROOF.length){return}
+ const linked=PROOF.filter(p=>p&&p.lit).length,cracked=PROOF.filter(p=>p&&p.why&&p.why.length).length;
+ const sig=PF.sigMode==="ok"?"Countersignatures match the capture key on this receipt. That key is not the QorTime referee unless the receipt status is VERIFIED."
+  :PF.sigMode==="skip"?"Countersignatures were not checked in this browser (the signature code did not load)."
+  :PF.sigMode==="bad"?"At least one countersignature does not match the capture key."
+  :"Countersignatures are still being checked.";
+ el.innerHTML=`<span class="ok">${linked} links hashed and linked</span> · <span class="${cracked?"bad":""}">${cracked} cracked</span>, recomputed in this browser. ${esc(sig)} Receipt status stays ${esc(STATUS||"missing")}.${PF.tailNote?` ${esc(PF.tailNote)}`:""}`}
+const FILE=[];
+function paintFiles(){const el=$("#proofFile");if(!el)return;el.innerHTML=FILE.map(t=>`<div class="${t.bad?"bad":t.ok?"ok":""}">${esc(t.text)}</div>`).join("")}
+async function checkClip(c){if(!c||!c.url||!c.sha256||!crypto.subtle)return;if(c._hex){paintFiles();return}
+ const mine={text:"Hashing this clip file…",ok:false,bad:false};FILE.push(mine);paintFiles();
+ try{const buf=await(await fetch(c.url)).arrayBuffer();const hex=await sha256Buf(buf);c._hex=hex;
+  const same=hex===c.sha256;mine.ok=same;mine.bad=!same;
+  mine.text=same?"Clip file sha256 matches the highlights manifest. This is the re-encoded highlight, not the original segment bytes."
+   :"Clip file sha256 does not match the highlights manifest."}
+ catch(e){mine.bad=true;mine.text="Could not hash the clip file in this browser."}
+ paintFiles()}
+function chainRole(rec){const cps=rec&&rec.checkpoints;const players=(rec&&rec.players||[]).map(p=>p&&p.role).filter(r=>r==="home"||r==="away");
+ if(players.length===1&&cps&&Array.isArray(cps[players[0]])&&cps[players[0]].length)return players[0];
+ const page=D.role||"home";
+ if(cps&&Array.isArray(cps[page])&&cps[page].length)return page;
+ if(cps&&Array.isArray(cps.home)&&cps.home.length)return "home";
+ if(cps&&Array.isArray(cps.away)&&cps.away.length)return "away";
+ return page}
+async function runProof(){FILE.length=0;paintFiles();const live=$("#proofLive");
+ if(!crypto.subtle){if(live)live.textContent="This browser has no WebCrypto SHA-256 here, so checkpoint hashes were not recomputed.";return}
+ if(!RCPT.url){if(live)live.textContent=RAIL&&RAIL.sparse?"No receipt.json on this page, so checkpoint hashes were not recomputed here. This rail is only the checkpoints bound to these moments."
+  :"No receipt.json on this page, so checkpoint hashes were not recomputed here.";return}
+ if(live)live.textContent="Loading receipt.json to recompute checkpoint hashes in this browser…";
+ let rec,man;
+ try{
+  const [rb,mb]=await Promise.all([fetch(RCPT.url).then(r=>{if(!r.ok)throw new Error("receipt");return r.arrayBuffer()}),
+   P0.highlights_manifest?fetch(P0.highlights_manifest).then(r=>r.ok?r.arrayBuffer():null):Promise.resolve(null)]);
+  PF.recHex=await sha256Buf(rb);rec=JSON.parse(new TextDecoder().decode(rb));
+  if(mb){man=JSON.parse(new TextDecoder().decode(mb));PF.manHex=man.receipt&&man.receipt.sha256||"";
+   FILE.push(PF.recHex===PF.manHex?{ok:true,bad:false,text:"receipt.json sha256 matches the highlights manifest."}
+    :{ok:false,bad:true,text:"receipt.json sha256 does not match the highlights manifest. The file on this page was not altered to force a match."});
+   paintFiles()}
+ }catch(e){if(live)live.textContent="The receipt could not be read in this browser, so checkpoint hashes were not recomputed.";return}
+ const role=chainRole(rec),cps=(rec.checkpoints&&rec.checkpoints[role])||[];
+ if(!RAIL||!Array.isArray(cps)||cps.length!==RAIL.n){if(live)live.textContent=`Receipt has ${cps.length} checkpoints and this rail has ${RAIL?RAIL.n:0}. They were not treated as the same chain.`;return}
+ const start=rec.match&&rec.match.started_ms||0,end=rec.match&&rec.match.ended_ms||0;
+ PROOF=cps.map(()=>({why:[],hashOk:null,sig:null,lit:false}));PROOF._cps=cps;PF._man=man||null;PF.tailNote="";
+ let prev=GENESIS,last=start;
+ for(let i=0;i<cps.length;i++){const cp=cps[i],why=[];
+  if(cp.seq!==i)why.push("seq_gap");
+  if(cp.prev!==prev)why.push("prev_mismatch");
+  let hashOk=false;
+  try{hashOk=(await sha256Hex({seq:cp.seq,t_ms:cp.t_ms,frames_hash:cp.frames_hash,input_hash:cp.input_hash,prev:cp.prev}))===cp.hash}catch(e){hashOk=false}
+  if(!hashOk)why.push("hash_mismatch");
+  const ts=cp.referee_ts_ms;
+  if(typeof ts==="number"){if(ts<last)why.push("referee_time_backwards");if(ts-last>MAX_GAP)why.push("gap_too_long");if(Math.abs(ts-cp.t_ms)>MAX_SKEW)why.push("clock_skew");last=ts}
+  else why.push("malformed");
+  prev=cp.hash||prev;PROOF[i].why=why;PROOF[i].hashOk=hashOk;judge(i);
+  if(i%64===63){if(live)live.textContent=`Recomputing checkpoint hashes · ${i+1}/${cps.length}`;refreshRail();await new Promise(r=>setTimeout(r,0))}}
+ if(typeof end==="number"&&end-last>MAX_GAP) PF.tailNote="The last countersign is more than 10s before the match ended (chain_ends_before_match_end). That is a chain-level gap, not a picture check.";
+ refreshRail();
+ let ed=null;
+ // GitHub Pages serves matches/<slug>/ with verify/ beside site content, so the module is two levels up.
+ // A repo-root preview keeps this file under site/matches/<slug>/, one level deeper.
+ const edUrl=/\/site\/matches\//.test(location.pathname)?"../../../verify/vendor/noble-ed25519.js":"../../verify/vendor/noble-ed25519.js";
+ try{const m=await import(edUrl);if(m&&m.verifyAsync)ed=m}catch(e){ed=null}
+ const pub=rec.referee&&rec.referee.pubkey,mid=rec.match&&rec.match.match_id;
+ if(!ed||!ed.verifyAsync||!pub){PF.sigMode="skip";PROOF.forEach(p=>{if(p)p.sig="skip"});PROOF.forEach((_,i)=>judge(i));proofSummary();refreshRail()}
+ else{let bad=0;
+  for(let i=0;i<cps.length;i++){const cp=cps[i];let ok=false;
+   try{const msg=enc.encode(canonicalize({type:"checkpoint",match_id:mid,role,hash:cp.hash,referee_ts_ms:cp.referee_ts_ms}));
+    ok=await ed.verifyAsync(unhex(cp.referee_sig),msg,unhex(pub),{zip215:false})}catch(e){ok=false}
+   PROOF[i].sig=ok?"ok":"bad";if(!ok)bad++;judge(i);
+   if(i%24===23){if(live)live.textContent=`Checking capture-key countersignatures · ${i+1}/${cps.length}`;refreshRail();await new Promise(r=>setTimeout(r,0))}}
+  PF.sigMode=bad?"bad":"ok";proofSummary();refreshRail()}
+ if(man&&S.clip) noteLock(man,cps)}
+function noteLock(man,cps){const c=S.clip;if(!c||!man||!Array.isArray(cps)||!cps.length)return;const row=(man.clips||[]).find(x=>x.id===c.id);if(!row)return;
+ const lk=row.lock||{},ev=lk.evidence;
+ const bits=[];
+ if(lk.hash){const hit=cps.findIndex(cp=>cp.hash===lk.hash);
+  bits.push(hit>=0?{ok:true,bad:false,text:`Lock hash is checkpoint #${hit} in the receipt.`}
+   :{ok:false,bad:true,text:"Lock hash is not in the receipt checkpoints."})}
+ if(ev&&lk.frames_hash){sha256Hex(ev).then(hex=>{
+  bits.push(hex===lk.frames_hash?{ok:true,bad:false,text:"frames_hash matches SHA-256 of the lock evidence in the manifest. That evidence is a record, not the video bytes."}
+   :{ok:false,bad:true,text:"frames_hash does not match the lock evidence in the manifest."});
+  const n=(row.source&&row.source.segments||[]).filter(s=>s.sha256).length;
+  bits.push({ok:false,bad:false,text:n?`${n} source segment hashes are listed for this clip. Those bytes are not on this page, so they were not re-hashed.`
+   :"No source segment hashes are listed for this clip."});
+  const keep=FILE.filter(t=>!t._lock);bits.forEach(b=>{b._lock=true});FILE.splice(0,FILE.length,...keep,...bits);paintFiles()}).catch(()=>{})}
+ else{const n=(row.source&&row.source.segments||[]).filter(s=>s.sha256).length;
+  bits.push({ok:false,bad:false,text:n?`${n} source segment hashes are listed for this clip. Those bytes are not on this page, so they were not re-hashed.`:"No source segment hashes are listed for this clip."});
+  const keep=FILE.filter(t=>!t._lock);bits.forEach(b=>{b._lock=true});FILE.splice(0,FILE.length,...keep,...bits);paintFiles()}}
+
+/* ---------- deep link, share, manual proof (click or tap only; never auto-starts) ---------- */
+let proofStarted=false,proofRunning=false;
+function showProofBtn(state){const b=$("#proofGo");if(!b)return;
+ if(state==="run"){b.disabled=false;b.setAttribute("aria-busy","true");b.textContent="Checking hashes…"}
+ else{b.disabled=false;b.removeAttribute("aria-busy");b.textContent=proofStarted?"Check again":"Check hashes in this browser"}}
+function hashParts(){const out={event:null,t:null};const h=(location.hash||"").replace(/^#/,"");if(!h)return out;
+ h.split("&").forEach(p=>{const i=p.indexOf("=");const k=decodeURIComponent(i<0?p:p.slice(0,i));const val=i<0?"":decodeURIComponent(p.slice(i+1));
+  if(k==="event"||k==="e")out.event=val;if(k==="t"){const n=parseFloat(val);if(Number.isFinite(n))out.t=n}});return out}
+function writeHash(e){if(!e)return;const parts=[];if(e.id)parts.push("event="+encodeURIComponent(e.id));
+ if(!nil(e.recording_s))parts.push("t="+Math.round(+e.recording_s));const id=parts.join("&");if(!id)return;
+ if(location.hash!=="#"+id)history.replaceState(null,"","#"+id)}
+function paintFinal(){const R=D.result||{},fin=R.final,h=$("#finalSum"),w=$("#finalWhy");
+ const miss=(D.missing||[]).find(x=>/final/i.test(String(x)));
+ const confirmed=!!(fin&&R.final_confirmed);if(h)h.classList.toggle("gold",VERIFIED&&confirmed);
+ let sentence;
+ if(confirmed){if(h)h.textContent=`Final ${fin.away}–${fin.home}`;
+  if(w)w.textContent=(VERIFIED?"Referee-verified.":"Confirmed in the recording, not referee-signed.")+(fin.basis?` ${human(fin.basis)}`:"");
+  sentence=`final ${fin.away}–${fin.home}${VERIFIED?" · referee-verified":" · confirmed in the recording, not referee-signed"}`}
+ else{if(h)h.textContent="No confirmed final.";
+  if(w)w.textContent=miss?human(miss):"bundle.final is missing, so this page does not state a final score.";
+  sentence="No confirmed final."}
+ if(w&&P0.recorded)w.textContent=(w.textContent?w.textContent+" ":"")+P0.recorded;
+ const sub=$("#railSub");if(sub&&sentence&&!(sub.textContent||"").includes(sentence))sub.textContent=sub.textContent?`${sub.textContent} · ${sentence}`:sentence}
+function pickStart(){const ht=hashParts();const first=NAV.find(i=>EV[i].kind==="score_change");
+ let i=nil(first)?(NAV[0]||0):first;
+ if(ht.event){const j=EV.findIndex(e=>String(e.id)===ht.event);if(j>=0)i=j}
+ else if(ht.t!=null){let b=i,bd=1e15;EV.forEach((e,k)=>{if(nil(e.recording_s))return;const d=Math.abs(e.recording_s-ht.t);if(d<bd){bd=d;b=k}});i=b}
+ const e=EV[i];
+ if((ht.event||ht.t!=null)&&e&&!nil(e.highlight)&&CL[e.highlight]){S.wantClip=true;
+  if(ht.t!=null){const c=CL[e.highlight];const start=nil(c.source_start_s)?(e.recording_s||0)-(c.lock_at_s||0):c.source_start_s;S.wantSeek=Math.max(0,ht.t-start)}}
+ return i}
+async function startProof(){if(proofRunning){showProofBtn("run");return}
+ proofRunning=true;proofStarted=true;showProofBtn("run");
+ CL.forEach(c=>{if(c)delete c._hex});
+ const job=runProof();if(S.clip&&S.armed)checkClip(S.clip);
+ try{await job}finally{proofRunning=false;showProofBtn("done")}}
+function boot(){const st=$("#status");
+ const SHORT={FAIL:"Receipt FAIL · not a verified result",SELF_ATTESTED:"Self-signed · not referee-signed",PARTIAL:"Partial · not a verified result",VERIFIED:"Verified by the referee"};
+ st.textContent=SHORT[STATUS]||human(STATUS)||"receipt status missing";st.title=human(RCPT.label||"");st.classList.add(STATUS==="FAIL"?"fail":VERIFIED?"ok":"warn");
+ const pd=$("#padDev");if(pd)pd.textContent=(typeof IS.device==="string"&&IS.device?IS.device:"controller name not recorded")+" · "+pd.textContent;
+ $("#mid").textContent=`${D.match_id||""} · qorcap ${D.qorcap_version||"?"}`;
+ document.title=`QorTime · ${D.match_id||"match"}`;
+ if(!RAIL)RAIL=sparseRail();
+ if(RAIL){CRACKS=new Set((RAIL.cracks||[]).map(c=>c.i));$("#railCard").classList.toggle("seal",!!RAIL.seal);
+  const why=(RAIL.cracks||[]).map(c=>`#${c.i} ${c.why}`).join(" · ");
+  $("#railSub").textContent=`${RAIL.n} links${RAIL.dt_s?` · ~${RAIL.dt_s}s each`:""} · ${human(RAIL.note||"")}${why?` · cracked ${why}`:""}`}
+ sigCard();
+ DUR=(VD.recording_duration_s||VD.duration_s||Math.max(1,...EV.map(e=>e.recording_s||0),1));
+ MAXS=Math.max(7,...EV.map(e=>e.score_after?Math.max(e.score_after.away||0,e.score_after.home||0):0));
+ NAV=EV.map((e,i)=>i).filter(i=>["score_change","kickoff","end_of_game"].includes(EV[i].kind)&&!nil(EV[i].recording_s));
+ paintFinal();
+ drawWorm();chips();clipsCard();playsCard();foot();drawMacro();
+ const nScore=NAV.filter(i=>EV[i].kind==="score_change").length;
+ const head=$("#railCard").querySelector(".lbl");
+ if(head)head.insertAdjacentHTML("afterend",`<span class="tag a">${nScore} score changes · ${mmss(DUR)}</span>`);
+ $("#prv").onclick=()=>step(-1);$("#nxt").onclick=()=>step(1);
+ $("#play").onclick=()=>{if(S.timer||(S.mode==="clip"&&S.armed&&!vid.paused)){pause();return}
+  if(S.mode==="clip"&&S.clip&&!S.armed){armClip(S.clip,null);$("#tapHint").hidden=true;if(!RM)vid.play().then(loopV).catch(()=>{});icon(true);return}play()};
+ $("#share").onclick=async()=>{writeHash(S.ev);const url=location.href;const text=`QorTime ${D.match_id||"match"} · receipt ${STATUS||"missing"}`;
+  const btn=$("#share");if(navigator.share){try{await navigator.share({title:document.title,text,url});return}catch(err){if(err&&err.name==="AbortError")return}}
+  try{await navigator.clipboard.writeText(url);btn.textContent="Link copied";setTimeout(()=>{btn.textContent="Share"},1600)}catch(err){window.prompt("Copy this link",url)}};
+ const proofBtn=$("#proofGo");if(proofBtn)proofBtn.onclick=()=>startProof();
+ $("#scopeCard").addEventListener("toggle",()=>{if($("#scopeCard").open)drawScope()});
+ addEventListener("keydown",ev=>{if(ev.target.closest("input,textarea"))return;if(ev.key==="ArrowRight"){step(1);ev.preventDefault()}
+  else if(ev.key==="ArrowLeft"){step(-1);ev.preventDefault()}else if(ev.key===" "&&!ev.target.closest("button,a")){ev.preventDefault();$("#play").click()}});
+ addEventListener("resize",()=>{placeMarkers();paintPH();drawMacro();drawPad();if(winCount()!==S.win){S.ci=null;renderChain(PH.x*DUR,false)}});
+ ticker({away:0,home:0},null,false);
+ requestAnimationFrame(()=>{document.body.classList.add("ready");select(pickStart(),true)});
+ if(RM)$("#chainClip").classList.add("booted")}
+boot();
+})();
+</script></body></html>

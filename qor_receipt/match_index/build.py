@@ -17,6 +17,18 @@ FPS = 30.0
 BUTTONS = ["CROSS", "CIRCLE", "SQUARE", "TRIANGLE", "L1", "R1", "L2", "R2", "CREATE", "OPTIONS", "L3", "R3",
            "UP", "DOWN", "LEFT", "RIGHT", "PS", "TOUCHPAD", "MUTE", "FN_L", "FN_R", "BACK_L", "BACK_R"]  # qorcap src/hid.rs
 ADVISORY = "Advisory evidence only: controller inputs/haptics show activity in sync with the video, not who played or what happened."
+
+
+def public_device(value: Any) -> str | None:
+    """Controller product name only. Instance ids and local paths stay off the public page."""
+    if not isinstance(value, str):
+        return None
+    name = value.split(" id=", 1)[0].strip()
+    if not name or any(tok in name for tok in ("\\", "HID#", "@device", "/Users/", ":/")):
+        return None
+    return name
+
+
 PRE_S, POST_S, N_FRAMES = 3.0, 2.0, 10
 # Scoring plays: the scorebug only shows the new score after the play, celebration and replay (Madden: often 10-20 s after a TD
 # crosses the goal line), so a burst at the score change shows the try/PAT setup. Scoring-play bursts therefore pre-roll back
@@ -408,9 +420,10 @@ def _build(bdir: Path, out: Path, video: Path | None, video_tail: bool | None, f
                   "checkpoints": len(cps), "segments": bundle.get("segments")},
         "result": {"final": bundle.get("final"), "final_confirmed": bool(bundle.get("final_confirmed")),
                    "receipt_result": receipt.get("result"), "trust_tier": receipt.get("trust_tier")},
-        "input_summary": ({k: (bundle.get("input") or {}).get(k) for k in ("device", "status", "human_label", "human_permille",
+        "input_summary": ({k: (bundle.get("input") or {}).get(k) for k in ("status", "human_label", "human_permille",
                                                                           "match_permille", "chance_permille", "offset_ms", "haptic_events")}
-                          | {"advisory": ADVISORY, "input_proof_present": proof is not None,
+                          | {"device": public_device((bundle.get("input") or {}).get("device")),
+                             "advisory": ADVISORY, "input_proof_present": proof is not None,
                              "wall_anchor_ms": ih.get("wall_anchor_ms"), "presses": len(presses), "haptics": len(haptics)}),
         "video": {"file": video.name if video else None, "duration_s": vdur, "alignment": align,
                   "recording_offset_s": round(vid_offset, 3), "recording_duration_s": clock.duration_s,
