@@ -1,0 +1,9 @@
+# Weights and generated data are never committed (reference by URL + sha256 in pinned_models.json).
+*.onnx
+*.pdparams
+*.pdiparams
+*.pdopt
+*.states
+data/
+runs/
+fonts/
