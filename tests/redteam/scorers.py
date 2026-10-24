@@ -677,8 +677,9 @@ def source_identity(scorer: Any, estimator: Any | None = None) -> ScorerIdentity
     for tag in sorted({_class_source_tag(obj) for obj in _identity_objects(scorer, estimator)}):
         prefix.append(f"class={tag}")
     # An estimator may carry its own sha256 (for example one that folds in the
-    # OpenCV build). It joins the prefix only when it is 64 lowercase hex, so
-    # stubs hash as before. Invalid values are not interpolated.
+    # OpenCV build). It joins the prefix only when it is a property whose value
+    # is exactly 64 lowercase hex, so stubs hash as before. A copied string is
+    # not stored. Invalid values are not interpolated.
     if type(reported) is str:
         prefix.append(f"estimator_sha256={reported}")
     outside: list[tuple[str, bytes | None]] = []
@@ -724,15 +725,38 @@ def _callable_path(fn: Any) -> str:
         return _safe_label(path.name)
 
 
+def _pixel_bytes(item: Any) -> bytes | None:
+    """Raw bytes of an array-like frame, without importing a numeric library."""
+    tobytes = getattr(item, "tobytes", None)
+    if not callable(tobytes):
+        return None
+    try:
+        blob = tobytes()
+    except Exception:
+        return None
+    if type(blob) is not bytes:
+        return None
+    shape = getattr(item, "shape", ())
+    return repr(shape).encode("ascii", "replace") + b"\0" + blob
+
+
 def _frame_material(frames: Sequence[Any]) -> bytes:
     chunks: list[bytes] = []
     for item in frames:
         if isinstance(item, (bytes, bytearray, memoryview)):
             chunks.append(bytes(item))
             continue
-        if isinstance(item, (tuple, list)) and len(item) == 2 and isinstance(item[1], (bytes, bytearray, memoryview)):
-            chunks.append(str(item[0]).encode("utf-8") + b"\0" + bytes(item[1]))
+        pixels = _pixel_bytes(item)
+        if pixels is not None:
+            chunks.append(pixels)
             continue
+        if isinstance(item, (tuple, list)) and len(item) == 2:
+            body = _pixel_bytes(item[1])
+            if body is None and isinstance(item[1], (bytes, bytearray, memoryview)):
+                body = bytes(item[1])
+            if body is not None:
+                chunks.append(str(item[0]).encode("utf-8") + b"\0" + body)
+                continue
         path = item if isinstance(item, (str, Path)) else getattr(item, "path", None)
         if isinstance(path, (str, Path)) and Path(path).is_file():
             try:

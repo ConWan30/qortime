@@ -2,7 +2,7 @@
 
 Test-only harness under `tests/redteam/`. It scores controller logs by calling `input_energy_series`, `score_motion`, `check_inputs`, `check_checkpoints`, and `check_input_files` in process. It does not sign a receipt, does not hold a referee key, and does not open a network connection. Nothing here is a submission.
 
-Harness `redteam-aimbot/v2` for package `qor-receipt==0.1.0`. Harness sha256 `664cf8dfc0381dcb6956b06b433022d05c05902ecbde780397a24627d6c2cc19` over 16 files.
+Harness `redteam-aimbot/v2` for package `qor-receipt==0.1.0`. Harness sha256 `8f35363f394d6e0b011978e53bc7be443f618871691e335ef720dc527abad147` over 16 files.
 
 The harness sha256 moved because `tests/redteam/scorers.py` and `tests/redteam/aimbot_harness.py` changed. It is still the package version plus the sorted in-repo Python files reachable from the harness. It does not include scorer settings.
 
@@ -79,9 +79,9 @@ The 150 ms event window is valid only on synthetic data with a shared clock. On 
 
 | scorer | version | package | estimator | file set | sha256 | headline catch rate | headline false-alarm rate | abstained |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| motion-rule-v3 | motion-rule/v3 | 0.1.0 | — | 15 files | 6e5f7c94bef3114976c63f828da941bb0ad1e559455672dd264a6fde06a4764f | 1/6 (0.17) | 0/1 (0.00) | 0/7 |
-| pan-agreement | pan-agreement/v0 | 0.1.0 | example-no-claim/v0 | 15 files | 1c91006feb96a9bfac671c41fe800f5849d772422d31a91df5d52273e463c112 | n/a (0/6 decided) | n/a (0/1 decided) | 7/7 |
-| event-press-agreement | event-press-agreement/v0 | 0.1.0 | example-no-claim-events/v0 | 15 files | 47b02a589355359d12c4bfa4cff160ab62791f025de8841edf816426d8975d64 | n/a (0/6 decided) | n/a (0/1 decided) | 7/7 |
+| motion-rule-v3 | motion-rule/v3 | 0.1.0 | — | 15 files | e275843b2072db2ba65eb8b0f785f2cc0b8bdf3f64da904a9eb7cc8c48e851da | 1/6 (0.17) | 0/1 (0.00) | 0/7 |
+| pan-agreement | pan-agreement/v0 | 0.1.0 | example-no-claim/v0 | 15 files | 1807f0604f4c9e066313ddd4243d1948bf4225c0ba979cf5a9621291f72d1800 | n/a (0/6 decided) | n/a (0/1 decided) | 7/7 |
+| event-press-agreement | event-press-agreement/v0 | 0.1.0 | example-no-claim-events/v0 | 15 files | 0342be9305c2313c50febe77ef9a19c91a19b187535d04b6048046611fc1d9e3 | n/a (0/6 decided) | n/a (0/1 decided) | 7/7 |
 
 | variant | cohort | motion-rule-v3 | pan-agreement | event-press-agreement |
 | --- | --- | --- | --- | --- |
@@ -138,7 +138,7 @@ report = evaluate(scorers=[PanAgreementScorer(MyPanEstimator()), EventPressAgree
       "tests/redteam/scorers.py"
     ],
     "package_version": "0.1.0",
-    "sha256": "664cf8dfc0381dcb6956b06b433022d05c05902ecbde780397a24627d6c2cc19",
+    "sha256": "8f35363f394d6e0b011978e53bc7be443f618871691e335ef720dc527abad147",
     "version": "redteam-aimbot/v2"
   },
   "headline_stick_aimbots": {
@@ -182,7 +182,7 @@ report = evaluate(scorers=[PanAgreementScorer(MyPanEstimator()), EventPressAgree
       "log_tamper_true_positives": 1,
       "name": "motion-rule-v3",
       "package_version": "0.1.0",
-      "sha256": "6e5f7c94bef3114976c63f828da941bb0ad1e559455672dd264a6fde06a4764f",
+      "sha256": "e275843b2072db2ba65eb8b0f785f2cc0b8bdf3f64da904a9eb7cc8c48e851da",
       "version": "motion-rule/v3"
     },
     {
@@ -216,7 +216,7 @@ report = evaluate(scorers=[PanAgreementScorer(MyPanEstimator()), EventPressAgree
       "log_tamper_true_positives": 0,
       "name": "pan-agreement",
       "package_version": "0.1.0",
-      "sha256": "1c91006feb96a9bfac671c41fe800f5849d772422d31a91df5d52273e463c112",
+      "sha256": "1807f0604f4c9e066313ddd4243d1948bf4225c0ba979cf5a9621291f72d1800",
       "version": "pan-agreement/v0"
     },
     {
@@ -250,7 +250,7 @@ report = evaluate(scorers=[PanAgreementScorer(MyPanEstimator()), EventPressAgree
       "log_tamper_true_positives": 0,
       "name": "event-press-agreement",
       "package_version": "0.1.0",
-      "sha256": "47b02a589355359d12c4bfa4cff160ab62791f025de8841edf816426d8975d64",
+      "sha256": "0342be9305c2313c50febe77ef9a19c91a19b187535d04b6048046611fc1d9e3",
       "version": "event-press-agreement/v0"
     }
   ],
