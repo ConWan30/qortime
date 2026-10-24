@@ -1,0 +1,202 @@
+{
+  "schema": "qortime-ocr-spike-probe/v0",
+  "synthetic": true,
+  "counts_toward_replacement_decision": false,
+  "seed": 20261024,
+  "split": "probe",
+  "items": [
+    {
+      "id": "probe-00/team_l",
+      "file": "p00_team_l.png",
+      "sha256": "2da603afe095b8500fba444590a347df3c776a08ae58ad3bd513b7fb8148a257",
+      "label": "URQG"
+    },
+    {
+      "id": "probe-00/score_l",
+      "file": "p00_score_l.png",
+      "sha256": "acfda2e31bdf905cb9405bd10a8576ae1d32c8fe067ce5be10485b58926004a3",
+      "label": "28"
+    },
+    {
+      "id": "probe-00/score_r",
+      "file": "p00_score_r.png",
+      "sha256": "a637f8ea1d87eec1873bdd86e655fd11ee08de88ae2eb83776cf433df263a615",
+      "label": "44"
+    },
+    {
+      "id": "probe-00/team_r",
+      "file": "p00_team_r.png",
+      "sha256": "c97c7bbfdbff48ffe9856fa3521291fcdff412e73bbe6014d4a5ff2fc87c5914",
+      "label": "VIS"
+    },
+    {
+      "id": "probe-00/quarter",
+      "file": "p00_quarter.png",
+      "sha256": "41d50d4e64784da43468d664f79cc7c18bb23bf14fd68a9bfc5d1d4c4dbc45f7",
+      "label": "3rd"
+    },
+    {
+      "id": "probe-00/game_clock",
+      "file": "p00_game_clock.png",
+      "sha256": "d6e90d94d18de92bea158bbe6d482ad24c23eb7cf192791f28cff74ccced642a",
+      "label": "15:00"
+    },
+    {
+      "id": "probe-00/play_clock",
+      "file": "p00_play_clock.png",
+      "sha256": "425b2fbb8dfd0e40558644e32faa58433bf0890564d7b4e1406a08052c3f79ce",
+      "label": ":05"
+    },
+    {
+      "id": "probe-00/down_distance",
+      "file": "p00_down_distance.png",
+      "sha256": "a2684f64ecfd4d8464603277d3d8f791d0bcbd52573dda2b4a096840f380b42a",
+      "label": "1ST & GOAL"
+    },
+    {
+      "id": "probe-01/team_l",
+      "file": "p01_team_l.png",
+      "sha256": "0e2224f9b0b0827192dbf125e32ad32afe8cf1ae16559f99659dd11567f86b03",
+      "label": "HHZO"
+    },
+    {
+      "id": "probe-01/score_l",
+      "file": "p01_score_l.png",
+      "sha256": "9c6b89ba69d24361c9d019689abf4ea87eea355d8f4806c43839232c07964213",
+      "label": "0"
+    },
+    {
+      "id": "probe-01/score_r",
+      "file": "p01_score_r.png",
+      "sha256": "3cfe1054a07333e28fedb53027aea53efd264ed6bfd65f1580fadfa83c581f3d",
+      "label": "39"
+    },
+    {
+      "id": "probe-01/team_r",
+      "file": "p01_team_r.png",
+      "sha256": "a7a702b833e93a1207a6b7a32886ad988a196d2f45cf43e1622c7bb3f749c8d1",
+      "label": "WJT"
+    },
+    {
+      "id": "probe-01/quarter",
+      "file": "p01_quarter.png",
+      "sha256": "28ffb63ac41b73e68f6b30ef08980580ac3dd381b5556c4b24d8fc9b3d83f3a0",
+      "label": "3rd"
+    },
+    {
+      "id": "probe-01/game_clock",
+      "file": "p01_game_clock.png",
+      "sha256": "425a424c54f928ca0f08a3dc40b896114e8c8c108de85783e8ea03e2f91ac36a",
+      "label": "11:49"
+    },
+    {
+      "id": "probe-01/play_clock",
+      "file": "p01_play_clock.png",
+      "sha256": "9d85afcf9dde39fdcece6767031ae41293ffae53393169d3c19404a0eb46653d",
+      "label": ":06"
+    },
+    {
+      "id": "probe-01/down_distance",
+      "file": "p01_down_distance.png",
+      "sha256": "467609d8769b4c2fe56c3ec8271390a23d1ec167ffc9a6735bc378bf7bb92e75",
+      "label": "4TH & GOAL"
+    },
+    {
+      "id": "probe-02/team_l",
+      "file": "p02_team_l.png",
+      "sha256": "7f7f646c311047a52edc9ba9cf4638f09e66592463a286a0e0535da23826280e",
+      "label": "VWR"
+    },
+    {
+      "id": "probe-02/score_l",
+      "file": "p02_score_l.png",
+      "sha256": "c78630f9d190046f346c4e0e82bd702fa2409ac168b038a0e4d0e16a4c9933c9",
+      "label": "4"
+    },
+    {
+      "id": "probe-02/score_r",
+      "file": "p02_score_r.png",
+      "sha256": "afd3484107e776c46d8282569ff604cfe25dceada5c2ad1f8cc472176bd4d606",
+      "label": "91"
+    },
+    {
+      "id": "probe-02/team_r",
+      "file": "p02_team_r.png",
+      "sha256": "e662b112c39c296338ef2d53c28edb37ed3ba0fd12aeedf299eeb70d1bec744b",
+      "label": "HAR"
+    },
+    {
+      "id": "probe-02/quarter",
+      "file": "p02_quarter.png",
+      "sha256": "f5b082a80be9fcb841db18415b477b66cb394064b11d7a5199f968d2d58bf3df",
+      "label": "4th"
+    },
+    {
+      "id": "probe-02/game_clock",
+      "file": "p02_game_clock.png",
+      "sha256": "c879cf266cc19d961942f7a8b9399cb471100c50ba5527dd2e0e7b7cb34c735f",
+      "label": "12:45"
+    },
+    {
+      "id": "probe-02/play_clock",
+      "file": "p02_play_clock.png",
+      "sha256": "b1bdb5e8c0cb7baff2801c1e648e9cfc0760956ac8a666107c073ccc90accc27",
+      "label": ":08"
+    },
+    {
+      "id": "probe-02/down_distance",
+      "file": "p02_down_distance.png",
+      "sha256": "c00fffc735430fc6658ce72bd61fc5abe2b7cbea7c21fb8142ccba2a13586fd6",
+      "label": "1ST & GOAL"
+    },
+    {
+      "id": "probe-03/team_l",
+      "file": "p03_team_l.png",
+      "sha256": "4d885a8c9fade7cfbd1e5ba8ad6eec31d78c4528d302dbcae4dc547e55865097",
+      "label": "FU"
+    },
+    {
+      "id": "probe-03/score_l",
+      "file": "p03_score_l.png",
+      "sha256": "f0889bd12b2a5ad24984f882de503e42184adc7607de98a631d133152399782d",
+      "label": "19"
+    },
+    {
+      "id": "probe-03/score_r",
+      "file": "p03_score_r.png",
+      "sha256": "22c18af8f850f9659dfb6872730d7e4f27b553dba2af4e5a5b9b165d8fd6ce2a",
+      "label": "26"
+    },
+    {
+      "id": "probe-03/team_r",
+      "file": "p03_team_r.png",
+      "sha256": "3d1d8a16c21b539cbfe2c47b870d9e67f5083e78ec3a096f4a3b15c71451f8be",
+      "label": "NAWJ"
+    },
+    {
+      "id": "probe-03/quarter",
+      "file": "p03_quarter.png",
+      "sha256": "b15d938f537059b910646778d5216ecc916ec46626a05c8ea112dfa76c228ef0",
+      "label": "OT"
+    },
+    {
+      "id": "probe-03/game_clock",
+      "file": "p03_game_clock.png",
+      "sha256": "a775b6c82e93cdd4a342bd7c8d6d0f320f9d59284997bc1d2c55b54889797244",
+      "label": "4:20"
+    },
+    {
+      "id": "probe-03/play_clock",
+      "file": "p03_play_clock.png",
+      "sha256": "040b2217067dbdd40f7965715807bfad515a6a1c63fa6c952955ad75691b2723",
+      "label": ":14"
+    },
+    {
+      "id": "probe-03/down_distance",
+      "file": "p03_down_distance.png",
+      "sha256": "129b5e898cb6a1acb42c6d67602964b1400e265f27f1cf95a30767b418e28ad0",
+      "label": "4TH & 2"
+    }
+  ],
+  "preprocessed_input_sha256": "134c1597890384389af860b39b6e89e5f108a2c619678d4fb4bf60274b1764ce"
+}
