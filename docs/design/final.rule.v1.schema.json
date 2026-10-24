@@ -1,11 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "final-rule/v1",
+  "$id": "https://conwan30.github.io/qortime/design/final.rule.v1.schema.json",
   "title": "final.rule.json",
-  "description": "Sidecar written beside a QorTime final. Not a receipt.v0 field and not under schema/**. The publisher reads it. Absence does not fail verification.",
+  "description": "Sidecar written beside a QorTime final. Not a receipt.v0 field. The file lives in docs/design and is not under schema/**. Pages does not publish docs/design. The publisher reads the sidecar when a review wrote one. Absence does not fail verification.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema", "rule", "final_confirmed", "downgrades_verdict"],
+  "required": ["schema", "rule", "final_confirmed", "downgrades_verdict", "writer", "cutoff_reason"],
   "properties": {
     "schema": {"const": "final-rule/v1"},
     "rule": {"const": "final-rule/v1"},
@@ -70,10 +70,21 @@
     "disagreement": {"type": ["object", "null"]},
     "note": {"type": ["string", "null"]},
     "downgrades_verdict": {"const": false},
-    "cutoff_ms": {"type": ["integer", "null"]},
+    "writer": {
+      "description": "client when the capture tail wrote the file. referee when the official re-read wrote it.",
+      "enum": ["client", "referee"]
+    },
+    "cutoff_ms": {
+      "type": ["integer", "null"],
+      "description": "Null is not one meaning. Read cutoff_reason."
+    },
+    "cutoff_reason": {
+      "description": "no_end_screen: cutoff_ms is null and no evidence row counts. closed_episodes_only: cutoff_ms is null and evidence outside the closed bands counts. open_episode: cutoff_ms is the integer cutoff of the episode that is still open.",
+      "enum": ["no_end_screen", "closed_episodes_only", "open_episode"]
+    },
     "episode_e0_ms": {
       "type": ["integer", "null"],
-      "description": "First end screen of the open episode. Null when a running-clock scorebug closed the previous episode and no new end screen has opened. Not the first end screen of the capture."
+      "description": "First end screen of the open episode, including a screen whose timestamp equals the closing lock. Null when every episode was closed, or when the capture has no end screen. Not the first end screen of the capture."
     },
     "evidence_counted": {
       "type": "array",
