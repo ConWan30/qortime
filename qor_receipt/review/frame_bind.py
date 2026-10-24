@@ -21,6 +21,7 @@ import bisect
 import hashlib
 import json
 import re
+import unicodedata
 import zipfile
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -69,8 +70,11 @@ READERS_FILE = "readers.json"
 CHECKPOINTS_FILE = "checkpoints.jsonl"
 _MEMBER_ORDER = (CHECKPOINTS_FILE, FRAMES_FILE, READERS_FILE)
 
+# A segment ending in '.' or ' ' is rejected before every secret rule. Windows strips
+# both, and no honest reader path has one. `server.key.` is `server.key`; `keys./x` is `keys/x`.
 PATH_PATTERN = (
-    r"^(?!.*\.(?:[Kk][Ee][Yy]|[Pp][Ee][Mm]|[Pp]12|[Pp][Ff][Xx]|[Jj][Ww][Kk]|[Pp][Pp][Kk]|[Jj][Kk][Ss])$)"
+    r"^(?!.*(?:^|/)[^/]*(?:\.| )(?:/|$))"
+    r"(?!.*\.(?:[Kk][Ee][Yy]|[Pp][Ee][Mm]|[Pp]12|[Pp][Ff][Xx]|[Jj][Ww][Kk]|[Pp][Pp][Kk]|[Jj][Kk][Ss])$)"
     r"(?!.*(?:^|/)[Kk][Ee][Yy][Ss](?:/|$))"
     r"(?!.*(?:^|/)[Ss][Ee][Cc][Rr][Ee][Tt][Ss]?(?:/|$))"
     r"(?!.*(?:^|/)[^/]*_[Kk][Ee][Yy](?:\.[^/]*)?(?:/|$))"
@@ -819,6 +823,15 @@ def _readers_file_ok(raw: bytes, want: str) -> bool:
     return _readers_obj_ok(obj)
 
 
+def _path_identity(path: str) -> str:
+    """One file: NFC, then casefold, then strip trailing dots and spaces on each segment.
+
+    JSON Schema uniqueItems cannot express this collision.
+    """
+    folded = unicodedata.normalize("NFC", path).casefold()
+    return "/".join(part.rstrip(". ") for part in folded.split("/"))
+
+
 def _readers_obj_ok(obj: dict[str, Any]) -> bool:
     if set(obj) != {"schema", "qorcap_version", "readers", "runtimes"}:
         return False
@@ -828,7 +841,20 @@ def _readers_obj_ok(obj: dict[str, Any]) -> bool:
     runtimes = obj["runtimes"]
     if not isinstance(readers, list) or not readers or not isinstance(runtimes, list) or not runtimes:
         return False
-    return all(_reader_ok(r) for r in readers) and all(_runtime_ok(r) for r in runtimes)
+    if not all(_reader_ok(r) for r in readers) or not all(_runtime_ok(r) for r in runtimes):
+        return False
+    if len({r["id"] for r in readers}) != len(readers):
+        return False
+    if len({r["id"] for r in runtimes}) != len(runtimes):
+        return False
+    seen: set[str] = set()
+    for reader in readers:
+        for item in reader["files"]:
+            ident = _path_identity(item["path"])
+            if ident in seen:
+                return False
+            seen.add(ident)
+    return True
 
 
 def _reader_ok(obj: Any) -> bool:
@@ -849,6 +875,8 @@ def _reader_file_ok(obj: Any) -> bool:
     if len(path) > 240 or _PATH_RE.fullmatch(path) is None:
         return False
     for part in path.split("/"):
+        if part.endswith((".", " ")):
+            return False
         if part.lower() in _FORBIDDEN_SEGMENTS:
             return False
         stem = part.split(".", 1)[0]

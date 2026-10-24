@@ -138,6 +138,15 @@ and vision reader code and packs, plus a `runtimes` array of the builds that pro
 when those produced them). Checkpoint seq 0 carries `qorcap.readers` as `{schema, sha256}` of the file bytes
 (JCS plus one trailing LF) or `{schema, state: "unbound"}` when no file was sealed. Later checkpoints omit it.
 A `readers` object on seq 1 or later is broken, whether or not it matches seq 0.
+Reader `id` values are unique and runtime `id` values are unique. Each file path is unique across the whole
+manifest, within one reader and across readers. Paths collide when they are equal after NFC normalization,
+casefolding, and stripping trailing `.` and ` ` from every segment. That includes the same path listed as both
+code and pack, and the same path listed twice with a different sha256. The schema sets `uniqueItems` on
+`readers`, `runtimes`, and `files`. The schema check alone is not enough. `uniqueItems` rejects only an array
+item that is repeated exactly, and JSON Schema cannot express a normalized path collision or the same id with
+different other fields. Python rejects those. A path segment that ends in `.` or ` ` is rejected before every
+secret-path rule. No honest reader path has one. Windows strips those characters too, so a trailing dot or space
+must not hide `server.key`, `keys`, or `secret`.
 
 `qor_receipt.review.frame_bind.frame_bind_status` returns exactly one status, as a plain `str`:
 
@@ -184,7 +193,9 @@ trust a caller-supplied result. A copy of a real result compares equal; that sti
   a frame-index hole with no `align_gap` (inside a segment, across segments, or a first frame above 0), an
   `align_gap` span that contains another segment's frame row, interleaved
   segments, a header and no frame row, an `align_gap` whose `samples` is 0, a `readers` object after seq 0, or a
-  duplicate JSON key (the same key twice; NaN and Infinity too). A checkpoints file that cannot be parsed, a
+  duplicate JSON key (the same key twice; NaN and Infinity too). A duplicate reader id, a duplicate runtime id, or
+  file paths that collide after NFC normalization, casefolding, and trailing dot or space stripping is broken.
+  A checkpoints file that cannot be parsed, a
   symlink, a zip member whose name is not exactly `checkpoints.jsonl`, `frames.jsonl`, or `readers.json`, and any
   other shape, is broken. Over a size cap is broken. JSON nested deeper than 32 is broken.
 

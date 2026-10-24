@@ -239,6 +239,7 @@ def test_status_words_are_written_once_and_match_the_spec():
     assert "at most 4 `{`" in spec
     assert "roughly 3.5–4 h" in flat
     assert "longer capture comes back broken" in flat
+    assert "The schema check alone is not enough" in spec
     compat = json.loads((CONTRACTS / "compat.json").read_text(encoding="utf-8"))
     assert tuple(compat["frame_bind"]["statuses"]) == FRAME_BIND_STATUSES
     assert compat["frame_bind"]["verified"] == FRAME_BIND_VERIFIED
@@ -638,8 +639,18 @@ def test_key_like_reader_paths_are_rejected():
         "api_key/x.py", "id_rsa/x.py", "id_ed448", "id_ed448_sk", "a/id_ed448.pub", "id_ed448/x.py",
         "wallet.ppk", "store.jks", "DIR.PPK",
         "id_rsa.", "a_key.", "x/id_ed448./y",
+        # One path per secret rule, with a trailing dot and a trailing space.
+        "server.key.", "server.key ", "certs/tls.pem.", "cert.p12.", "cert.pfx.",
+        "cert.jwk.", "cert.ppk.", "cert.jks.", "cert.KEY..", ".p12.", ".jks.", ".ppk.", ".jwk.",
+        "server.pem ", "cert.P12 ",
+        "keys./x.py", "keys /x.py", "secrets./x.py", "secret./x", "secrets /x.py", "a/keys.", "a/secret.",
+        "a_key ", "api_key./x.py", "id_rsa ", "id_ed448 ", "x/id_ed25519. ",
+        "file.", "secretary.", "foo..", "readme. ", "a./b.py",
     )
-    allowed = ("secretary", "foo_keyish.py", "key.json", "monkey_keyboard.py", "sidecar/qorcap_standard.py")
+    allowed = (
+        "secretary", "foo_keyish.py", "key.json", "monkey_keyboard.py",
+        "sidecar/qorcap_standard.py", "foo.bar",
+    )
     for path in rejected:
         obj = _readers_obj()
         obj["readers"][0]["files"][0]["path"] = path
@@ -662,9 +673,10 @@ def test_key_like_reader_paths_are_rejected():
 
 
 def test_reader_path_pattern_matches_the_python_check():
-    """G1: the schema pattern and the Python segment check accept the same paths.
+    """The schema pattern and the Python segment check accept the same paths.
 
-    A trailing dot used to miss `(?:\\.[^/]+)?` and pass only the schema.
+    Every secret rule is sampled with a trailing dot and a trailing space.
+    A segment that ends in either is rejected on both sides. `foo.bar` still passes.
     """
     from qor_receipt.review.frame_bind import _PATH_RE, _reader_file_ok
 
@@ -672,25 +684,159 @@ def test_reader_path_pattern_matches_the_python_check():
     names = (
         "reader", "secretary", "foo_keyish", "key", "monkey_keyboard", "a_key", "api_key",
         "id_rsa", "id_ed448", "id_ed25519", "ID_ED25519", "id_ecdsa_sk",
+        "server.key", "tls.pem", "cert.p12", "cert.pfx", "cert.jwk", "cert.ppk", "cert.jks",
+        "keys", "secret", "secrets",
     )
-    tails = ("", ".", ".py", ".pub", ".tar.gz", "/", "/y", "./y", ".jks", ".ppk")
-    samples = ["id_rsa.", "a_key.", "x/id_ed448./y", "id_ed25519.", "A_KEY.", "file.", "secretary."]
+    tails = ("", ".", "..", ". ", " ", " .", ".py", ".py.", ".py ", ".pub", ".tar.gz", "/", "/y", "./y", ".jks", ".ppk")
+    samples = [
+        "id_rsa.", "a_key.", "x/id_ed448./y", "id_ed25519.", "A_KEY.", "file.", "secretary.",
+        "server.key.", "server.key ", "certs/tls.pem.", "cert.p12.", "cert.pfx.",
+        "cert.jwk.", "cert.ppk.", "cert.jks.", "cert.KEY..", ".p12.", ".jks.", ".ppk.", ".jwk.",
+        "keys./x.py", "keys /x.py", "secrets./x.py", "secret./x", "secrets /x.py",
+        "a_key ", "api_key./x.py", "id_rsa ", "id_ed448 ", "foo.bar", "foo..", "readme. ",
+    ]
     for name in names:
         for tail in tails:
             samples.append(name + tail)
             samples.append("x/" + name + tail)
             samples.append(name + "./y.py")
     rng = random.Random(0)
-    alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_./+-"
+    alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_./+- "
     for _ in range(300):
         samples.append("".join(rng.choice(alphabet) for _ in range(rng.randint(1, 48))))
     for path in samples:
         schema_ok = len(path) <= 240 and _PATH_RE.fullmatch(path) is not None
         python_ok = _reader_file_ok({"kind": "code", "path": path, "sha256": digest})
         assert schema_ok == python_ok, path
-    for path in ("id_rsa.", "a_key.", "x/id_ed448./y"):
-        assert _PATH_RE.fullmatch(path) is None
-        assert not _reader_file_ok({"kind": "code", "path": path, "sha256": digest})
+    rejected = (
+        "server.key.", "server.key ", "certs/tls.pem.", "cert.p12.", "cert.jwk.", "cert.ppk.", "cert.jks.",
+        "keys./x.py", "keys /x.py", "secret./x", "secrets./x.py", "secrets /x.py",
+        "a_key.", "a_key ", "api_key./x.py", "id_rsa.", "id_rsa ", "x/id_ed448./y", "id_ed448 ",
+        "file.", "secretary.", "foo..",
+    )
+    for path in rejected:
+        assert _PATH_RE.fullmatch(path) is None, path
+        assert not _reader_file_ok({"kind": "code", "path": path, "sha256": digest}), path
+    for path in ("foo.bar", "secretary", "key.json", "sidecar/qorcap_standard.py"):
+        assert _PATH_RE.fullmatch(path) is not None, path
+        assert _reader_file_ok({"kind": "code", "path": path, "sha256": digest}), path
+
+
+def _readers_status(obj: dict) -> str:
+    lines = [_header(), _frame(0, 0, 0, 1000)]
+    return frame_bind_status(_sealed(lines, canonicalize(obj) + b"\n"))
+
+
+def test_duplicate_reader_ids_are_broken():
+    js = pytest.importorskip("jsonschema")
+    schema = _schema("qorcap-readers.v0.json")
+    obj = _readers_obj()
+    obj["readers"].append({
+        "id": "standard",
+        "version": "9.9.9",
+        "files": [{"kind": "code", "path": "other/reader.py", "sha256": "ab" * 32}],
+    })
+    js.validate(obj, schema)
+    assert _readers_status(obj) == BROKEN
+    copied = _readers_obj()
+    copied["readers"].append(json.loads(json.dumps(copied["readers"][0])))
+    with pytest.raises(js.ValidationError):
+        js.validate(copied, schema)
+    assert _readers_status(copied) == BROKEN
+
+
+def test_duplicate_runtime_ids_are_broken():
+    js = pytest.importorskip("jsonschema")
+    schema = _schema("qorcap-readers.v0.json")
+    obj = _readers_obj()
+    obj["runtimes"].append({"id": "ffmpeg", "sha256": "33" * 32, "version": "n9.0"})
+    js.validate(obj, schema)
+    assert _readers_status(obj) == BROKEN
+    copied = _readers_obj()
+    copied["runtimes"].append(json.loads(json.dumps(copied["runtimes"][0])))
+    with pytest.raises(js.ValidationError):
+        js.validate(copied, schema)
+    assert _readers_status(copied) == BROKEN
+
+
+def test_normalized_path_collisions_are_broken():
+    """NFC, casefold, and trailing dot/space are one file, inside a reader and across readers."""
+    js = pytest.importorskip("jsonschema")
+    from qor_receipt.review.frame_bind import _path_identity
+
+    schema = _schema("qorcap-readers.v0.json")
+    assert _path_identity("Caf\u00e9/A.py.") == _path_identity("Cafe\u0301/a.py ")
+    assert _path_identity("sidecar/x.py") == _path_identity("SIDECAR/X.py")
+    assert _path_identity("sidecar/x.py") != _path_identity("sidecar/y.py")
+
+    within = _readers_obj()
+    within["readers"][0]["files"].append({
+        "kind": "code", "path": "Sidecar/Qorcap_Standard.py", "sha256": "ab" * 32,
+    })
+    js.validate(within, schema)
+    assert _readers_status(within) == BROKEN
+
+    across = _readers_obj()
+    across["readers"].append({
+        "id": "vision",
+        "version": "1",
+        "files": [{"kind": "pack", "path": "SIDECAR/qorcap_standard.py", "sha256": "ab" * 32}],
+    })
+    js.validate(across, schema)
+    assert _readers_status(across) == BROKEN
+
+    dotted = _readers_obj()
+    dotted["readers"][0]["files"].append({
+        "kind": "code", "path": "sidecar/qorcap_standard.py.", "sha256": "ab" * 32,
+    })
+    with pytest.raises(js.ValidationError):
+        js.validate(dotted, schema)
+    assert _readers_status(dotted) == BROKEN
+
+    spaced = _readers_obj()
+    spaced["readers"][0]["files"].append({
+        "kind": "code", "path": "sidecar/qorcap_standard.py ", "sha256": "ab" * 32,
+    })
+    with pytest.raises(js.ValidationError):
+        js.validate(spaced, schema)
+    assert _readers_status(spaced) == BROKEN
+
+    composed = _readers_obj()
+    composed["readers"][0]["files"] = [
+        {"kind": "code", "path": "Caf\u00e9.py", "sha256": "ab" * 32},
+        {"kind": "code", "path": "Cafe\u0301.py", "sha256": "cd" * 32},
+    ]
+    with pytest.raises(js.ValidationError):
+        js.validate(composed, schema)
+    assert _readers_status(composed) == BROKEN
+    assert _readers_status(_readers_obj()) == VERIFIED
+
+
+def test_same_path_as_code_and_pack_is_broken():
+    js = pytest.importorskip("jsonschema")
+    schema = _schema("qorcap-readers.v0.json")
+    obj = _readers_obj()
+    obj["readers"][0]["files"].append({
+        "kind": "pack", "path": "sidecar/qorcap_standard.py", "sha256": "ab" * 32,
+    })
+    js.validate(obj, schema)
+    assert _readers_status(obj) == BROKEN
+
+
+def test_same_path_with_two_sha256_is_broken():
+    js = pytest.importorskip("jsonschema")
+    schema = _schema("qorcap-readers.v0.json")
+    obj = _readers_obj()
+    obj["readers"][0]["files"].append({
+        "kind": "code", "path": "sidecar/qorcap_standard.py", "sha256": "ab" * 32,
+    })
+    js.validate(obj, schema)
+    assert _readers_status(obj) == BROKEN
+    copied = _readers_obj()
+    copied["readers"][0]["files"].append(json.loads(json.dumps(copied["readers"][0]["files"][0])))
+    with pytest.raises(js.ValidationError):
+        js.validate(copied, schema)
+    assert _readers_status(copied) == BROKEN
 
 
 def _sealed(lines: list[bytes], readers: bytes | None = None) -> dict[str, bytes]:
