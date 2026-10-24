@@ -424,7 +424,7 @@ The clock-seen precondition is removed. The previous draft left the stall undeci
 All of these hold:
 
 1. The screen is the end-of-game menu, by the discriminator in §4.2.
-2. The score is stably read: 3 menu frames, spanning at least 400 ms, confidence at least 0.90 on every frame, every frame the same score (§4.3). A lock clears an incomplete streak. A run that already met this gate is kept, unless a later lock clears it under §4.3: the lock's raw `clock_s` shows time left, or either side of the lock is above the run. A same-score lock at 0:00 keeps the run.
+2. The score is stably read: 3 menu frames, spanning at least 400 ms, confidence at least 0.90 on every frame, every frame the same score (§4.3). A lock clears an incomplete streak. A run that already met this gate is kept, unless a later lock drops it under §4.3. A lock agrees on the score only. A later lock with either side higher than the run drops the run. A time-left-only lock stops that run from confirming and leaves it as a dispute vote. A lock whose quarter is below the running-maximum quarter floor never does that by clock. A same-score lock at 0:00 keeps the run.
 3. Two stable reads whose scores differ are a dispute. The receipt keeps the first score, unconfirmed, with `end_menu_disputed` true, however many non-end frames separate the pictures (§4.4). A later picture with that same stable score confirms. A later picture with no stable run of its own cancels an earlier agreement. A later readable end-menu frame at or above the 0.70 glyph floor, with a different score, blocks the confirm when that frame is not itself a stable run. The evidence cutoff is re-derived from the end screens that remain (§4.6).
 
 The menu score is then the receipt score. `method` is `end_menu_read`, `final_basis` is `end_menu`, `final_confirmed` is true. The official `final_reread` check is `pass` when the claim equals that score. A pass can still become VERIFIED when the other checks pass. The note in §4.5 does not change this.
@@ -554,7 +554,7 @@ pad_connected_through(events, issued_ms, deadline_ms):  # qorcap #97 Final rule
 
 A frame whose entry is null is not an end menu. A press in that frame's window with no `picture_since_ms` is not an end menu either. The final stays unconfirmed. Official review is `partial` when a chain posts a score, and `fail` when it does not. It is not `pass`. A 6-item frame with no `picture_since_ms` and no press in its window is still an end menu.
 
-Accepted risks, all of which need the recording to end on the picture. A later scorebug clears an incomplete streak. It also clears a stable run when its raw `clock_s` is an integer greater than 0, or when either side is above that run. A same-score lock at 0:00 keeps the run. Offline `finalize` applies that same clear. These pictures are accepted only when no such later lock follows:
+Accepted risks, all of which need the recording to end on the picture. A later scorebug clears an incomplete streak. A later lock drops a stable run when either side is above that run. A time-left-only lock stops that run from confirming and leaves it as a dispute vote, unless the lock's quarter is below the running-maximum quarter floor, in which case the clock does not. A same-score lock at 0:00 keeps the run. Offline `finalize` applies that same split. These pictures are accepted only when no later lock drops the run and no time-left lock at or above the quarter floor is left holding it:
 
 * A halftime screen that is pixel-identical to the six-item end menu, and was not opened by OPTIONS, passes the geometry. v1 does not put a clock gate behind it.
 * Three forged end-menu frames over at least 400 ms at the very end of the recording, with confidence at least 0.90 and the same score, confirm. That is the case the clock-gate comment at `qorcap_reader.py:1518-1519` refused.
@@ -562,7 +562,7 @@ Accepted risks, all of which need the recording to end on the picture. A later s
 
 ### 4.3 Stably read
 
-A menu is stably read when `decide` has 3 menu frames that agree, spanning at least 400 ms, each with `conf` ≥ 0.90. A lock clears an incomplete streak: the frames gathered so far are dropped when they have not yet met that gate, and the next run is built from frames strictly after that lock. A frame whose `t_ms` equals a lock's `t_ms` is not counted. The lock is ordered before the frame at that timestamp. A run that already met the gate stays in the collection unless a later lock clears it. A later lock clears that run when its raw `clock_s` is an integer greater than 0, or when its away is above the run's away or its home is above the run's home. A same-score lock whose raw `clock_s` is 0 keeps the run. That is qorcap #102's own test. A null clock is not time left. A bool is not time left. Offline `finalize` uses this same clear. The frames of a kept run do not have to sit strictly after the latest lock in the capture. Latest, when a caller still needs it for the evidence cutoff, means the maximum `t_ms` among locks, not the last row in list order. With no scorebug read, every menu frame can join a run.
+A menu is stably read when `decide` has 3 menu frames that agree, spanning at least 400 ms, each with `conf` ≥ 0.90. A lock clears an incomplete streak: the frames gathered so far are dropped when they have not yet met that gate, and the next run is built from frames strictly after that lock. A frame whose `t_ms` equals a lock's `t_ms` is not counted. The lock is ordered before the frame at that timestamp. A run that already met the gate stays in the collection unless a later lock drops it. A lock agrees on the score only. Its `clock_s` and `quarter` are the single read that completed the agreement (`qorcap_reader.py:1332-1334`), so one misread clock digit is that row's whole clock. A later lock drops the run when its away is above the run's away or its home is above the run's home. That drop removes the run from the dispute as well. A time-left-only lock does not drop it. Time left means `clock_s` is a JSON integer greater than 0 and neither side of the lock is above the run. That lock stops the run from confirming and leaves the run as a dispute vote: a later stable menu with a different score is a dispute that keeps the first score, unconfirmed. A lock whose integer quarter is strictly below the running-maximum quarter floor never stops or drops a run by its clock. A higher score still drops the run when the quarter is below that floor. A same-score lock whose `clock_s` is 0 keeps the run and can still confirm. That is qorcap #102's own test. A float such as 5.0, a bool, null, a string, and a negative are not time left. Offline `finalize` uses this same split. The frames of a kept run do not have to sit strictly after the latest lock in the capture. Latest, when a caller still needs it for the evidence cutoff, means the maximum `t_ms` among locks, not the last row in list order. With no scorebug read, every menu frame can join a run.
 
 `decide` requires each of `frames` and `locks` to be listed in non-decreasing `t_ms`. A row with `t_ms` less than the previous row fails the decision closed: the menu is not adopted. A duplicate `t_ms` stays in the list and does not add a distinct instant or any span. The run needs 3 distinct, strictly increasing timestamps. Rows `5000, 5000, 5400` are two instants. Latest lock is the maximum `t_ms`. On a non-decreasing list that is the last lock. An `ok: false` frame resets the streak: the frames before it are dropped, and the frames after it must form a new run. A readable frame with confidence from 0.70 through 0.89 resets the streak the same way. The bad frame is not bridged. Two frames after the reset do not confirm. Three fresh frames after the reset can. A backwards timestamp is the case that fails the whole decision closed.
 
@@ -577,7 +577,7 @@ On the fresh, strictly increasing frames, all of these hold:
 
 `EndMenuAgreement` (`sidecar/qorcap_endmenu.py:231-261`) already requires 3 consecutive readable frames and a span of at least 400 ms, and it already clears the run when the score changes or a frame is unreadable. It does not know about the scorebug. `offer` stores `conf` from the frame that first completes the run (`:251-256`) and later frames update only `until_ms` and `frames` (`:259-260`). A readable frame under 0.90 clears the run, the same way an unreadable frame does.
 
-A scorebug return clears an incomplete or unreadable streak. A completed run stays unless the later lock shows time left or a higher side. `_post_agreed` clears `_end_screen_earliest` (`qorcap_reader.py:1343-1344`) and, in the live reader, also drops `EndMenuAgreement`. The keep-or-clear rule for v1 is the one in the previous paragraph, inside `decide`, so the tail, the referee re-read, and offline `finalize` do the same thing. `kept-run-cleared-by-time-left` is a stable 13–6 and then a 13–6 lock at Q4 5:00, with the recording ended. The run is cleared. The result is partial at the lock, never a pass. `halftime-lookalike-cleared-by-higher-lock` is a stable 6–3, then a 13–6 lock at 0:00, then a real 13–6 menu. The higher lock clears the 6–3 run and the 13–6 menu confirms. `cutoff-falls-back-to-earliest-end-screen` is the same score at 0:00, so that run is kept and the menu confirms.
+A scorebug return clears an incomplete or unreadable streak. A completed run stays unless a later lock drops it. A higher side drops the run. A time-left-only lock stops it from confirming and leaves it as a dispute vote, unless that lock's quarter is below the running-maximum quarter floor. `_post_agreed` clears `_end_screen_earliest` (`qorcap_reader.py:1343-1344`) and, in the live reader, also drops `EndMenuAgreement`. The keep-or-hold rule for v1 is the one in the previous paragraph, inside `decide`, so the tail, the referee re-read, and offline `finalize` do the same thing. `kept-run-cleared-by-time-left` is a stable 13–6 and then a 13–6 lock at Q4 5:00, with the recording ended. The run cannot confirm. The result is partial at the lock, never a pass. `halftime-lookalike-cleared-by-higher-lock` is a stable 6–3, then a 13–6 lock at 0:00, then a real 13–6 menu. The higher lock drops the 6–3 run and the 13–6 menu confirms. `cutoff-falls-back-to-earliest-end-screen` is the same score at 0:00, so that run is kept and the menu confirms.
 
 The glyph floor stays what makes a frame readable: `MIN_SCORE = 0.70` and `MIN_MARGIN = 0.20` (`qorcap_endmenu.py:37-38`). 0.90 is the confirm gate on top of a readable frame. A covered-panel corroboration (`CORROB_MIN = 0.55`, `qorcap_endmenu.py:272`) fails 0.90 on every frame, so a covered panel does not confirm.
 
@@ -589,7 +589,7 @@ Issue 94 reported one confidence, 0.912, over 485 frames. That number is the com
 
 `decide` derives the last menu and later live play from `frames` and `locks`. There is no caller-supplied `later` flag.
 
-`decide` collects every stable run. A lock clears an incomplete streak and leaves a completed run in that collection. A later stable run whose score differs from the first stable run is a dispute, not a new candidate. The gap between them does not matter: gameplay, a replay, one stray non-end frame, or no frame at all. The receipt keeps the first stable score, unconfirmed, with `end_menu_disputed` true. The later score is not posted. `dispute-later-menu-after-gameplay` is 7–0, then gameplay, then 10–0, and the receipt stays 7–0. `dispute-later-menu-reverse-order` is that pair reversed, and the receipt stays 10–0, the first score. `dispute-one-stray-frame` is 7–0, one non-end frame, then 10–0. Treating the later picture as the candidate would confirm 10–0. It is a dispute, and the receipt stays 7–0. `same-menu-after-gameplay-confirms` is 7–0, then gameplay, then 7–0, and it confirms 7–0.
+`decide` collects every stable run. A lock clears an incomplete streak. A completed run stays in that collection unless a later lock with a higher side drops it. A time-left-only lock leaves the run there as a dispute vote, unless the lock's quarter is below the running-maximum quarter floor. A later stable run whose score differs from the first stable run is a dispute, not a new candidate. The gap between them does not matter: gameplay, a replay, one stray non-end frame, or no frame at all. The receipt keeps the first stable score, unconfirmed, with `end_menu_disputed` true. The later score is not posted. `dispute-later-menu-after-gameplay` is 7–0, then gameplay, then 10–0, and the receipt stays 7–0. `dispute-later-menu-reverse-order` is that pair reversed, and the receipt stays 10–0, the first score. `dispute-one-stray-frame` is 7–0, one non-end frame, then 10–0. Treating the later picture as the candidate would confirm 10–0. It is a dispute, and the receipt stays 7–0. `same-menu-after-gameplay-confirms` is 7–0, then gameplay, then 7–0, and it confirms 7–0.
 
 A later frame blocks that confirm even when it is not itself stable. After the candidate run, any readable end-menu frame in that same picture whose score differs from the agreed score fails the decision closed. Readable here means `ok` is true, `pixel` is `end_menu_6`, the OPTIONS hold does not label the frame pause, and `conf` is at least the glyph floor `MIN_SCORE` (0.70, `qorcap_endmenu.py:37-38`). 0.70 stays that constant. One frame at 0.85 is enough. The candidate is not posted. A frame under 0.70 does not block. An `ok: false` frame does not block. A frame that only resets the streak, and is followed by a later stable run of the same score in the same picture, is earlier than that run and does not block it. `later-readable-frame-blocks-confirm` is the 0.85 frame with no lock: posted score null, neither menu, `final_reread` fail. `later-frame-below-readability-floor` is the same shape at 0.69 and still confirms.
 
@@ -597,7 +597,7 @@ An end-menu picture that starts after a non-end-screen frame is a new picture. A
 
 Before the implementation PR merges, measure blocking-flicker and streak-reset rates on the real recordings 135645, 143212, 091651, 110028, and 162055. Those five are not the held-out set, and they are not vector templates. 135645's vector stays synthetic. The held-out matches (170123, 021003, 125430, 084523, 193534) are not the measurement set. A synthetic fixture pass is not that measurement: 0 wrong of 615 on 143212, and 2 of 972 reading 4–29 on the online menu without the scorebug cross-check, only land on partial. Partial is the safe side. The implementation PR records the five rates next to this paragraph.
 
-An agreed scorebug read with `t_ms` after menu frames is later live play. It is a lock. It clears an incomplete streak. It clears a stable run when the raw clock shows time left or either side is above the run. A same-score lock at 0:00 keeps the run. `later-live-play` is a stable 13–6 and then a 13–6 lock at Q4 0:45. The clock shows time left, so the run is cleared. The receipt is the chain score, unconfirmed, `final_reread` partial, never a pass. That lock still closes the episode. `kept-run-cleared-by-time-left` is the same shape at Q4 5:00. `cutoff-falls-back-to-earliest-end-screen` confirms 10–7 because the later lock is the same score at 0:00, and the cutoff stays 2000. `scorebug-return-resets-agreed-score` is a stable 3–0, then a 10–7 lock at 0:00, then a stable 10–7. The lock is above the 3–0 run, so that run is cleared and the later menu confirms 10–7. `scorebug-return-same-score-confirms` keeps both 10–7 runs. `zero-clock-keeps-run-then-different-menu` keeps a 10–7 run across a same-score 0:00 lock and then disputes a later 17–7, and the note names the scorebug return. A tie of longest chains blocks every adoption, a fresh menu and a kept run alike. `chain-tie-blocks-fresh-menu` and `chain-tie-blocks-kept-run` both post null. A lock between frames does not start a new picture. `lock-between-frames-same-picture` confirms. `replay-lock-lower-after-menu` stays a null score and `final_reread` fail.
+An agreed scorebug read with `t_ms` after menu frames is later live play. It is a lock. It clears an incomplete streak. A lock agrees on the score only: `clock_s` and `quarter` come from the single read that completed the agreement (`qorcap_reader.py:1332-1334`). A later lock drops a stable run when either side is above the run. A time-left-only lock, same or lower score and a JSON integer `clock_s` greater than 0, stops the run from confirming and leaves it as a dispute vote. A lock whose quarter is below the running-maximum quarter floor never does that by clock. A same-score lock at 0:00 keeps the run. `later-live-play` is a stable 13–6 and then a 13–6 lock at Q4 0:45. The clock shows time left, so the run cannot confirm. With no later menu the receipt is the chain score, unconfirmed, `final_reread` partial, never a pass. That lock still closes the episode. `kept-run-cleared-by-time-left` is the same shape at Q4 5:00. `time-left-holds-no-later-menu` is a stable 7–0 and then a 7–0 lock misread as Q4 0:03, and the receipt is partial. `time-left-holds-then-different-menu` is that 7–0, the same misread lock, then a stable 10–0. The first run stays a dispute vote, and the receipt stays 7–0, unconfirmed. Confirming the 10–0 is the confirmed-wrong-final in qorcap #101. `below-floor-clock-does-not-hold` is that pair with a Q4 already seen and the misread lock at Q3, and it is the same dispute. `clock-float-not-time-left`, `clock-bool-not-time-left`, `clock-null-not-time-left`, `clock-string-not-time-left`, and `clock-negative-not-time-left` each confirm, because 5.0, a bool, null, a string, and a negative are not time left. `cutoff-falls-back-to-earliest-end-screen` confirms 10–7 because the later lock is the same score at 0:00, and the cutoff stays 2000. `scorebug-return-resets-agreed-score` is a stable 3–0, then a 10–7 lock at 0:00, then a stable 10–7. The lock is above the 3–0 run, so that run is dropped and the later menu confirms 10–7. `scorebug-return-same-score-confirms` keeps both 10–7 runs. `zero-clock-keeps-run-then-different-menu` keeps a 10–7 run across a same-score 0:00 lock and then disputes a later 17–7, and the note names the scorebug return. A tie of longest chains blocks every adoption, a fresh menu and a kept run alike. `chain-tie-blocks-fresh-menu` and `chain-tie-blocks-kept-run` both post null. A lock between frames does not start a new picture. `lock-between-frames-same-picture` confirms. `replay-lock-lower-after-menu` stays a null score and `final_reread` fail.
 
 Failed gates produce these results, on both sides:
 
@@ -611,6 +611,8 @@ Failed gates produce these results, on both sides:
 | No lock, stable read, then a later readable frame in that picture with a different score, and that frame is not itself a stable run | null. Neither score is posted | `last_scorebug_read_unconfirmed` | absent | false | `fail` |
 | Stable read, then a new end-menu picture with no stable run of its own | the chain score when one exists, otherwise null. The earlier menu is not posted | `last_scorebug_read_unconfirmed` | absent | false | `partial` when a chain posts a score, otherwise `fail` |
 | Stable read kept across a later lock, and the longest chains disagree | null | `last_scorebug_read_unconfirmed` | absent | false | `fail` |
+| Time-left lock holds the only stable run, and no later menu votes | the chain score. The menu is not confirmed | `last_scorebug_read_unconfirmed` | absent | false | `partial` |
+| A lock's `away` or `home` is not a non-bool JSON integer | null. The menu is not adopted | `last_scorebug_read_unconfirmed` | absent | false | `fail` |
 
 The no-score fail detail stays "referee could not read any score from the recorded tail" (`engine.py:804`).
 
@@ -644,9 +646,9 @@ The note fires when either of these is true:
 * raw `clock_s` is an integer greater than 0. Unread seconds are that raw `clock_s`, the integer on the posted lock. `decide` does not copy a clock from an earlier row, and it does not replace the number with a floored or derived clock. Issue 94's lock is 11. The quarter named in the same sentence is the running maximum through that lock, which can differ from the raw quarter glyph on the row. `quarter-floor-trailing-q3` posts Q4 in the note and in `last_locked`, and the seconds unread are the trailing row's raw 11.
 * raw `clock_s` is null and `wall_gap_ms` is at least `STALL_WALL_GAP_MS` (10000). `wall_gap_ms` is the first frame of the adopted run minus that posted lock's `t_ms`. Unread seconds are null. The note names the wall gap. Example: "End menu confirmed 6–3. Scorebug last locked at Q4 with no clock read (19000 ms unread on the wall clock)."
 
-`wall_gap_ms` is stored in both cases. It is the first frame of the first surviving run of the adopted score, minus the posted lock's `t_ms`. When several runs share that score, the later run is not the start of the gap. `wall-gap-uses-first-run` is two 13–6 showings. The note names the first run's wall gap. Unread seconds are not subtracted from the clock, and they are not treated as 0:00. qorcap#85 logs a stall and does not mint a score from it. The menu mints the score. The gap is recorded. The note does not downgrade the verdict.
+`wall_gap_ms` is stored in both cases. It is the first frame of the first surviving run of the adopted score, minus the posted lock's `t_ms`. When several runs share that score, the later run is not the start of the gap. The gap is negative when that first frame is before the posted lock. `wall-gap-uses-first-run` is two 13–6 showings. The note names the first run's wall gap. Unread seconds are not subtracted from the clock, and they are not treated as 0:00. qorcap#85 logs a stall and does not mint a score from it. The menu mints the score. The gap is recorded. The note does not downgrade the verdict. `quarter-floor-between-same-score` keeps its first 13–6 showing: the later lock is Q3, below the Q4 already seen, so its raw clock of 11 does not hold that run. The posted lock is that later row, and the gap is 5000 − 9000 = −4000. The note still says Q4, and the seconds unread are still the raw 11.
 
-`last_locked.quarter` is that same running maximum. `last_locked.clock_s` is the raw read on the posted lock. `quarter-floor-between-same-score` is a Q4 lock, a 13–6 menu, a Q3 misread of the same score, and a second 13–6 menu. The Q3 row's clock shows time left, so the first run is cleared. The second menu confirms, and the note and `last_locked` say Q4.
+`last_locked.quarter` is that same running maximum. `last_locked.clock_s` is the posted lock's `clock_s` when that value is a JSON integer, and null when it is a float, a bool, a string, or null. `quarter-floor-between-same-score` is a Q4 lock, a 13–6 menu, a Q3 misread of the same score, and a second 13–6 menu. The Q3 is below the quarter floor, so its clock does not hold the first run. Both showings confirm, `wall_gap_ms` is −4000, and the note and `last_locked` say Q4.
 
 The menu must be greater than or equal to every lock on both sides, not only the locks on the chain. A menu below any lock is unconfirmed. The posted unconfirmed score is not a greedy running maximum. It is the terminal score of the longest componentwise non-decreasing chain of locks. A later lock follows an earlier one only when its away is at least the earlier away and its home is at least the earlier home. `side-swap-keeps-componentwise-chain` is 14–7, then 7–14, then 21–7. The chain is 14–7 then 21–7. The posted score is 21–7. The 7–14 lock is not on that chain.
 
@@ -716,8 +718,8 @@ Removing the clock gate changes which frames count as end screens. A pixel match
 decide(frames, locks, evidence, options_presses_ms) -> Decision
 ```
 
-* `frames`: reads `{t_ms, away, home, conf, ok, pixel, picture_since_ms}`, listed in non-decreasing `t_ms`. A backwards step fails the decision closed. A duplicate timestamp does not add a distinct instant or any span. A frame counts toward a stable run when `ok` is true, `conf` ≥ 0.90, §4.2 labels `pixel` as the end menu, and `t_ms` is strictly greater than the previous counted frame. A frame whose `t_ms` equals a lock's `t_ms` is not counted. A lock clears an incomplete streak. A run that already met the stable gate is kept unless a later lock's raw `clock_s` is an integer greater than 0, or either side of that lock is above the run. A same-score lock at 0:00 keeps the run. A lock between frames does not start a new picture. Two surviving stable runs whose scores differ are a dispute: the first score is posted, unconfirmed, with `end_menu_disputed` true, however many non-end frames separate them, including one stray frame and including none. Stable runs that share one score confirm when the §4.4 gates pass, including a later picture of that same score. A later picture with no stable run of its own cancels an earlier agreement. A later readable frame in the confirming picture at or above 0.70 with a different score, when that frame is not itself a stable run, blocks the confirm (§4.4). A tie of longest chains blocks every adoption, including a menu that is not a kept run.
-* `locks`: agreed scorebug rows, possibly empty, each with raw `clock_s` (integer or null) and a raw `quarter`. Latest is `max t_ms`. Used to clear an incomplete streak, to clear a kept run under the rule above, for the chain score, the stall gap, the scorebug phrase on a dispute note, and the disagreement note. The quarter in the stall note and in `last_locked` is the running maximum integer quarter through the posted lock. A bool is not a quarter. The seconds-unread figure is the posted lock's raw `clock_s`. `clock_s` is not a confirm precondition. `decide` does not require a Q4 row and does not copy a clock onto a null.
+* `frames`: reads `{t_ms, away, home, conf, ok, pixel, picture_since_ms}`, listed in non-decreasing `t_ms`. A backwards step fails the decision closed. A duplicate timestamp does not add a distinct instant or any span. A frame counts toward a stable run when `ok` is true, `conf` ≥ 0.90, §4.2 labels `pixel` as the end menu, and `t_ms` is strictly greater than the previous counted frame. A frame whose `t_ms` equals a lock's `t_ms` is not counted. A lock clears an incomplete streak. A run that already met the stable gate is kept unless a later lock drops it: either side of that lock is above the run. A time-left-only lock stops the run from confirming and leaves it as a dispute vote. A lock whose quarter is below the running-maximum quarter floor never does that by clock. A same-score lock at 0:00 keeps the run. A held run does not confirm on its own. A lock between frames does not start a new picture. Two surviving stable runs whose scores differ, including a held run, are a dispute: the first score is posted, unconfirmed, with `end_menu_disputed` true, however many non-end frames separate them, including one stray frame and including none. Stable runs that share one score confirm when the §4.4 gates pass and at least one of them is not held, including a later picture of that same score. A later picture with no stable run of its own cancels an earlier agreement. A later readable frame in the confirming picture at or above 0.70 with a different score, when that frame is not itself a stable run, blocks the confirm (§4.4). A tie of longest chains blocks every adoption, including a menu that is not a kept run.
+* `locks`: agreed scorebug rows, possibly empty. `away` and `home` are non-bool JSON integers. A bool, a float, or any other type fails the decision closed: the menu is not adopted and the score is null. Each row has a raw `clock_s` and a raw `quarter`. Time left is only a JSON integer `clock_s` greater than 0. A float such as 5.0, a bool, null, a string, and a negative are not time left. Latest is `max t_ms`. Used to clear an incomplete streak, to drop or hold a kept run under the rule above, for the chain score, the stall gap, the scorebug phrase on a dispute note, and the disagreement note. The quarter in the stall note and in `last_locked` is the running maximum integer quarter through the posted lock. A bool is not a quarter. The seconds-unread figure and `last_locked.clock_s` are the posted lock's `clock_s` when that value is a JSON integer, and null otherwise. `clock_s` is not a confirm precondition. `decide` does not require a Q4 row and does not copy a clock onto a null. A lock agrees on the score only: `clock_s` and `quarter` are the single read that completed the agreement (`qorcap_reader.py:1332-1334`).
 * `evidence`: clip, haptic, and input rows `{t_ms, kind}`. A scorebug row is a lock, not evidence.
 * `options_presses_ms`: null, one shared list, or a per-frame list. Null means the presses were not measured, and every 6-item frame fails closed. A list of JSON integers, including `[]`, is one shared press list for every frame. A bool is not an integer. A list whose length is `len(frames)`, and whose elements are each null or a list of JSON integers, is per-frame: a null element fails that frame only, and a list element is that frame's presses. An empty list is the shared shape, not the per-frame shape. Any other length or type fails closed, and every 6-item frame is not an end menu. `options-presses-wrong-shape` passes `[null]` beside three frames. A reader that treated that value as `[]` would confirm. `decide` does not. `picture_since_ms` is required only when a press falls in the §4.2 window `(t - 16000, t + 500]`.
 
@@ -775,19 +777,19 @@ Plan only. This change does not edit these files.
 | `sidecar/qorcap_reader.py` `on_frame` `:1025-1036` | Keep the OPTIONS short-hold return that happens before `_end_menu`. |
 | `sidecar/qorcap_reader.py` `_end_context` `:970-975`, `_accept_final_screen` `:999-1010` | Stop using them as a precondition for `_end_menu`. They require quarter and clock today. |
 | `sidecar/qorcap_reader.py` `_end_menu` `:1511-1538` | Remove the quarter rejection (`:1515-1517`), the clock rejection (`:1529-1530`), and the `end_menu_consistency` refusal (`:1532-1535`). The tie refusal (`:1536-1538`) and the final-of-1 refusal (`media.py:264-265`) move into `decide`. `_end_menu` does not keep a second copy. §4.7 is still an open decision; the guards stay. Call `decide`. |
-| `sidecar/qorcap_endmenu.py` `EndMenuAgreement.offer` `:242-261` | Track `min_conf`. Every frame in the run has `conf` ≥ 0.90. A lower frame clears the run. `n` stays 3. `min_span_ms` stays 400. A scorebug clears an incomplete streak. A completed run is dropped when a later lock shows time left or a higher side. A same-score lock at 0:00 keeps it. A frame at a lock's timestamp is not offered. |
+| `sidecar/qorcap_endmenu.py` `EndMenuAgreement.offer` `:242-261` | Track `min_conf`. Every frame in the run has `conf` ≥ 0.90. A lower frame clears the run. `n` stays 3. `min_span_ms` stays 400. A scorebug clears an incomplete streak. A completed run is dropped when a later lock has a higher side. A time-left-only lock holds it for a dispute, unless its quarter is below the running-maximum quarter floor. A same-score lock at 0:00 keeps it. A frame at a lock's timestamp is not offered. |
 | `sidecar/qorcap_reader.py` `end_menu_consistency` `:1646-1657` | No longer a refusal. The delta feeds the sidecar note. `end_menu_delta_corroborated` (`:1660-1707`) is not required to confirm. |
 | `sidecar/qorcap_reader.py` `_note_end_menu_disagreement` `:1576-1595` | Two stable scores disagree: keep the first score, `end_menu_disputed` true, `final_confirmed` false, review `partial`, never VERIFIED. The note matches qorcap #102, including the #100 phrase when a scorebug row lies strictly between the two runs. A later readable frame at or above 0.70 that is not itself a stable run, and a new picture with no stable run, still post neither menu. A tie of longest chains with no dispute posts null. |
 | `sidecar/qorcap_match.py` `tail_final_check` `:2495` | Stop `core.timeline = live`. Pass those rows to `decide` as locks. Seed `_max_quarter` the way qorcap #102 at `81bd2ad` does, and let `decide` floor the note quarter the same way. Load OPTIONS with `load_options_presses_ms`, not `press_events`. #102 already removed the break at the first `end_menu`. `qorcap_match.py:2520-2521` no longer applies. |
 | `sidecar/qorcap_match.py` `apply_final` `:2094-2096` | A missing `final_confirmed` is false. |
-| `sidecar/qorcap_match.py` `select_offline_final` `:2431-2445`, `_disputed_final_result` `:2457-2464`, `finalize` `:2887` | Same `decide`, including the kept-run clear and the quarter floor. A dispute signs the first stable menu, unconfirmed, with `end_menu_disputed` true. A tie of longest chains with no dispute signs null. Offline finalize does not reintroduce a timeline clock seed. |
+| `sidecar/qorcap_match.py` `select_offline_final` `:2431-2445`, `_disputed_final_result` `:2457-2464`, `finalize` `:2887` | Same `decide`, including the kept-run split and the quarter floor. A dispute signs the first stable menu, unconfirmed, with `end_menu_disputed` true. A tie of longest chains with no dispute signs null. Offline finalize does not reintroduce a timeline clock seed. |
 | `qor_receipt/review/media.py` `reread_final` `:179-201` | Keep "no laptop timeline seed". qortime #82 is the break at the first `end_menu` (`:190-191`). Delete that break and the `end_menu_fallback` call. Call `decide` on the whole window. Load OPTIONS with `load_options_presses_ms`, not `bundle.press_events`. Null fails a 6-item frame closed. `picture_since_ms` is required only when a measured press falls in `(t - 16000, t + 500]`. |
 | `qor_receipt/review/media.py` `end_menu_fallback` `:236-298` | Remove. The reason switch at `:250` and the thresholds at `:205-207` are not the rule. `clock_s` is not read. A prior Q4 row is not required. |
 | `qor_receipt/review/engine.py` `_final_check` `:799-828` | A confirmed menu is `pass` when the claim equals the menu score, including a stall and a multi-play delta. A failed gate with a chain score is `partial` at that score. `end_menu_disputed` true is `partial` even when the claim equals the first score, and that review cannot become VERIFIED. A tie of longest chains is `fail`. A note does not flip `pass` to `partial`. Score mismatch stays `fail` (`:807-809`). |
 | `qor_receipt/review/engine.py` `_result_from_reread` `:831-847` | Write `decide`'s boolean. The `:840` test `is not False` becomes that boolean. Missing is false. |
 | `qor_receipt/referee_ai/integrity.py` `check_final` `:189-202` | An adopted end menu more than one legal step past the last scorebug is not an error. `:201` is that error today, and `referee.py:184` and `:189` both append it. Leaving it in place would FAIL a multi-play menu and downgrade the verdict. `decide` does not adopt a menu below any lock. A dispute is not an adoption: the posted score is the first menu, and that comparison is not an integrity error that flips the review to fail. The review stays `partial`. An unconfirmed chain posts that chain's lock, and that lock is the `last_state` `check_final` sees. A tie posts no score, so there is no `last_state` to mismatch. A backward menu posted outside a dispute still errors. |
 | `sidecar/qorcap_reader.py` `end_screen_evidence_cutoff_ms` `:1710-1733`, filter `:1703-1704` | Replaced by `decide`'s cutoff. The minimum is no longer the first end screen of the whole timeline. Only a lock in the closing set with a running clock closes an episode, and only the screens strictly before it. A screen at the lock's timestamp opens the next episode. An `ok: false` six-item picture is still an end screen. The cutoff does not fall back to an earlier episode. `cutoff_reason` distinguishes a null that counts nothing from a null that counts outside closed episodes. The test stays `t_ms >= cutoff_ms`. | 
-| `sidecar/qorcap_reader.py` `_post_agreed` `:1343-1344` | Still clears the running `_end_screen_earliest` pointer. A later scorebug clears an incomplete streak. A completed run is cleared when the lock shows time left or a higher side, and kept when the lock is the same score at 0:00. Clearing the pointer does not remove `final_screen` rows, so it is not the episode rule. `decide` derives the episode from locks and end screens. Offline `finalize` calls that same `decide`. | 
+| `sidecar/qorcap_reader.py` `_post_agreed` `:1343-1344` | Still clears the running `_end_screen_earliest` pointer. A later scorebug clears an incomplete streak. A completed run is dropped when either side is higher, held for a dispute by a time-left-only lock whose quarter is not below the running-maximum floor, and kept when the lock is the same score at 0:00. Clearing the pointer does not remove `final_screen` rows, so it is not the episode rule. `decide` derives the episode from locks and end screens. Offline `finalize` calls that same `decide`. | 
 | `qor_receipt/match_index/build.py`, `viewer_template.html` `paintFinal`, `publish.py` `_card` | Read `final.rule.json` and show `note` as in §4.5. Gold stays. |
 
 `post_final_tail` is unchanged.
@@ -1587,7 +1589,7 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
         "cutoff_reason": "closed_episodes_only",
         "end_menu_disputed": false
       },
-      "illustrates": "The 13–6 run meets the stable gate, then a 13–6 lock at Q4 0:45 shows time left. That lock clears the run. The receipt is the chain score, unconfirmed, partial, never a pass. The lock still closes the episode. cutoff_ms is null and cutoff_reason is closed_episodes_only. Evidence before the episode and evidence after the closing lock count. Evidence inside the closed band does not.",
+      "illustrates": "The 13–6 run meets the stable gate, then a 13–6 lock at Q4 0:45 shows time left. That lock stops the run from confirming and leaves it as a dispute vote. With no later menu the receipt is the chain score, unconfirmed, partial, never a pass. The lock still closes the episode. cutoff_ms is null and cutoff_reason is closed_episodes_only. Evidence before the episode and evidence after the closing lock count. Evidence inside the closed band does not.",
       "evidence": [
         {
           "id": "before-episode",
@@ -6724,7 +6726,7 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
         "review": "pass",
         "note": "End menu confirmed 13–6. Scorebug last locked at Q4 0:11 (11 seconds unread).",
         "seconds_unread": 11,
-        "wall_gap_ms": 11000,
+        "wall_gap_ms": -4000,
         "downgrades_verdict": false,
         "end_menu_disputed": false,
         "last_locked": {
@@ -6737,7 +6739,7 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
         "cutoff_reason": "open_episode",
         "episode_e0_ms": 20000
       },
-      "illustrates": "A Q3 misread sits between two 13–6 showings. Its raw clock shows time left, so the first run is cleared. The second showing confirms. The note and last_locked say Q4, and the seconds unread are the raw 11."
+      "illustrates": "A Q3 misread sits between two 13–6 showings. Q4 was already seen, so the Q3 is below the quarter floor and its raw clock of 11 does not hold the first run. Both showings survive and confirm 13–6. wall_gap_ms is the first showing, 5000, minus the posted lock at 9000, which is -4000. The note and last_locked say Q4, and the seconds unread are the raw 11."
     },
     {
       "id": "kept-run-cleared-by-time-left",
@@ -6789,7 +6791,7 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
         "cutoff_reason": "closed_episodes_only",
         "episode_e0_ms": null
       },
-      "illustrates": "A stable 13–6, then a 13–6 lock at Q4 5:00, and the recording ends. Time left clears the run. The result is partial at the lock, never a pass."
+      "illustrates": "A stable 13–6, then a 13–6 lock at Q4 5:00, and the recording ends. Time left stops the run from confirming. The result is partial at the lock, never a pass."
     },
     {
       "id": "halftime-lookalike-cleared-by-higher-lock",
@@ -7202,6 +7204,678 @@ A frame that already has `pixel` keeps it. `pixel_on_frames`, when a vector sets
         "episode_e0_ms": 5000
       },
       "illustrates": "A same-score lock at 0:00 keeps the 10–7 run. A later stable 17–7 disagrees. The receipt stays 10–7, disputed, and the note names the scorebug return."
+    },
+    {
+      "id": "time-left-holds-then-different-menu",
+      "synthetic": true,
+      "screen": "end_menu",
+      "locks": [
+        {
+          "t_ms": 8000,
+          "away": 7,
+          "home": 0,
+          "quarter": 4,
+          "clock_s": 3
+        }
+      ],
+      "frames": [
+        {
+          "t_ms": 5000,
+          "away": 7,
+          "home": 0,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5400,
+          "away": 7,
+          "home": 0,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5800,
+          "away": 7,
+          "home": 0,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 12000,
+          "away": 10,
+          "home": 0,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 12400,
+          "away": 10,
+          "home": 0,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 12800,
+          "away": 10,
+          "home": 0,
+          "conf": 0.95,
+          "ok": true
+        }
+      ],
+      "illustrates": "C2. A stable 7-0, then a 7-0 lock misread as Q4 0:03, then a stable 10-0. The lock agrees on the score. Time left stops the 7-0 run from confirming and leaves it as a dispute vote. The later menu disagrees, so the receipt stays 7-0, unconfirmed. Confirming the 10-0 would be qorcap #101.",
+      "expect": {
+        "adopt_menu": false,
+        "final_confirmed": false,
+        "away": 7,
+        "home": 0,
+        "method": "end_menu_read",
+        "final_basis": "end_menu",
+        "review": "partial",
+        "note": "later end-of-game menu read AWAY 10 - HOME 0 disagreed with the posted final AWAY 7 - HOME 0 after a scorebug read came back between the two menus; score not replaced; final_confirmed=false",
+        "wall_gap_ms": null,
+        "downgrades_verdict": false,
+        "end_menu_disputed": true,
+        "last_locked": {
+          "away": 7,
+          "home": 0,
+          "quarter": 4,
+          "clock_s": 3
+        },
+        "cutoff_ms": 12000,
+        "cutoff_reason": "open_episode",
+        "episode_e0_ms": 12000
+      }
+    },
+    {
+      "id": "below-floor-clock-does-not-hold",
+      "synthetic": true,
+      "screen": "end_menu",
+      "locks": [
+        {
+          "t_ms": 1000,
+          "away": 7,
+          "home": 0,
+          "quarter": 4,
+          "clock_s": 0
+        },
+        {
+          "t_ms": 8000,
+          "away": 7,
+          "home": 0,
+          "quarter": 3,
+          "clock_s": 3
+        }
+      ],
+      "frames": [
+        {
+          "t_ms": 5000,
+          "away": 7,
+          "home": 0,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5400,
+          "away": 7,
+          "home": 0,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5800,
+          "away": 7,
+          "home": 0,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 12000,
+          "away": 10,
+          "home": 0,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 12400,
+          "away": 10,
+          "home": 0,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 12800,
+          "away": 10,
+          "home": 0,
+          "conf": 0.95,
+          "ok": true
+        }
+      ],
+      "illustrates": "Q4b. The same 7-0 then 10-0, with a Q4 already seen and the later lock misread as Q3 0:03. That quarter is below the running max, so the clock does not hold the first run. The two menus still disagree, and the receipt stays 7-0, disputed. last_locked.quarter is the floor, 4. last_locked.clock_s is the Q3 row's raw 3.",
+      "expect": {
+        "adopt_menu": false,
+        "final_confirmed": false,
+        "away": 7,
+        "home": 0,
+        "method": "end_menu_read",
+        "final_basis": "end_menu",
+        "review": "partial",
+        "note": "later end-of-game menu read AWAY 10 - HOME 0 disagreed with the posted final AWAY 7 - HOME 0 after a scorebug read came back between the two menus; score not replaced; final_confirmed=false",
+        "wall_gap_ms": null,
+        "downgrades_verdict": false,
+        "end_menu_disputed": true,
+        "last_locked": {
+          "away": 7,
+          "home": 0,
+          "quarter": 4,
+          "clock_s": 3
+        },
+        "cutoff_ms": 12000,
+        "cutoff_reason": "open_episode",
+        "episode_e0_ms": 12000
+      }
+    },
+    {
+      "id": "time-left-holds-no-later-menu",
+      "synthetic": true,
+      "screen": "end_menu",
+      "locks": [
+        {
+          "t_ms": 8000,
+          "away": 7,
+          "home": 0,
+          "quarter": 4,
+          "clock_s": 3
+        }
+      ],
+      "frames": [
+        {
+          "t_ms": 5000,
+          "away": 7,
+          "home": 0,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5400,
+          "away": 7,
+          "home": 0,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5800,
+          "away": 7,
+          "home": 0,
+          "conf": 0.95,
+          "ok": true
+        }
+      ],
+      "illustrates": "C1. A stable 7-0, then a 7-0 lock misread as Q4 0:03, and the recording ends. Time left stops the run from confirming. There is no later menu to dispute, so the receipt is the chain score, partial, never a pass.",
+      "expect": {
+        "adopt_menu": false,
+        "final_confirmed": false,
+        "away": 7,
+        "home": 0,
+        "method": "last_scorebug_read_unconfirmed",
+        "final_basis": "absent",
+        "review": "partial",
+        "note": null,
+        "wall_gap_ms": null,
+        "downgrades_verdict": null,
+        "end_menu_disputed": false,
+        "last_locked": {
+          "away": 7,
+          "home": 0,
+          "quarter": 4,
+          "clock_s": 3
+        },
+        "cutoff_ms": null,
+        "cutoff_reason": "closed_episodes_only",
+        "episode_e0_ms": null
+      }
+    },
+    {
+      "id": "below-floor-higher-score-still-drops",
+      "synthetic": true,
+      "screen": "end_menu",
+      "locks": [
+        {
+          "t_ms": 1000,
+          "away": 6,
+          "home": 3,
+          "quarter": 4,
+          "clock_s": 0
+        },
+        {
+          "t_ms": 8000,
+          "away": 13,
+          "home": 6,
+          "quarter": 3,
+          "clock_s": 0
+        }
+      ],
+      "frames": [
+        {
+          "t_ms": 5000,
+          "away": 6,
+          "home": 3,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5400,
+          "away": 6,
+          "home": 3,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5800,
+          "away": 6,
+          "home": 3,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 12000,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 12400,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 12800,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        }
+      ],
+      "illustrates": "A Q3 lock is below the Q4 floor, and its score is above the 6-3 menu. The higher score still drops that run. The later 13-6 menu confirms. The clock is 0:00, so this is not a clock clear.",
+      "expect": {
+        "adopt_menu": true,
+        "final_confirmed": true,
+        "away": 13,
+        "home": 6,
+        "method": "end_menu_read",
+        "final_basis": "end_menu",
+        "review": "pass",
+        "note": null,
+        "wall_gap_ms": 4000,
+        "downgrades_verdict": false,
+        "end_menu_disputed": false,
+        "last_locked": {
+          "away": 13,
+          "home": 6,
+          "quarter": 4,
+          "clock_s": 0
+        },
+        "cutoff_ms": 12000,
+        "cutoff_reason": "open_episode",
+        "episode_e0_ms": 5000
+      }
+    },
+    {
+      "id": "lock-away-bool-fails-closed",
+      "synthetic": true,
+      "screen": "end_menu",
+      "locks": [
+        {
+          "t_ms": 1000,
+          "away": true,
+          "home": 6,
+          "quarter": 4,
+          "clock_s": 0
+        }
+      ],
+      "frames": [
+        {
+          "t_ms": 5000,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5400,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5800,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        }
+      ],
+      "illustrates": "The lock's away is JSON true. A bool is not a score. The decision fails closed: the menu is not adopted and the score is null. Reading true as 1 would confirm 13-6.",
+      "expect": {
+        "adopt_menu": false,
+        "final_confirmed": false,
+        "away": null,
+        "home": null,
+        "method": "last_scorebug_read_unconfirmed",
+        "final_basis": "absent",
+        "review": "fail",
+        "note": null,
+        "wall_gap_ms": null,
+        "downgrades_verdict": null,
+        "end_menu_disputed": false,
+        "last_locked": null,
+        "cutoff_ms": 5000,
+        "cutoff_reason": "open_episode",
+        "episode_e0_ms": 5000
+      }
+    },
+    {
+      "id": "clock-float-not-time-left",
+      "synthetic": true,
+      "screen": "end_menu",
+      "locks": [
+        {
+          "t_ms": 9000,
+          "away": 13,
+          "home": 6,
+          "quarter": 4,
+          "clock_s": 5.0
+        }
+      ],
+      "frames": [
+        {
+          "t_ms": 5000,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5400,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5800,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        }
+      ],
+      "illustrates": "The later lock's clock_s is 5.0. A float is not time left, so the 13-6 run confirms. An integer 5 would leave the receipt partial.",
+      "expect": {
+        "adopt_menu": true,
+        "final_confirmed": true,
+        "away": 13,
+        "home": 6,
+        "method": "end_menu_read",
+        "final_basis": "end_menu",
+        "review": "pass",
+        "note": null,
+        "wall_gap_ms": -4000,
+        "downgrades_verdict": false,
+        "end_menu_disputed": false,
+        "last_locked": {
+          "away": 13,
+          "home": 6,
+          "quarter": 4,
+          "clock_s": null
+        },
+        "cutoff_ms": 5000,
+        "cutoff_reason": "open_episode",
+        "episode_e0_ms": 5000
+      }
+    },
+    {
+      "id": "clock-bool-not-time-left",
+      "synthetic": true,
+      "screen": "end_menu",
+      "locks": [
+        {
+          "t_ms": 9000,
+          "away": 13,
+          "home": 6,
+          "quarter": 4,
+          "clock_s": true
+        }
+      ],
+      "frames": [
+        {
+          "t_ms": 5000,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5400,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5800,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        }
+      ],
+      "illustrates": "The later lock's clock_s is JSON true. A bool is not time left, and last_locked.clock_s is null. The 13-6 run confirms.",
+      "expect": {
+        "adopt_menu": true,
+        "final_confirmed": true,
+        "away": 13,
+        "home": 6,
+        "method": "end_menu_read",
+        "final_basis": "end_menu",
+        "review": "pass",
+        "note": null,
+        "wall_gap_ms": -4000,
+        "downgrades_verdict": false,
+        "end_menu_disputed": false,
+        "last_locked": {
+          "away": 13,
+          "home": 6,
+          "quarter": 4,
+          "clock_s": null
+        },
+        "cutoff_ms": 5000,
+        "cutoff_reason": "open_episode",
+        "episode_e0_ms": 5000
+      }
+    },
+    {
+      "id": "clock-null-not-time-left",
+      "synthetic": true,
+      "screen": "end_menu",
+      "locks": [
+        {
+          "t_ms": 9000,
+          "away": 13,
+          "home": 6,
+          "quarter": 4,
+          "clock_s": null
+        }
+      ],
+      "frames": [
+        {
+          "t_ms": 5000,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5400,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5800,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        }
+      ],
+      "illustrates": "The later lock's clock_s is null. Null is not time left. The wall gap is negative, so the stall note does not fire, and the 13-6 run confirms.",
+      "expect": {
+        "adopt_menu": true,
+        "final_confirmed": true,
+        "away": 13,
+        "home": 6,
+        "method": "end_menu_read",
+        "final_basis": "end_menu",
+        "review": "pass",
+        "note": null,
+        "wall_gap_ms": -4000,
+        "downgrades_verdict": false,
+        "end_menu_disputed": false,
+        "last_locked": {
+          "away": 13,
+          "home": 6,
+          "quarter": 4,
+          "clock_s": null
+        },
+        "cutoff_ms": 5000,
+        "cutoff_reason": "open_episode",
+        "episode_e0_ms": 5000
+      }
+    },
+    {
+      "id": "clock-string-not-time-left",
+      "synthetic": true,
+      "screen": "end_menu",
+      "locks": [
+        {
+          "t_ms": 9000,
+          "away": 13,
+          "home": 6,
+          "quarter": 4,
+          "clock_s": "3"
+        }
+      ],
+      "frames": [
+        {
+          "t_ms": 5000,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5400,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5800,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        }
+      ],
+      "illustrates": "The later lock's clock_s is the string 3. A string is not time left, so the 13-6 run confirms.",
+      "expect": {
+        "adopt_menu": true,
+        "final_confirmed": true,
+        "away": 13,
+        "home": 6,
+        "method": "end_menu_read",
+        "final_basis": "end_menu",
+        "review": "pass",
+        "note": null,
+        "wall_gap_ms": -4000,
+        "downgrades_verdict": false,
+        "end_menu_disputed": false,
+        "last_locked": {
+          "away": 13,
+          "home": 6,
+          "quarter": 4,
+          "clock_s": null
+        },
+        "cutoff_ms": 5000,
+        "cutoff_reason": "open_episode",
+        "episode_e0_ms": 5000
+      }
+    },
+    {
+      "id": "clock-negative-not-time-left",
+      "synthetic": true,
+      "screen": "end_menu",
+      "locks": [
+        {
+          "t_ms": 9000,
+          "away": 13,
+          "home": 6,
+          "quarter": 4,
+          "clock_s": -1
+        }
+      ],
+      "frames": [
+        {
+          "t_ms": 5000,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5400,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        },
+        {
+          "t_ms": 5800,
+          "away": 13,
+          "home": 6,
+          "conf": 0.95,
+          "ok": true
+        }
+      ],
+      "illustrates": "The later lock's clock_s is -1. A negative integer is not time left, so the 13-6 run confirms. last_locked keeps that integer.",
+      "expect": {
+        "adopt_menu": true,
+        "final_confirmed": true,
+        "away": 13,
+        "home": 6,
+        "method": "end_menu_read",
+        "final_basis": "end_menu",
+        "review": "pass",
+        "note": null,
+        "wall_gap_ms": -4000,
+        "downgrades_verdict": false,
+        "end_menu_disputed": false,
+        "last_locked": {
+          "away": 13,
+          "home": 6,
+          "quarter": 4,
+          "clock_s": -1
+        },
+        "cutoff_ms": 5000,
+        "cutoff_reason": "open_episode",
+        "episode_e0_ms": 5000
+      }
     }
   ]
 }
@@ -7215,11 +7889,11 @@ The stall case's three frames are the gate, at confidence 0.94 on invented times
 
 `qorcap-98-touchdown-lock-same-ts` is the qorcap#98 shape with synthetic scores away 13, home 6. The touchdown lock and the only menu frame share `t_ms` 8000. Nothing is strictly before that lock, so the episode stays open. The cutoff falls back to 8000. Evidence at 8000 and 8250 does not count. The frame is not fresh. The case does not confirm. The posted score is the lock, 13–6, and `final_reread` is partial. `equal-ts-opens-new-episode` adds a flash at 4000 in front of that same shared timestamp. The flash closes. The menu frame at 8000 opens the new episode. `cutoff_ms` is 8000, `cutoff_reason` is `open_episode`, and evidence at 8250 does not count.
 
-`later-live-play` has a lock at `t_ms` 9000 after the menu frames, with a running clock, and the same score as the earlier lock. `decide` reads that from `locks`. There is no `later_live_play` field. The clock shows time left, so the stable 13–6 run is cleared. The receipt is 13–6, unconfirmed, `final_reread` partial, never a pass. That lock is kept, so it closes the episode. No end screen follows. `cutoff_ms` is null and `cutoff_reason` is `closed_episodes_only`. Evidence before the episode and evidence after the closing lock count. Evidence inside the closed band does not. `kept-run-cleared-by-time-left` is one 13–6 lock at Q4 5:00 after the menu, and it is the same partial. `halftime-lookalike-cleared-by-higher-lock` clears a 6–3 run with a higher 13–6 lock at 0:00 and confirms the later 13–6 menu. `later-contradicting-menu` puts the second score in `frames` (17–7 after 10–7). The two stable reads disagree, so the receipt keeps the first menu, 10–7, with `end_menu_disputed` true, `method` `end_menu_read`, `final_basis` `end_menu`, and `final_reread` partial. The note names AWAY 17 - HOME 7 and does not add the scorebug phrase: the lock is before both runs. `no-lock-contradicting-menus` keeps 9–6 the same way, partial, with the note naming AWAY 16 - HOME 6. `later-readable-frame-blocks-confirm` is a stable 6–3 read and then one 13–6 frame at 0.85, with no lock. 0.85 is readable and is not a second stable run. Neither score is posted, and review is fail. `later-frame-below-readability-floor` is that shape at 0.69 and still confirms 6–3. `dispute-later-menu-after-gameplay`, `dispute-later-menu-reverse-order`, and `dispute-one-stray-frame` are the 7–0 / 10–0 pair with gameplay, the reverse order, and one stray non-end frame. Those scores are the qorcap #101 probe. They are synthetic, and they are not match 170123. Each keeps the first score and sets `end_menu_disputed` true. `same-menu-after-gameplay-confirms` is 7–0, gameplay, then 7–0, and it confirms.
+`later-live-play` has a lock at `t_ms` 9000 after the menu frames, with a running clock, and the same score as the earlier lock. `decide` reads that from `locks`. There is no `later_live_play` field. The clock shows time left, so the stable 13–6 run cannot confirm. With no later menu the receipt is 13–6, unconfirmed, `final_reread` partial, never a pass. That lock is kept, so it closes the episode. No end screen follows. `cutoff_ms` is null and `cutoff_reason` is `closed_episodes_only`. Evidence before the episode and evidence after the closing lock count. Evidence inside the closed band does not. `kept-run-cleared-by-time-left` is one 13–6 lock at Q4 5:00 after the menu, and it is the same partial. `halftime-lookalike-cleared-by-higher-lock` clears a 6–3 run with a higher 13–6 lock at 0:00 and confirms the later 13–6 menu. `later-contradicting-menu` puts the second score in `frames` (17–7 after 10–7). The two stable reads disagree, so the receipt keeps the first menu, 10–7, with `end_menu_disputed` true, `method` `end_menu_read`, `final_basis` `end_menu`, and `final_reread` partial. The note names AWAY 17 - HOME 7 and does not add the scorebug phrase: the lock is before both runs. `no-lock-contradicting-menus` keeps 9–6 the same way, partial, with the note naming AWAY 16 - HOME 6. `later-readable-frame-blocks-confirm` is a stable 6–3 read and then one 13–6 frame at 0.85, with no lock. 0.85 is readable and is not a second stable run. Neither score is posted, and review is fail. `later-frame-below-readability-floor` is that shape at 0.69 and still confirms 6–3. `dispute-later-menu-after-gameplay`, `dispute-later-menu-reverse-order`, and `dispute-one-stray-frame` are the 7–0 / 10–0 pair with gameplay, the reverse order, and one stray non-end frame. Those scores are the qorcap #101 probe. They are synthetic, and they are not match 170123. Each keeps the first score and sets `end_menu_disputed` true. `same-menu-after-gameplay-confirms` is 7–0, gameplay, then 7–0, and it confirms.
 
 `replay-lock-lower-after-menu` is 14–7 and then 3–0. Each lock is a longest chain of length 1, the terminal scores differ, and the receipt score is null. Neither lock is on both chains, so the running clock does not close the episode. `cutoff_ms` falls back to 5000, the first menu frame, and evidence after the stale lock does not count. `menu-below-an-earlier-lock` does not adopt the 14–0 menu, and the 21–0 and 14–0 locks are the same kind of tie, so the receipt score is null rather than 21–0. `tie-menu-stays-unconfirmed` and `final-of-1-stays-unconfirmed` stay unconfirmed (§4.7). `null-clock-long-gap` confirms 6–3 from a null raw `clock_s` and a 19000 ms wall gap. The stall note is on the sidecar and `downgrades_verdict` is false. `referee-cannot-measure-hold` has `options_presses_ms` null and does not pass. `cutoff_reason` is `no_end_screen`.
 
-`scorebug-return-resets-agreed-score` clears the early 3–0 run because the 0:00 lock is 10–7, above that menu, and the later 10–7 menu confirms. The cutoff is 20000. `scorebug-return-same-score-confirms` is that shape with both runs at 10–7, and the 0:00 lock keeps the first run. `zero-clock-keeps-run-then-different-menu` keeps 10–7 across that kind of lock and disputes a later 17–7. The note names the scorebug return. `quarter-floor-trailing-q3` and `quarter-floor-between-same-score` both print Q4. The seconds unread are the raw clock on the posted row. `wall-gap-uses-first-run` names the first showing's wall gap. `chain-tie-blocks-fresh-menu` and `chain-tie-blocks-kept-run` both post null. `lock-between-frames-same-picture` confirms. `cutoff-dead-zone-and-inclusive-equal` keeps evidence before the first end screen and evidence strictly between the scorebug and the fresh menu, and drops every timestamp from the first end screen through the scorebug, plus every timestamp `>= cutoff_ms`. That first screen is one frame at 2000, so it is not a stable run for the scorebug to keep. The lock is 0:00, so the early screen and the final menu are one episode. `cutoff-falls-back-to-earliest-end-screen` is also a 0:00 lock. Its first screen is a stable 10–7 run at 2000, the lock matches that score, and the menu confirms. No end screen is after the lock, so `cutoff_ms` stays 2000. `early-pause-then-final-menu` is a one-frame flash at 4000, then a running-clock lock at 15000, then a real menu at 22000. The flash's episode closes at 15000. `episode_e0_ms` is 22000. Evidence at 16000 and 19000 counts. Evidence from 4000 through 15000 does not. A cutoff stuck at 4000 would drop the later rows. `early-pause-then-final-menu-clock-zero` is the same capture with that 15000 lock at 0:00. The flash and the final menu stay one episode. `episode_e0_ms` is 4000. Evidence at 16000 does not count. The menu still confirms 13–6, and the cutoff is still 22000. `pause-options-short-hold` carries `pixel` `end_menu_6`, `picture_since_ms` 1000, and `options_presses_ms` `[800]`. The press at 800 is inside `(t - 16000, t + 500]` for the frame at 5000, the lock at 500 is still up, and the hold is 4000 ms. `decide` labels those frames pause.
+`scorebug-return-resets-agreed-score` clears the early 3–0 run because the 0:00 lock is 10–7, above that menu, and the later 10–7 menu confirms. The cutoff is 20000. `scorebug-return-same-score-confirms` is that shape with both runs at 10–7, and the 0:00 lock keeps the first run. `zero-clock-keeps-run-then-different-menu` keeps 10–7 across that kind of lock and disputes a later 17–7. The note names the scorebug return. `quarter-floor-trailing-q3` and `quarter-floor-between-same-score` both print Q4. The seconds unread are the raw clock on the posted row. In `quarter-floor-between-same-score` the Q3 is below that floor, so its clock of 11 does not hold the first 13–6 showing. `wall_gap_ms` is 5000 − 9000 = −4000. `wall-gap-uses-first-run` names the first showing's wall gap. `chain-tie-blocks-fresh-menu` and `chain-tie-blocks-kept-run` both post null. `lock-between-frames-same-picture` confirms. `cutoff-dead-zone-and-inclusive-equal` keeps evidence before the first end screen and evidence strictly between the scorebug and the fresh menu, and drops every timestamp from the first end screen through the scorebug, plus every timestamp `>= cutoff_ms`. That first screen is one frame at 2000, so it is not a stable run for the scorebug to keep. The lock is 0:00, so the early screen and the final menu are one episode. `cutoff-falls-back-to-earliest-end-screen` is also a 0:00 lock. Its first screen is a stable 10–7 run at 2000, the lock matches that score, and the menu confirms. No end screen is after the lock, so `cutoff_ms` stays 2000. `early-pause-then-final-menu` is a one-frame flash at 4000, then a running-clock lock at 15000, then a real menu at 22000. The flash's episode closes at 15000. `episode_e0_ms` is 22000. Evidence at 16000 and 19000 counts. Evidence from 4000 through 15000 does not. A cutoff stuck at 4000 would drop the later rows. `early-pause-then-final-menu-clock-zero` is the same capture with that 15000 lock at 0:00. The flash and the final menu stay one episode. `episode_e0_ms` is 4000. Evidence at 16000 does not count. The menu still confirms 13–6, and the cutoff is still 22000. `pause-options-short-hold` carries `pixel` `end_menu_6`, `picture_since_ms` 1000, and `options_presses_ms` `[800]`. The press at 800 is inside `(t - 16000, t + 500]` for the frame at 5000, the lock at 500 is still up, and the hold is 4000 ms. `decide` labels those frames pause.
 
 `options-press-at-t-minus-16000-is-outside` confirms. The press is exactly 16000 ms before the first frame, so it is outside the window. `options-press-at-t-minus-15999-is-pause` puts the picture 4000 ms after a press at `t - 15999` on the last frame. The hold is 11999 ms. The menu is not adopted. `options-press-at-t-plus-500-is-pause` is the other edge, and it is a pause.
 
@@ -7263,8 +7937,8 @@ One intentional difference from qorcap #102: a 1-frame or 2-frame differing flic
 
 | Item | What it is | How `decide()` covers it |
 |---|---|---|
-| qorcap #101 | `tail_final_check` stopped at the first end-menu agreement. A recorded 7–0 and then 10–0 could sign 7–0 confirmed. Live capture disputed and stayed unconfirmed. | Every stable run is collected. A later stable score that differs is a dispute. The first score stays, `final_confirmed` false, `end_menu_disputed` true, review partial. |
-| qorcap #102 | The tail re-read, including `81bd2ad`. A later menu that disagrees goes through `_note_end_menu_disagreement`. The note names a scorebug only when a real row lies strictly between the menus. The tail seeds `_max_quarter` from the highest integer quarter on the live rows. A same-score lock at 0:00 keeps the run. | The same dispute, the same note, and the same quarter floor on the stall note and on `last_locked`. The kept-run clear matches the 0:00 test. Offline `finalize` calls this `decide`. |
+| qorcap #101 | `tail_final_check` stopped at the first end-menu agreement. A recorded 7–0 and then 10–0 could sign 7–0 confirmed. A same-score lock whose clock was misread as time left must not clear that 7–0 and let the 10–0 confirm. Live capture disputed and stayed unconfirmed. | Every stable run is collected. A later stable score that differs is a dispute. A time-left-only lock holds the first run as a dispute vote instead of dropping it. The first score stays, `final_confirmed` false, `end_menu_disputed` true, review partial. |
+| qorcap #102 | The tail re-read, including `81bd2ad`. A later menu that disagrees goes through `_note_end_menu_disagreement`. The note names a scorebug only when a real row lies strictly between the menus. The tail seeds `_max_quarter` from the highest integer quarter on the live rows. A same-score lock at 0:00 keeps the run. The agreement row stores `quarter` and `clock_s` from the single read that completed it (`qorcap_reader.py:1332-1334`). | The same dispute, the same note, and the same quarter floor on the stall note and on `last_locked`. A higher score drops a kept run. A time-left-only lock holds it. A quarter below the running max never holds or drops by clock. Offline `finalize` calls this `decide`. |
 | qortime #82 | `reread_final` still breaks at the first end-menu agreement and can report a pass that matches a disputed claim. | `decide()` scans the window. The re-read reports partial, never a pass that matches the claimed final, when a later stable menu disagrees. |
 
 `end_menu_disputed` is a field on `final.rule.json`. It is not a `receipt.v0` field. `receipt.v0` stays frozen. The verdict impact is partial, never VERIFIED. Held-out matches stay out of the vectors and out of this section. The one intentional difference from #102 is the 1-frame or 2-frame differing flicker in §9.
