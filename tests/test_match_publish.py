@@ -262,7 +262,9 @@ OFFICIAL_170123_SHA256 = "69480a406d1621409cf03dc98eadcb9020c384a368d9fb0fcab63b
 
 
 def test_published_match_170123_verifies_and_stays_public():
-    """The first referee-verified page. The signed receipt is byte-for-byte; the page does not copy instance ids."""
+    """The first referee-verified page. The signed receipt is byte-for-byte; the page does not copy instance ids.
+
+    Highlights were approved later: 3 hash-bound clips plus redacted event stills (no hash binding on stills)."""
     root = Path(__file__).resolve().parents[1]
     folder = root / "site/matches/170123"
     raw = (folder / "receipt.json").read_bytes()
@@ -290,23 +292,36 @@ def test_published_match_170123_verifies_and_stays_public():
     assert '"status": "VERIFIED"' in page
     for line in body["review"]["not_proven"]:
         assert line in page
-    assert "Footage is not published" in page
-    assert "nofootage" in page and "#seal{" in page and ".seal{position:absolute" not in page
-    assert ".grid.nofootage" in page and "main-col" in page
-    assert 'grid-template-areas:"main side"' in page
-    assert "Footage stays on the player's PC." in page
+    assert "Footage is not published" not in page and "Footage stays on the player's PC." not in page
+    assert "#seal{" in page and ".seal{position:absolute" not in page
+    assert "Full footage stays on the player's PC." in page
+    assert "Some stills are redacted copies to hide account names." in page
+    assert "are redacted copies" in page and "not the raw recording pixels" in page
     assert "Recorded Oct 23, 2026, 5:01 PM" in page and "5:18 PM CT." in page
     assert "qortime-online-s2" in page and "delegation serial 2" in page
     assert "hardware-verified" not in page.lower() and "attestation" not in page.lower()
     assert "id=instance:" not in page and "HID#" not in page and "@device" not in page
     assert "DualSense Edge (USB)" in page
     assert P.privacy_problems(page) == []
-    assert not list(folder.rglob("*.mp4")) and not list(folder.rglob("*.jpg"))
+    man = json.loads((folder / "clips/manifest.json").read_text(encoding="utf-8"))
+    assert man["receipt"]["sha256"] == OFFICIAL_170123_SHA256
+    assert len(man["clips"]) == 3
+    for clip in man["clips"]:
+        assert clip["lock"]["in_receipt"] is True
+        assert hashlib.sha256((folder / "clips" / clip["file"]).read_bytes()).hexdigest() == clip["sha256"]
+    assert sorted(p.name for p in folder.rglob("*.mp4")) == sorted(c["file"] for c in man["clips"])
+    mp4s_jpgs = list(folder.rglob("*.mp4")) + list(folder.rglob("*.jpg"))
+    assert all(p.relative_to(folder).parts[0] in ("clips", "events") for p in mp4s_jpgs)
+    stills = [p for p in (folder / "events").rglob("*.jpg") if not p.name.endswith("_t.jpg")]
+    assert len(stills) == 98
+    for ev, fr in (("e02_quarter_change", "frame_08"), ("e02_quarter_change", "frame_09"), ("e07_end_of_game", "frame_03"),
+                   ("e07_end_of_game", "frame_04"), ("e07_end_of_game", "frame_05")):
+        assert f'"src": "events/{ev}/{fr}.jpg", "redacted": true' in page
     assert (folder / "og.png").read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
     summary = json.loads((folder / "match.json").read_text(encoding="utf-8"))
     assert summary["receipt_status"] == "VERIFIED" and summary["final"] == {"away": 10, "home": 0}
     assert summary["receipt_result"] == {"away": 10, "home": 0, "method": "end_menu_read"}
-    assert summary["clips"] == 0
+    assert summary["clips"] == 3
     index = (root / "site/matches/index.html").read_text(encoding="utf-8")
     assert index.find('href="170123/"') < index.find('href="021003/"') < index.find('href="125430/"')
     assert 'class="lockg"' in index and "n = 1" in index
