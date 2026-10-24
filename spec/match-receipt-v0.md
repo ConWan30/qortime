@@ -60,8 +60,10 @@ quarter (`clock_proxy`). Each opening is logged in `challenge_gates.jsonl`. The 
 the security argument (no pre-knowledge, HID + video pause 0–600 ms after the press) is unchanged.
 
 **Recorder result (QorCap ≥ 0.3.11).** At finalize QorCap re-runs each challenge on its own bundle
-(`qor_receipt.review.local`) and writes an ok `result` (`reverified_by: "recorder"`) into the receipt; a miss stays
-`null` with the reason in `challenge_results.jsonl`. The official referee re-runs everything itself.
+(`qor_receipt.review.local`) and writes an ok `result` (`reverified_by: "recorder"`) into the receipt.
+From recorder 0.3.34 a `pattern_mismatch` is stored as `ok: false` (`reason: "pattern_mismatch"`,
+`reverified_by: "recorder"`). All other non-ok results stay `null`, with the reason in
+`challenge_results.jsonl`. The official referee re-runs everything itself.
 
 ## 4. Checkpoint chain
 

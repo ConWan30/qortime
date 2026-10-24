@@ -11,10 +11,12 @@ on the laptop's bundle before the receipt is signed:
   measured capture-path luma caps; rule v1 keeps the historical caps. The text fraction is the same;
 * result: ``verify_response`` + ``hid_sha256`` of the window's presses + ``reverified_by: "recorder"``.
 
-Only an ``ok`` result is written into the receipt. A failed or undecidable check leaves ``result: null`` (the
-verifiers say ``challenge_unanswered``: never VERIFIED) and the reason goes to ``challenge_results.jsonl``, so a
-missed challenge never turns the score receipt into FAIL on the player's own laptop. The official referee re-runs
-everything from raw bytes either way; nothing here is trusted by it.
+An ``ok`` result is written into the receipt. From recorder 0.3.34 a ``pattern_mismatch`` is stored as
+``ok: false`` with ``reason: "pattern_mismatch"`` and ``reverified_by: "recorder"``. All other non-ok results
+stay ``result: null`` (the verifiers say ``challenge_unanswered``: never VERIFIED) and the reason goes to
+``challenge_results.jsonl``, so a controller glitch or a timeout does not turn the score receipt into FAIL on
+the player's own laptop. The official referee re-runs everything from raw bytes either way; nothing here is
+trusted by it.
 
 The latency ceiling here stays 0..600 ms and the result carries no ``rule`` field. A menu at 1.6 s is still
 ``video_latency_too_high`` on this path. The official referee is what stamps rule v2 and its 2500 ms ceiling.
@@ -93,7 +95,9 @@ def rerun(c: dict[str, Any], presses: list[dict[str, Any]], onsets_for) -> dict[
     local = dict(res, phase=c.get("phase"), id=c.get("id"), presses_in_window=len(win))
     if note:
         local["note"] = note
-    return {"result": res if res["ok"] else None, "local": local}
+    # A wrong pattern is a stored failure. A glitch or a timeout stays null.
+    stored = res if res["ok"] or res.get("reason") == "pattern_mismatch" else None
+    return {"result": stored, "local": local}
 
 
 def challenge_results(d: str | Path, challenges: list[dict[str, Any]], *, decode: bool = True) -> list[dict[str, Any]]:

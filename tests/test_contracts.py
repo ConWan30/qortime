@@ -174,6 +174,16 @@ def test_v0311_challenge_fixtures_partials():
     assert f"MAX_WINDOW_MS = {CH.MAX_WINDOW_MS};" in js
 
 
+def test_pattern_mismatch_stored_from_does_not_bump_current():
+    """Informational: recorder 0.3.34 stores a pattern_mismatch. current stays the checked release."""
+    versions = COMPAT["recorder_versions"]
+    assert versions["current"] == "0.3.33"
+    assert versions["challenge_mismatch_stored_from"] == "0.3.34"
+    text = COMPAT["challenge_rules"]["recorder_result"]
+    assert "From recorder 0.3.34 a pattern_mismatch is stored as ok:false" in text
+    assert "All other non-ok results stay null" in text
+
+
 def test_stop_tail_rule_is_the_verifier_rule():
     """The real-match failure signature (cp[n-2] gap+skew, cp[n-1] skew) is exactly a late-stamped stop tail."""
     e = json.loads((ROOT / "tests/fixtures/contract/v032_late_stop_tail.json").read_text())["expect"]["errors"]

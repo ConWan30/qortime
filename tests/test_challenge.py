@@ -95,8 +95,8 @@ def test_response_press_ms_and_pattern_still_must_be_exact():
                            pause_seen_ms=-900).reason == "no_pause_press"
 
 
-def test_recorder_rerun_fills_ok_result_only():
-    """QorCap finalize (qor_receipt.review.local): ok -> result in the receipt; failure -> null + local reason."""
+def test_recorder_rerun_stores_ok_and_pattern_mismatch():
+    """A pass and a wrong-button pattern_mismatch are stored. A glitch or a timeout stays null."""
     from qor_receipt.review.local import rerun
     p = pattern_for(NONCE)
     c = {"id": NONCE[:8], "phase": "kickoff", "pattern": p, "issued_ms": 10_000, "deadline_ms": 100_000}
@@ -104,6 +104,12 @@ def test_recorder_rerun_fills_ok_result_only():
     out = rerun(c, presses, lambda lo, hi: [40_200])
     assert out["result"]["ok"] and out["result"]["latency_ms"] == 200 and out["result"]["reverified_by"] == "recorder"
     assert len(out["result"]["hid_sha256"]) == 64
+    wrong = [dict(e, mono_ms=e["t_ms"]) for e in perform(
+        [PAUSE] + list(reversed(p[1:])) if p[1:] != p[:0:-1] else [PAUSE] + ["CROSS"] * 4, 40_000)]
+    mismatch = rerun(c, wrong, lambda lo, hi: [40_200])
+    assert mismatch["result"]["ok"] is False
+    assert mismatch["result"]["reason"] == "pattern_mismatch"
+    assert mismatch["result"]["reverified_by"] == "recorder"
     miss = rerun(c, presses, lambda lo, hi: [])
     assert miss["result"] is None and miss["local"]["reason"] == "pause_not_seen_on_video"
 

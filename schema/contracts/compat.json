@@ -41,6 +41,7 @@
   },
   "recorder_versions": {
     "tail_timing_sound_from": "0.3.3",
+    "challenge_mismatch_stored_from": "0.3.34",
     "current": "0.3.33",
     "known_bad_tail": ["0.3.0", "0.3.1", "0.3.2"]
   },
@@ -83,7 +84,7 @@
         "dark_menu_bright_frac": [0.005, 0.05]
       }
     },
-    "recorder_result": "QorCap >= 0.3.11 re-runs each challenge on its own bundle at finalize; an ok result is written to the receipt (reverified_by recorder), anything else stays null with the reason in challenge_results.jsonl",
+    "recorder_result": "QorCap >= 0.3.11 re-runs each challenge on its own bundle at finalize; an ok result is written to the receipt (reverified_by recorder). From recorder 0.3.34 a pattern_mismatch is stored as ok:false (reason pattern_mismatch, reverified_by recorder). All other non-ok results stay null, with the reason in challenge_results.jsonl",
     "gate_log": "challenge_gates.jsonl: one line per opened window with the gate basis and scorebug state"
   },
   "motion_rules": {
