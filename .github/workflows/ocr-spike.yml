@@ -1,4 +1,3 @@
-# PROPOSED workflow: move to .github/workflows/ocr-spike.yml (the bot token has no `workflow` scope, so it could not add it).
 name: OCR spike golden (research)
 # Research-only job for eval/ocr_spike. It never gates receipts, verification or scoring.
 # Same pinned weights x committed synthetic probe on different CPU types -> output hashes vs committed golden.
