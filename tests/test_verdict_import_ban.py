@@ -125,6 +125,22 @@ def test_verdict_path_import_offenders_catch_each_loader_form(tmp_path: Path, la
     assert f"services/referee/{label}.py" in verdict_path_import_offenders(tmp_path)
 
 
+@pytest.mark.parametrize(
+    ("label", "source"),
+    [
+        ("builtins_subscript", "__builtins__['__import__']('qor_receipt.vision')\n"),
+        ("builtins_dict", "import builtins\nbuiltins.__dict__['__import__']('qor_receipt.vision')\n"),
+        ("importlib_dict", "import importlib\nimportlib.__dict__['import_module']('qor_receipt.vision')\n"),
+        ("exec_alias", "e = exec\ne('import qor_receipt.vision')\n"),
+    ],
+)
+def test_verdict_path_import_offenders_catch_dict_and_exec_aliases(tmp_path: Path, label: str, source: str):
+    service = tmp_path / "services" / "referee"
+    service.mkdir(parents=True)
+    (service / f"{label}.py").write_text(source, encoding="utf-8")
+    assert f"services/referee/{label}.py" in verdict_path_import_offenders(tmp_path)
+
+
 def test_safe_loader_lookalikes_are_not_offenders(tmp_path: Path):
     service = tmp_path / "services" / "referee"
     service.mkdir(parents=True)
@@ -133,6 +149,8 @@ def test_safe_loader_lookalikes_are_not_offenders(tmp_path: Path):
         "sys_modules_safe.py": "import sys\nsys.modules['json']\n",
         "vars_unrelated.py": "import json\nvars(json)['dumps']('{}')\n",
         "import_os.py": "__import__('os')\n",
+        "exec_alias_safe.py": "e = exec\ne('x = 1')\n",
+        "compile_alias_safe.py": "c = compile\nc('x = 1', '<s>', 'exec')\n",
     }
     for name, text in samples.items():
         (service / name).write_text(text, encoding="utf-8")

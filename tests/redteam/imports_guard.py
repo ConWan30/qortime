@@ -19,9 +19,17 @@ The static verdict-path scan also treats ``exec`` / ``eval``, ``runpy``,
 name (``il = importlib``), ``importlib.__import__``, ``vars(builtins)['__import__']``,
 a ``sys.modules`` lookup, ``__import__('importlib').import_module``,
 ``pkgutil.resolve_name``, and ``SourceFileLoader(...).load_module()`` are
-loaders too. A non-constant argument is an offender. A loader hidden in a C extension,
+loaders too, as are ``__builtins__['__import__']``, ``builtins.__dict__['__import__']``,
+``importlib.__dict__['import_module']``, and an alias of ``exec``, ``eval``, or
+``compile``. A non-constant argument is an offender. A loader hidden in a C extension,
 or a name built and passed through a function this scan does not recognize,
-is not visible in the file. ``eval/`` is scanned; it is not a
+is not visible in the file. The scan is best-effort: it does not follow a walrus
+or tuple alias, ``functools.partial``, ``map``, or a class-attribute holder, and it
+does not see ``find_spec().loader`` / ``exec_module``, ``zipimport``, or
+``sys.modules.get`` passed through another name. It reads ``*.py`` only, so a
+``.pyw`` file is skipped, and it does not follow a symlinked directory or a new
+top-level directory outside ``SCANNED_ROOTS``. Sidecar code a referee image
+downloads is outside the tree. ``eval/`` is scanned; it is not a
 verdict path. The scorebug script there imports the vendored reader, not
 ``qor_receipt.vision``.
 """
@@ -337,6 +345,9 @@ def _apply_module_alias(known: dict[str, str], local: str, root: str) -> None:
         known[f"{local}.util.spec_from_file_location"] = "spec"
     elif root == "builtins":
         known[f"{local}.__import__"] = "__import__"
+        known[f"{local}.exec"] = "exec"
+        known[f"{local}.eval"] = "exec"
+        known[f"{local}.compile"] = "exec"
     elif root == "importlib.util":
         known[f"{local}.spec_from_file_location"] = "spec"
     elif root == "runpy":
@@ -358,16 +369,45 @@ def _kind_for_loaded_module(module_name: str, attr: str) -> str | None:
     return scratch.get(f"_m.{attr}", "<dynamic>")
 
 
-def _vars_subscript_kind(node: ast.expr, modules: dict[str, str]) -> str | None:
-    """Kind for ``vars(builtins)['__import__']``. Unrelated ``vars`` calls are ignored."""
-    if not isinstance(node, ast.Subscript) or not isinstance(node.value, ast.Call):
+def _dict_root_of(expr_name: str, modules: dict[str, str], dict_names: dict[str, str]) -> str | None:
+    """Loader module whose dict ``expr_name`` refers to, if this scan treats it as one."""
+    found = dict_names.get(expr_name)
+    if found is not None:
+        return found
+    if not expr_name.endswith(".__dict__"):
         return None
-    if _expr_name(node.value.func) != "vars" or not node.value.args:
-        return None
-    base = _expr_name(node.value.args[0])
-    if base is None:
-        return None
+    base = expr_name[: -len(".__dict__")]
     root = modules.get(base) or _MODULE_ROOTS.get(base)
+    if root in {"importlib", "builtins"}:
+        return root
+    return None
+
+
+def _vars_subscript_kind(
+    node: ast.expr,
+    modules: dict[str, str],
+    dict_names: dict[str, str] | None = None,
+) -> str | None:
+    """Kind for ``vars(X)[key]``, ``X.__dict__[key]``, and ``__builtins__[key]``.
+
+    Unrelated ``vars`` calls are ignored. A non-constant key on a loader dict is
+    ``<dynamic>``.
+    """
+    if not isinstance(node, ast.Subscript):
+        return None
+    names = dict_names if dict_names is not None else {"__builtins__": "builtins"}
+    value = node.value
+    root: str | None = None
+    if isinstance(value, ast.Call) and _expr_name(value.func) == "vars" and value.args:
+        base = _expr_name(value.args[0])
+        if base is not None:
+            got = modules.get(base) or _MODULE_ROOTS.get(base)
+            if got in {"importlib", "builtins"}:
+                root = got
+    else:
+        expr = _expr_name(value)
+        if expr is not None:
+            root = _dict_root_of(expr, modules, names)
     if root not in {"importlib", "builtins"}:
         return None
     key = _const_text(node.slice)
@@ -375,6 +415,8 @@ def _vars_subscript_kind(node: ast.expr, modules: dict[str, str]) -> str | None:
         return "__import__"
     if key == "import_module":
         return "import_module"
+    if key in {"exec", "eval", "compile"} and root == "builtins":
+        return "exec"
     return "<dynamic>"
 
 
@@ -425,11 +467,13 @@ def _modules_lookup_key(node: ast.expr, sys_modules: set[str]) -> ast.expr | Non
     return None
 
 
-def _import_aliases(tree: ast.AST) -> tuple[dict[str, str], dict[str, str]]:
+def _import_aliases(tree: ast.AST) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
     """Map local names to a loader kind, following aliases, assignments, and ``getattr``.
 
     The second dict maps a local name to the loader module it refers to
-    (``il = importlib`` records ``il`` as ``importlib``).
+    (``il = importlib`` records ``il`` as ``importlib``). The third maps a name
+    to a loader module when the name is that module's dict (``__builtins__``,
+    ``builtins.__dict__``, ``importlib.__dict__``, and aliases of those).
     """
     known = {
         "import_module": "import_module",
@@ -438,6 +482,15 @@ def _import_aliases(tree: ast.AST) -> tuple[dict[str, str], dict[str, str]]:
         "__import__": "__import__",
         "builtins.__import__": "__import__",
         "__builtins__.__import__": "__import__",
+        "exec": "exec",
+        "eval": "exec",
+        "compile": "exec",
+        "builtins.exec": "exec",
+        "builtins.eval": "exec",
+        "builtins.compile": "exec",
+        "__builtins__.exec": "exec",
+        "__builtins__.eval": "exec",
+        "__builtins__.compile": "exec",
         "importlib.util.spec_from_file_location": "spec",
         "runpy.run_path": "runpy",
         "runpy.run_module": "runpy",
@@ -447,6 +500,7 @@ def _import_aliases(tree: ast.AST) -> tuple[dict[str, str], dict[str, str]]:
         "SourceFileLoader": "loader",
     }
     modules: dict[str, str] = {}
+    dict_names: dict[str, str] = {"__builtins__": "builtins"}
     assigns: list[tuple[str, str]] = []
     getattr_assigns: list[tuple[str, str, str | None]] = []
     vars_assigns: list[tuple[str, ast.Subscript]] = []
@@ -473,6 +527,8 @@ def _import_aliases(tree: ast.AST) -> tuple[dict[str, str], dict[str, str]]:
             for alias in node.names:
                 if alias.name in {"import_module", "__import__"}:
                     known[alias.asname or alias.name] = alias.name
+                elif node.module == "builtins" and alias.name in {"exec", "eval", "compile"}:
+                    known[alias.asname or alias.name] = "exec"
                 elif node.module == "importlib" and alias.name == "util":
                     modules[alias.asname or alias.name] = "importlib.util"
                     _apply_module_alias(known, alias.asname or alias.name, "importlib.util")
@@ -520,6 +576,10 @@ def _import_aliases(tree: ast.AST) -> tuple[dict[str, str], dict[str, str]]:
             if src in known and known.get(name) != known[src]:
                 known[name] = known[src]
                 changed = True
+            dict_root = _dict_root_of(src, modules, dict_names)
+            if dict_root is not None and dict_names.get(name) != dict_root:
+                dict_names[name] = dict_root
+                changed = True
         for name, base, attr in getattr_assigns:
             if not _is_loader_base(base, known) and modules.get(base) not in {"importlib", "builtins"} and base not in _MODULE_ROOTS:
                 continue
@@ -528,11 +588,11 @@ def _import_aliases(tree: ast.AST) -> tuple[dict[str, str], dict[str, str]]:
                 known[name] = kind
                 changed = True
         for name, sub in vars_assigns:
-            kind = _vars_subscript_kind(sub, modules)
+            kind = _vars_subscript_kind(sub, modules, dict_names)
             if kind is not None and known.get(name) != kind:
                 known[name] = kind
                 changed = True
-    return known, modules
+    return known, modules, dict_names
 
 
 def _getattr_parts(node: ast.expr) -> tuple[str, str | None] | None:
@@ -545,7 +605,7 @@ def _getattr_parts(node: ast.expr) -> tuple[str, str | None] | None:
     return base, _const_text(node.args[1])
 
 
-_LOADER_KINDS = frozenset({"import_module", "__import__", "spec", "runpy", "resolve", "loader", "<dynamic>"})
+_LOADER_KINDS = frozenset({"import_module", "__import__", "spec", "runpy", "resolve", "loader", "exec", "<dynamic>"})
 
 
 def _is_loader_base(base: str, known: dict[str, str]) -> bool:
@@ -567,6 +627,8 @@ def _loader_attr_kind(attr: str | None) -> str:
         return "resolve"
     if attr == "SourceFileLoader":
         return "loader"
+    if attr in {"exec", "eval", "compile"}:
+        return "exec"
     return "<dynamic>"
 
 
@@ -704,11 +766,12 @@ def _call_loader(
     aliases: dict[str, str],
     modules: dict[str, str] | None = None,
     sys_modules: set[str] | None = None,
+    dict_names: dict[str, str] | None = None,
 ) -> str | None:
     kind = aliases.get(_expr_name(node.func) or "")
     if kind in _LOADER_KINDS:
         return kind
-    vars_kind = _vars_subscript_kind(node.func, modules or {})
+    vars_kind = _vars_subscript_kind(node.func, modules or {}, dict_names)
     if vars_kind is not None:
         return vars_kind
     attr_kind = _attr_on_call_kind(node.func, aliases)
@@ -721,7 +784,11 @@ def _call_loader(
     if got is not None:
         return got
     name = _expr_name(node.func) or ""
-    if name in {"exec", "eval", "builtins.exec", "builtins.eval", "__builtins__.exec", "__builtins__.eval"}:
+    if name in {
+        "exec", "eval", "compile",
+        "builtins.exec", "builtins.eval", "builtins.compile",
+        "__builtins__.exec", "__builtins__.eval", "__builtins__.compile",
+    }:
         return "exec"
     if name == "spec_from_file_location" or name.endswith(".spec_from_file_location"):
         return "spec"
@@ -771,7 +838,7 @@ def _exec_targets(node: ast.Call, path: Path, root: Path, *, redteam: bool, allo
 
 
 def _tree_imports_banned(tree: ast.AST, path: Path, root: Path, *, redteam: bool, allow_vision: bool = False) -> bool:
-    aliases, modules = _import_aliases(tree)
+    aliases, modules, dict_names = _import_aliases(tree)
     sys_modules = _sys_modules_names(tree)
     for node in ast.walk(tree):
         targets: list[str] = []
@@ -782,14 +849,14 @@ def _tree_imports_banned(tree: ast.AST, path: Path, root: Path, *, redteam: bool
         elif isinstance(node, ast.Subscript):
             key = _modules_lookup_key(node, sys_modules)
             if key is None:
-                if _vars_subscript_kind(node, modules) == "<dynamic>":
+                if _vars_subscript_kind(node, modules, dict_names) == "<dynamic>":
                     targets = ["<dynamic>"]
                 else:
                     continue
             else:
                 targets = _lookup_targets(key)
         elif isinstance(node, ast.Call):
-            loader = _call_loader(node, aliases, modules, sys_modules)
+            loader = _call_loader(node, aliases, modules, sys_modules, dict_names)
             if loader == "exec":
                 targets = _exec_targets(node, path, root, redteam=redteam, allow_vision=allow_vision)
             elif loader == "resolve":
@@ -853,11 +920,13 @@ def verdict_path_import_offenders(root: Path) -> list[str]:
     ``eval/`` (vision imports and ``redteam`` imports), and any other referee
     path outside ``qor_receipt/``. ``eval/`` is research tooling, not a verdict
     path. A file that is not UTF-8 or does not parse is an offender. A
-    non-literal ``import_module`` or ``__import__``, ``exec`` / ``eval``,
-    ``runpy``, ``spec_from_file_location``, ``getattr`` on a loader module, a
-    module alias of ``importlib``, ``importlib.__import__``, ``vars`` on
-    ``builtins``, a ``sys.modules`` lookup, ``__import__('importlib').import_module``,
-    ``pkgutil.resolve_name``, and ``SourceFileLoader`` are offenders. A loader
+    non-literal ``import_module`` or ``__import__``, ``exec`` / ``eval`` /
+    ``compile`` (including an alias), ``runpy``, ``spec_from_file_location``,
+    ``getattr`` on a loader module, a module alias of ``importlib``,
+    ``importlib.__import__``, ``vars`` on ``builtins``, a ``__dict__`` or
+    ``__builtins__`` subscript, a ``sys.modules`` lookup,
+    ``__import__('importlib').import_module``, ``pkgutil.resolve_name``, and
+    ``SourceFileLoader`` are offenders. The walk uses ``SCANNED_ROOTS``. A loader
     hidden in a C extension, or a name passed through a function this scan does
     not recognize, is not visible. ``scripts/pan_estimate_clips.py`` may import
     the vision package; a dynamic import or a ``redteam`` import there is still
@@ -865,13 +934,16 @@ def verdict_path_import_offenders(root: Path) -> list[str]:
     are not scanned.
     """
     paths: list[tuple[Path, bool]] = []
-    package = root / "qor_receipt"
-    if package.is_dir():
-        for path in _python_under(root, "qor_receipt"):
-            if path.relative_to(package).parts[:1] == ("vision",):
+    for folder in SCANNED_ROOTS:
+        if folder == "qor_receipt":
+            package = root / "qor_receipt"
+            if not package.is_dir():
                 continue
-            paths.append((path, False))
-    for folder in ("services", "scripts", "eval"):
+            for path in _python_under(root, "qor_receipt"):
+                if path.relative_to(package).parts[:1] == ("vision",):
+                    continue
+                paths.append((path, False))
+            continue
         for path in _python_under(root, folder):
             paths.append((path, True))
     if root.is_dir():

@@ -520,10 +520,12 @@ def _recomputed_pan_sha(obj: Any) -> str | None:
     ``cls is OpticalFlowPanEstimator`` (the class object in that module). A
     property, a copied string, or a class that only copies ``__module__`` and
     ``__qualname__`` does not qualify. ``params`` must be the real ``PanParams``
-    type. The digest is ``estimator_sha256(params)`` from the module, not
-    ``obj.sha256``. A rejected instance (extra attribute, replaced ``_pair``,
-    replaced ``_mask_cache``) does not record a digest, including the allowlisted
-    hash. The allowlist itself is not required: non-default ``PanParams`` still hash.
+    type, and each field must be an exact ``int`` or ``float`` (the same check
+    ``estimator_known`` uses). The digest is ``estimator_sha256(params)`` from the
+    module, not ``obj.sha256``. A rejected instance (extra attribute, replaced
+    ``_pair``, replaced ``_mask_cache``, an ``int`` subclass, or a ``bool``) does
+    not record a digest, including the allowlisted hash. The allowlist itself is
+    not required: non-default ``PanParams`` with exact field types still hash.
     """
     mod = sys.modules.get("qor_receipt.vision.pan_estimator")
     if mod is None or obj is None:
@@ -532,12 +534,19 @@ def _recomputed_pan_sha(obj: Any) -> str | None:
     params_cls = getattr(mod, "PanParams", None)
     fn = getattr(mod, "estimator_sha256", None)
     instance_ok = getattr(mod, "_estimator_instance_ok", None)
-    if not isinstance(cls, type) or not isinstance(params_cls, type) or not callable(fn) or not callable(instance_ok):
+    fields_exact = getattr(mod, "_params_field_types_exact", None)
+    if (
+        not isinstance(cls, type)
+        or not isinstance(params_cls, type)
+        or not callable(fn)
+        or not callable(instance_ok)
+        or not callable(fields_exact)
+    ):
         return None
     if type(obj) is not cls or type(getattr(obj, "params", None)) is not params_cls:
         return None
     try:
-        if instance_ok(obj) is not True:
+        if instance_ok(obj) is not True or fields_exact(obj.params) is not True:
             return None
         digest = fn(obj.params)
     except Exception:

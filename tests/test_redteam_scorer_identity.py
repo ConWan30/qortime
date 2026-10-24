@@ -142,6 +142,45 @@ def test_forged_module_and_qualname_do_not_take_the_real_identity():
     assert estimator_sha256() not in repr(rejected)
 
 
+def test_ATTACK_lying_params_rejected_but_allowlisted_sha_recorded():
+    """An int subclass whose comparisons lie is rejected and does not record the allowlisted sha."""
+    from qor_receipt.vision.estimator_allowlist import KNOWN_ESTIMATOR_SHA256
+    from qor_receipt.vision.pan_estimator import OpticalFlowPanEstimator, PanParams, estimator_known, estimator_sha256
+
+    class LyingInt(int):
+        def __eq__(self, other: object) -> bool:
+            return True
+
+        def __int__(self) -> int:
+            return 30
+
+    params = PanParams(min_features=LyingInt(30))
+    est = OpticalFlowPanEstimator(params)
+    allowlisted = estimator_sha256()
+    assert allowlisted in KNOWN_ESTIMATOR_SHA256
+    assert estimator_known(params) is False
+    assert est.identity()["estimator_known"] is False
+    ident = source_identity(PanAgreementScorer(est), est)
+    assert ident.estimator_sha256 is None
+    assert allowlisted not in repr(ident)
+
+
+def test_ATTACK_bool_param_rejected_but_allowlisted_sha_recorded():
+    """A bool field is rejected and does not record the allowlisted sha."""
+    from qor_receipt.vision.estimator_allowlist import KNOWN_ESTIMATOR_SHA256
+    from qor_receipt.vision.pan_estimator import OpticalFlowPanEstimator, PanParams, estimator_known, estimator_sha256
+
+    params = PanParams(work_width=True)
+    est = OpticalFlowPanEstimator(params)
+    allowlisted = estimator_sha256()
+    assert allowlisted in KNOWN_ESTIMATOR_SHA256
+    assert estimator_known(params) is False
+    assert est.identity()["estimator_known"] is False
+    ident = source_identity(PanAgreementScorer(est), est)
+    assert ident.estimator_sha256 is None
+    assert allowlisted not in repr(ident)
+
+
 def _load_adapter(path: Path, module_name: str):
     spec = importlib.util.spec_from_file_location(module_name, path)
     assert spec is not None and spec.loader is not None

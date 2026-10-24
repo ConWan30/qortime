@@ -47,15 +47,17 @@ a look-alike whose ``to_json`` matches and not an ``int`` or ``float`` subclass.
 A subclass of ``OpticalFlowPanEstimator`` that overrides ``pairs`` is not known.
 An instance attribute other than ``params``, ``_mask_cache``, and
 ``_mask_cache_id``, including a replacement ``_pair``, is not known. Replacing
-``_mask_cache`` warns and is not known.
+``_mask_cache`` warns and is not known. Patching a method on the
+``OpticalFlowPanEstimator`` class itself still reads as known.
 
 Determinism
 -----------
 ``cv2.setNumThreads(1)`` for the duration of a run (restored afterwards), fixed
 parameters, median-based estimation, and rounding of every output float to
 ``ROUND_DIGITS``. ``estimator_sha256()`` covers this module's source text, the
-version string, the parameters, ``cv2.__version__``, and a SHA-256 of
+estimator version string, the parameters, ``cv2.__version__``, and a SHA-256 of
 ``cv2.getBuildInformation()``, ``cv2.useOptimized()``, and ``numpy.__version__``.
+It does not include the Python version.
 Different OpenCV builds therefore report different hashes. The same hash does
 NOT guarantee the same output on every host: OpenCV picks SIMD code paths at
 runtime from the host CPU. ``identity()`` reports ``opencv_pinned`` (from
@@ -216,7 +218,10 @@ def opencv_matches_pin() -> bool:
 
 
 def estimator_sha256(params: PanParams = DEFAULT_PARAMS) -> str:
-    """SHA-256 over the version, the parameters, this module's source, and ``opencv_identity()``."""
+    """SHA-256 over the estimator version, the parameters, this module's source, and ``opencv_identity()``.
+
+    The Python version is not an input.
+    """
     src = Path(__file__).read_bytes()
     blob = b"\n".join([
         ESTIMATOR_VERSION.encode("utf-8"),

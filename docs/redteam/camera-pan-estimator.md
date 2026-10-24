@@ -79,7 +79,7 @@ The tested wheel is **`opencv-python-headless==5.0.0.93`** (OpenCV 5.0.0, `cp37-
 
 `qor_receipt/vision/estimator_allowlist.py` holds `KNOWN_ESTIMATOR_SHA256`, a fixed `frozenset` of exact 64-character lowercase hex digests. It is a separate file because the hash covers `pan_estimator.py`'s own source. It currently holds one entry, recorded on CPython 3.11 and 3.13 with numpy 2.4.6, `opencv-python-headless==5.0.0.93`, and `cv2.useOptimized()` True:
 
-`47413a5cb28a9c8a526568be9a926894dc52d2c1939eed9be135895961f1c2d5`
+`51e3a92b826719ed7b919cf18dc5344efd9f3d5decf5976ad15b87203f648b69`
 
 How the check works:
 
@@ -88,7 +88,8 @@ How the check works:
 - `identity()` reports `estimator_known` separately from `opencv_pinned`.
 - Any other numpy, OpenCV version or build, `useOptimized` setting, parameters, or edited source makes `estimate_frames` return only `no_claim` bins with reason `unknown_estimator_hash`.
 - Being known unlocks nothing: the mismatch gate still has no allow path.
-- `estimator_known` accepts only an exact `PanParams` whose fields are exact `int` and `float` values. An `int` or `float` subclass is rejected. `identity()["estimator_known"]` is false for a subclass that overrides `pairs`, and for an instance whose `__dict__` holds anything other than `params`, `_mask_cache`, and `_mask_cache_id` (so `estimator._pair = ...` is not known). Replacing `_mask_cache` warns and is not known.
+- `estimator_known` accepts only an exact `PanParams` whose fields are exact `int` and `float` values. An `int` or `float` subclass is rejected. `identity()["estimator_known"]` is false for a subclass that overrides `pairs`, and for an instance whose `__dict__` holds anything other than `params`, `_mask_cache`, and `_mask_cache_id` (so `estimator._pair = ...` is not known). Replacing `_mask_cache` warns and is not known. Patching a method on the `OpticalFlowPanEstimator` class itself still reads as known. `source_identity` does not record the allowlisted hash for a rejected instance, including a field that is a `bool` or an `int` subclass.
+- `estimator_sha256` does not include the Python version. It covers this module's source, the estimator version string, the parameters, and the OpenCV and numpy identity. 3.11 and 3.13 match when those inputs match.
 - The public `bin_pairs` does not claim caller-supplied pair results. `estimate_frames` bins only after the running instance is known.
 - Same-process patching cannot be fully blocked, and the list of holes is not exhaustive. It includes a `__class__` swap via `object.__setattr__`, `type.__new__` after deleting `__init_subclass__`, a metaclass subclass that skips the finality check, patching `MismatchGateResult.allowed`, and writing `_mismatch_gate_final` with `type.__setattr__`. Ordinary assignment of that flag is rejected. Patching numpy, OpenCV, or the allowlist in the same process is also outside what this check seals.
 
@@ -110,13 +111,14 @@ The current hash is the allowlist entry above. Earlier revisions reported:
 - `8f049000…`, before `pairs` / `bin_pairs` fail closed on an unknown hash and `estimator_known` requires an exact `PanParams`;
 - `c33339f2…`, before each `PanParams` field had to be an exact `int` or `float` and a subclass overriding `pairs` stopped counting as known;
 - `518f6f70…`, before public `bin_pairs` stopped claiming caller-supplied pair results and an extra instance attribute stopped counting as known;
-- `50a1ce30…`, before a replaced `_mask_cache` warned and stopped counting as a known instance.
+- `50a1ce30…`, before a replaced `_mask_cache` warned and stopped counting as a known instance;
+- `47413a5c…`, before the hashed source said the digest does not include the Python version.
 
 The per-bin outputs on the three clips are byte-identical across all of them.
 
 ## Harness plug-in
 
-`tests/redteam/optical_flow.py` adapts the estimator to #67's `CameraPanEstimator` protocol. The harness's `VariantSample` carries no pixels, so the adapter takes a frame source. `source_identity` records an estimator sha256 only when the class object is `OpticalFlowPanEstimator`, the running instance still has the attributes `__init__` wrote, and the digest is recomputed from that module's source. A copied attribute, property, `__module__`, or `__qualname__` is not trusted, and a rejected instance does not record the allowlisted hash.
+`tests/redteam/optical_flow.py` adapts the estimator to #67's `CameraPanEstimator` protocol. The harness's `VariantSample` carries no pixels, so the adapter takes a frame source. `source_identity` records an estimator sha256 only when the class object is `OpticalFlowPanEstimator`, the running instance still has the attributes `__init__` wrote, each `PanParams` field is an exact `int` or `float`, and the digest is recomputed from that module's source. A copied attribute, property, `__module__`, or `__qualname__` is not trusted. A rejected instance, including a `bool` or `int` subclass field, does not record the allowlisted hash. Patching a method on the `OpticalFlowPanEstimator` class itself still reads as known.
 
 QorProof's E1–E3 and D1 are in `tests/test_mismatch_gate_qorproof.py`. #71, now merged, turned those tests from `xfail(strict=True)` into real checks: a copied sha256 is not stored, and two frame sources do not share cached bins.
 
@@ -217,6 +219,7 @@ This is a benign, referee-verified match, so a flag would have been a false alar
 
 ## Limitations
 
+- The AST import ban (`verdict_path_import_offenders`) is best-effort. It does not follow a walrus or tuple alias, `functools.partial`, `map`, or a class-attribute holder. It does not see `find_spec().loader` / `exec_module`, `zipimport`, or `sys.modules.get` passed through another name. It does not read `.pyw` files, follow a symlinked directory, or notice a new top-level directory outside `SCANNED_ROOTS`. It does not see qorcap sidecar code the referee image downloads. There is no runtime `meta_path` finder or audit hook on this path.
 - In Madden NFL 27 the right stick is not the camera control during normal play (it drives ball-carrier and defender moves). Camera pan does not imply right-stick input, so pan agreement is not a sound aimbot signal for Madden. An adapter's injected input never shows up in the USB HID log. A useful detector compares video against the log: an on-screen action (skill move, user catch, controlled-player motion) with no matching logged press.
 - Global median translation does not separate camera motion from large moving foregrounds such as crowded player scrums. Those mostly end up as `no_claim` through the inlier and confidence gates. Zoom and roll are not modelled.
 - The masks are static and measured on one scorebug skin plus the highlight caption. Other skins (primetime), replay wipes, and in-game banners are not masked.
