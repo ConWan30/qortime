@@ -181,11 +181,19 @@ def test_pattern_mismatch_stored_from_does_not_bump_current():
     assert versions["challenge_mismatch_stored_from"] == "0.3.34"
     text = COMPAT["challenge_rules"]["recorder_result"]
     assert "From recorder 0.3.34 a pattern_mismatch is stored as ok:false" in text
-    assert "every non-empty line of inputs.jsonl parses" in text
+    assert "parse as a JSON object" in text
+    assert "such as 42 or []" in text
+    assert "second header row" in text
+    assert "no gap larger than 3000 ms" in text
+    assert "latest chunk at or before issued_ms" in text
+    assert "are not gap-checked" in text
+    assert "chunk at or after deadline_ms" in text
+    assert "A last chunk before the deadline does not cover it" in text
+    assert "deadline_ms minus that chunk is <= 3000" in text
     assert "wall_anchor_ms + t_us//1000" in text
     assert "deadline_ms+2500" in text
     assert "no stalled, unplugged, or missing row" in text
-    assert "malformed status row" in text
+    assert "t_us is not an integer, or whose state is not a string" in text
     assert "OPTIONS alone" in text
     assert "Every other non-ok reason stays null" in text
     assert "withheld controller_log" in text

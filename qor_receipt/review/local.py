@@ -13,14 +13,22 @@ on the laptop's bundle before the receipt is signed:
 
 An ``ok`` result is written into the receipt. From recorder 0.3.34 a ``pattern_mismatch`` is stored as
 ``ok: false`` with ``reason: "pattern_mismatch"`` and ``reverified_by: "recorder"`` only when the controller
-log can support it: every non-empty line of ``inputs.jsonl`` parses, a committed record (including a chunk
-row) has wall time at or after ``deadline_ms`` (``wall_anchor_ms + t_us // 1000``), and the pad is
-``connected`` from ``issued_ms`` through ``deadline_ms + 2500`` with no ``stalled``, ``unplugged``, or
-``missing`` row in that span. A malformed status row withholds it. OPTIONS alone, and OPTIONS inside the
-window with the rest of the pattern after the deadline, are that stored mismatch. Every other non-ok result
-stays ``result: null`` (the verifiers say ``challenge_unanswered``) and the reason goes to
-``challenge_results.jsonl``, with ``withheld: controller_log`` when a mismatch was withheld. The official
-referee re-runs everything from raw bytes either way; nothing here is trusted by it.
+log can support it. Every non-empty line of ``inputs.jsonl`` must parse as a JSON object. A JSON value that
+is not an object, such as ``42`` or ``[]``, is malformed, and so is a second ``header`` row. Chunk rows must
+cover ``[issued_ms, deadline_ms]`` with no gap larger than 3000 ms (the 2 s fMP4 fragment plus 1 s slack).
+Coverage uses the latest chunk at or before ``issued_ms``. That chunk must exist and ``issued_ms`` minus its
+wall time must be at most 3000. Chunks earlier than it are not gap-checked, and a chunk after ``issued_ms``
+does not close the open. From that chunk each next chunk is at most 3000 ms later until a chunk at or after
+``deadline_ms``. A last chunk before the deadline does not cover it, even when the deadline is within 3000 ms.
+A single chunk after the deadline does not cover the window, and neither does a
+crash gap followed by rows after the deadline. Wall time is header ``wall_anchor_ms`` plus ``t_us // 1000``.
+The pad's status must be ``connected`` at ``issued_ms`` and remain ``connected`` through ``deadline_ms + 2500``
+with no ``stalled``, ``unplugged``, or ``missing`` row in that span. A malformed status row withholds it.
+OPTIONS alone, and OPTIONS inside the window with the rest of the pattern after the deadline, are that stored
+mismatch when the log passes this gate. Every other non-ok result stays ``result: null`` (the verifiers say
+``challenge_unanswered``) and the reason goes to ``challenge_results.jsonl``, with
+``withheld: controller_log`` when a mismatch was withheld. That file is bundle metadata, not ``receipt.v0``.
+The official referee re-runs everything from raw bytes either way; nothing here is trusted by it.
 
 The latency ceiling here stays 0..600 ms and the result carries no ``rule`` field. A menu at 1.6 s is still
 ``video_latency_too_high`` on this path. The official referee is what stamps rule v2 and its 2500 ms ceiling.
@@ -43,6 +51,11 @@ SMALL = B.META_FILES
 # A stalled row is written only after 2 s with no HID reports, on the next read timeout. The check
 # therefore runs 2.5 s past the deadline. Same constant as the recorder.
 STALL_LAG_MS = 2_500
+# One inputs chunk per fMP4 segment. min_frag_duration is 2 s, and the encoder GOP is one second,
+# so a chunk is about 2 s apart and at most 3 s.
+CHUNK_INTERVAL_MS = 2_000
+CHUNK_GAP_SLACK_MS = 1_000
+CHUNK_GAP_MAX_MS = CHUNK_INTERVAL_MS + CHUNK_GAP_SLACK_MS
 
 
 def load_dir(d: Path) -> B.Bundle:
@@ -80,11 +93,11 @@ def wall_minus_mono(b: B.Bundle) -> int:
 
 
 def inputs_log_intact(path: str | Path) -> bool:
-    """False when ``inputs.jsonl`` is missing or any non-empty line does not parse.
+    """False when ``inputs.jsonl`` is missing or any line is not one JSON object.
 
-    The recheck's JSONL reader skips a corrupt line, so the presses that remain can look like a short
-    pattern. A torn line in the middle of the file does that too, not only a partial last line. That is
-    not a player failure.
+    The recheck's JSONL reader skips a corrupt line and drops a value that is not an object, so the
+    presses that remain can look like a short pattern. A torn line, a bare ``42`` or ``[]``, or a second
+    ``header`` row is not a player failure.
     """
     try:
         raw = Path(path).read_bytes()
@@ -92,13 +105,20 @@ def inputs_log_intact(path: str | Path) -> bool:
         return False
     if not raw:
         return True
+    headers = 0
     for line in raw.decode("utf-8", "replace").splitlines():
         if not line.strip():
             continue
         try:
-            json.loads(line)
+            val = json.loads(line)
         except json.JSONDecodeError:
             return False
+        if not isinstance(val, dict):
+            return False
+        if val.get("type") == "header":
+            headers += 1
+            if headers > 1:
+                return False
     return True
 
 
@@ -134,11 +154,45 @@ def pad_connected_through(records: list, *, issued_ms: int, deadline_ms: int, an
     return True
 
 
-def log_covers(records: list, *, deadline_ms: int, anchor_ms: int) -> bool:
-    """Some committed record, including a chunk row, is stamped at or after the deadline."""
-    ts = [anchor_ms + r["t_us"] // 1000 for r in records
-          if isinstance(r, dict) and isinstance(r.get("t_us"), int) and not isinstance(r.get("t_us"), bool)]
-    return bool(ts) and max(ts) >= deadline_ms
+def chunks_cover(records: list, *, issued_ms: int, deadline_ms: int, anchor_ms: int) -> bool:
+    """Chunk rows cover ``[issued_ms, deadline_ms]`` with no gap over ``CHUNK_GAP_MAX_MS``.
+
+    The open uses the latest chunk at or before ``issued_ms``. That chunk must exist, and
+    ``issued_ms`` minus its wall time must be at most ``CHUNK_GAP_MAX_MS``. Chunks earlier than
+    that one are not gap-checked. A chunk after ``issued_ms`` does not close the open. From that
+    chunk, each next chunk is at most ``CHUNK_GAP_MAX_MS`` later, until a chunk at or after
+    ``deadline_ms``. A last chunk before the deadline does not cover it, even when the deadline
+    is within the bound. A gap after the chunk that reaches the deadline is ignored. A single
+    chunk after the deadline does not cover the window. A crash that drops a stretch, then writes
+    rows after the deadline, does not either.
+    Times are header ``wall_anchor_ms`` plus ``t_us // 1000``. A chunk whose ``t_us`` is not an
+    integer is skipped.
+    """
+    times = sorted({
+        anchor_ms + r["t_us"] // 1000
+        for r in records
+        if isinstance(r, dict) and r.get("type") == "chunk"
+        and isinstance(r.get("t_us"), int) and not isinstance(r.get("t_us"), bool)
+    })
+    if not times:
+        return False
+    prev: int | None = None
+    i = 0
+    while i < len(times) and times[i] <= issued_ms:
+        prev = times[i]
+        i += 1
+    if prev is None or issued_ms - prev > CHUNK_GAP_MAX_MS:
+        return False
+    if prev >= deadline_ms:
+        return True
+    while i < len(times):
+        if times[i] - prev > CHUNK_GAP_MAX_MS:
+            return False
+        prev = times[i]
+        i += 1
+        if prev >= deadline_ms:
+            return True
+    return False
 
 
 def mismatch_log_trustworthy(bundle: str | Path, records: list, *, issued_ms: int, deadline_ms: int,
@@ -146,7 +200,7 @@ def mismatch_log_trustworthy(bundle: str | Path, records: list, *, issued_ms: in
     """A pattern mismatch may be stored only when the controller log can support it."""
     return (inputs_log_intact(Path(bundle) / "inputs.jsonl")
             and pad_connected_through(records, issued_ms=issued_ms, deadline_ms=deadline_ms, anchor_ms=anchor_ms)
-            and log_covers(records, deadline_ms=deadline_ms, anchor_ms=anchor_ms))
+            and chunks_cover(records, issued_ms=issued_ms, deadline_ms=deadline_ms, anchor_ms=anchor_ms))
 
 
 def rerun(c: dict[str, Any], presses: list[dict[str, Any]], onsets_for, *,
@@ -154,8 +208,8 @@ def rerun(c: dict[str, Any], presses: list[dict[str, Any]], onsets_for, *,
     """One challenge -> {"result": dict|None, "local": dict}. ``onsets_for(lo_wall, hi_wall)`` -> pause onsets (wall).
 
     ``log_trustworthy`` defaults closed. A ``pattern_mismatch`` is stored only when the caller has
-    checked every line, deadline coverage, and the pad through the stall lag. Anything else with that
-    reason is withheld.
+    checked every line, chunk coverage of the window, and the pad through the stall lag. Anything else
+    with that reason is withheld.
     """
     from qor_receipt.review.engine import pause_seen_for
 
