@@ -32,18 +32,20 @@ This is one synthetic snapshot: one generator seed, one training run and one che
 - **int8 observation (one synthetic snapshot, not a general claim):** I measured this on a single step-200 checkpoint, using 200–400 synthetic val crops. Static Conv+MatMul scored 0.51, Conv-only 0.53 and dynamic 0.40, against 0.98 for fp32 on the same crops. MatMul-only scored 0.975. So `finetune.py quantize` defaults to `--ops MatMul` and the convs stay fp32. The model has 13/13 MatMul quantised and 0/57 Conv.
 - **What runs at the pinned `ORT_ENABLE_BASIC`:** the QDQ int8 graph is **not executed with int8 kernels**. ORT runs DequantizeLinear, then an fp32 MatMul, and every conv in fp32 (MLAS sgemm/conv). The int8 weights are stored and quantisation is simulated, so no VNNI/AMX int8 path runs. EXTENDED/ALL would fuse to QLinearMatMul and give different logits bytes. That is why the opt level and EP are pinned as part of the identity.
 - **Re-run check** (int8 file, ORT 1.31.0, pinned BASIC/CPU session, so the math is fp32 as above; x86-64 box with AVX-512 and AMX present but irrelevant at BASIC): over 2 in-process runs plus 2 fresh subprocesses, raw logits bytes and strings were identical on the 32-crop probe and on 300 val bands (2,400 crops). That makes it re-runnable with the same pinned setup on this machine. It says nothing yet about other CPUs.
-- **Cross-runner (first matrix run, commit bc953af, golden job `.github/workflows/ocr-spike.yml`, pinned BASIC/CPU single-thread):** I compared the probe outputs against the golden made on the box (Intel Xeon x86-64, AVX-512 + AMX). Preprocessed input hashes matched everywhere.
+- **Cross-runner** (2 matrix runs, bc953af and ad98901; job in `.github/workflows/ocr-spike.yml`; pinned BASIC/CPU single-thread): I compared the probe outputs against the golden made on the box (Intel Xeon, AVX-512 + AMX). Preprocessed input hashes matched everywhere.
 
-  | runner | CPU | upstream_fp32 | upstream_int8_dynamic |
+  | runner (run) | CPU / SIMD | upstream_fp32 | upstream_int8_dynamic |
   |---|---|---|---|
-  | ubuntu-latest | x86-64 AMD EPYC 9V45, AVX-512 | **byte-identical** | **byte-identical** |
-  | ubuntu-24.04-arm | aarch64 (asimd, sve2, i8mm, bf16) | **bytes differ on 32/32**, strings same | **bytes differ on 32/32, strings differ** |
-  | macos-latest | arm64 (NEON, dotprod) | **bytes differ on 32/32**, strings same | **bytes differ on 32/32**, strings same |
-  | windows-latest | x86-64 | not run: CRLF checkout changed `scorebug_dict.txt`'s hash (harness bug, fixed by `eval/ocr_spike/.gitattributes`) | not run |
+  | ubuntu-latest (bc953af) | AMD EPYC 9V45, AVX-512 | **byte-identical** | **byte-identical** |
+  | windows-latest (ad98901) | AMD Family 25 Model 17, AVX-512 | **byte-identical** | **byte-identical** |
+  | ubuntu-latest (ad98901) | AMD EPYC 7763, AVX2/FMA only | bytes differ 32/32, strings same | bytes differ 32/32, strings same |
+  | ubuntu-24.04-arm (both) | aarch64, asimd/sve2/i8mm | bytes differ 32/32, strings same | bytes differ 32/32, **strings differ** |
+  | macos-latest (both) | arm64, NEON/dotprod | bytes differ 32/32, strings same | bytes differ 32/32, strings same |
 
-  - Byte-identity therefore holds across two different x86-64 AVX-512 CPUs (Intel and AMD), but **not** between x86-64 and ARM64. On ARM even a decoded string changed for the dynamic-int8 model. **This is a finding, not a flake.** The job stays failing on ARM; nothing was re-blessed.
-  - The golden is per ISA class until proven otherwise. A cross-ISA contract would have to be string-level, with a confidence margin, not byte-level.
-  - `scorebug_ft_int8` is skipped on every runner because it is not hosted.
+  - Byte-identity tracks the **SIMD class**, not the OS. It held on every AVX-512 x86 machine (Intel and AMD, Linux and Windows). It broke on AVX2-only x86 and on ARM64, where for the dynamic-int8 model even a decoded string differs. **This is a finding.** Those jobs stay failing and nothing was re-blessed.
+  - ubuntu-latest passes or fails depending on which host type the runner lands on, so the golden is per SIMD class. A cross-ISA contract would have to be string-level with a confidence margin.
+  - The Windows failure in the first run was a harness bug: the CRLF checkout changed the dictionary hash. `.gitattributes` fixes it.
+  - `scorebug_ft_int8` is skipped everywhere because it is not hosted.
 - **Smoke test** (3 of 9 tracked public clips, 144 frames, unmasked decode, no gate, not accuracy evidence):
   - **Agreement:** where the current reader produced a score, quarter or clock, the fine-tuned model's valid read agreed 109/109, 109/109, 109/109 and 4/4. Zero-shot scored 99/109 (score_l) and 8/109 (score_r), because it reads the digit `0` as the letter `O`; that read is now invalid instead of coerced.
   - **Banner frames:** valid reads where the current reader abstained (fine-tuned): score_l 0, score_r 0, quarter 22, game_clock 126. The masked decode had reported 4, 12, 22 and 126. Every former banner score read (e.g. `04`) was a coerced out-of-alphabet read; the fine-tuned model actually reads letters such as `GOA`, `FIEL` and `TOUC` there.
