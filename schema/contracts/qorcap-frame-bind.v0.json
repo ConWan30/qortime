@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://conwan30.github.io/qortime/schema/contracts/qorcap-frame-bind.v0.json",
+  "title": "One frames.jsonl line (qorcap-frame-bind/v0)",
+  "description": "One RFC 8785 JCS line of frames.jsonl. The newline is not hashed. Checkpoint qorcap.frame_bind uses $defs/commitment.",
+  "oneOf": [
+    {"$ref": "#/$defs/header"},
+    {"$ref": "#/$defs/frame"},
+    {"$ref": "#/$defs/alignGap"}
+  ],
+  "$defs": {
+    "timeBase": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Encoder time base for pts. Seconds = pts * num / den. Not a frame rate.",
+      "required": ["num", "den"],
+      "properties": {
+        "num": {"type": "integer", "minimum": 1},
+        "den": {"type": "integer", "minimum": 1}
+      }
+    },
+    "header": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "schema", "hash_of", "clock", "time_base"],
+      "properties": {
+        "type": {"const": "header"},
+        "schema": {"const": "qorcap-frame-bind/v0"},
+        "hash_of": {"const": "encoded-video-sample"},
+        "clock": {"const": "qorcap-mono-ms"},
+        "time_base": {"$ref": "#/$defs/timeBase"}
+      }
+    },
+    "frame": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One video frame. pts is the encoder PTS in the header time_base. mono_ms is the capture monotonic millisecond of the packet that starts the frame.",
+      "required": ["type", "seg", "frame", "pts", "mono_ms", "au_sha256"],
+      "properties": {
+        "type": {"const": "frame"},
+        "seg": {"type": "integer", "minimum": 0},
+        "frame": {"type": "integer", "minimum": 0},
+        "pts": {"type": "integer", "minimum": 0},
+        "mono_ms": {"type": "integer", "minimum": 0},
+        "au_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "alignGap": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One segment that is not fully bound. Coverage is bound of samples. The sample span is [from_frame, from_frame + samples). samples is at least 1; a zero-width gap is broken.",
+      "required": ["type", "seg", "from_frame", "samples", "bound", "reason"],
+      "properties": {
+        "type": {"const": "align_gap"},
+        "seg": {"type": "integer", "minimum": 0},
+        "from_frame": {"type": "integer", "minimum": 0},
+        "samples": {"type": "integer", "minimum": 1},
+        "bound": {"type": "integer", "minimum": 0},
+        "reason": {
+          "enum": ["pts_regression", "composition_offset", "sample_pes_mismatch", "clock_lost", "unreadable"]
+        }
+      }
+    },
+    "commitment": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Running head after n lines. head_0 is 64 zero hex chars. head_n = SHA-256(JCS({prev, sha256})) where sha256 is SHA-256 of line n's bytes, newline excluded.",
+      "required": ["schema", "n", "head"],
+      "properties": {
+        "schema": {"const": "qorcap-frame-bind/v0"},
+        "n": {"type": "integer", "minimum": 0},
+        "head": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    }
+  }
+}

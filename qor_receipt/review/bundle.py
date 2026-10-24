@@ -18,7 +18,7 @@ META_FILES = ("bundle.json", "manifest.jsonl", "checkpoints.jsonl", "countersign
               "haptics.jsonl", "input_proof.json", "receipt.json", "receipt.draft.json", "timeline.jsonl",
               "challenges.jsonl", "official_challenges.jsonl", "anchors.jsonl", "referee.pub",
               "challenge_gates.jsonl", "challenge_results.jsonl", "pairing.json", "device_attest.v0.json",
-              "score_timeline.json")
+              "score_timeline.json", "frames.jsonl", "readers.json")
 REQUIRED_FILES = ("bundle.json", "manifest.jsonl", "checkpoints.jsonl", "receipt.json")
 
 
