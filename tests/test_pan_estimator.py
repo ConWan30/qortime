@@ -226,22 +226,74 @@ def test_skew_constants_are_observations_not_limits():
 SPACINGS_MS = (0, 1, 119, 120, 500, 719, 720, 1078, 1079, 1500, 10_000, 3_600_000, -719, -10_000)
 
 
-@pytest.mark.parametrize("binding", [False, None, 0, 1, "yes", "true", [True]])
-def test_no_per_frame_binding_is_always_no_claim(binding):
-    """Fails if a spacing-only allow path comes back: no binding, no claim, at any spacing."""
+HEAD = "ab" * 32
+
+
+def _verified(bundle_id: str = "match-test") -> "pe.FrameBindVerification":
+    # Hand-built for the test. qortime has no frame_bind verifier yet (qorcap PR 75
+    # is unmerged), so no production code path produces this object.
+    return pe.FrameBindVerification(status="verified", bundle_id=bundle_id, chain_head=HEAD)
+
+
+NO_CLAIM_INPUTS = [
+    None,
+    True,
+    1,
+    "verified",
+    {"status": "verified", "bundle_id": "m", "chain_head": HEAD},
+    pe.FrameBindVerification(status="missing", bundle_id="m", detail="no frames.jsonl"),
+    pe.FrameBindVerification(status="stripped", bundle_id="m", detail="checkpoints lost running hash"),
+    pe.FrameBindVerification(status="broken", bundle_id="m", chain_head=HEAD, detail="link 41 mismatch"),
+    pe.FrameBindVerification(status="VERIFIED", bundle_id="m", chain_head=HEAD),
+    pe.FrameBindVerification(status="ok", bundle_id="m", chain_head=HEAD),
+    pe.FrameBindVerification(status="verified", bundle_id=None, chain_head=HEAD),
+    pe.FrameBindVerification(status="verified", bundle_id="m", chain_head=None),
+    pe.FrameBindVerification(status="verified", bundle_id="m", chain_head="AB" * 32),
+    pe.FrameBindVerification(status="verified", bundle_id="m", chain_head="ab" * 31),
+]
+
+
+@pytest.mark.parametrize("frame_bind", NO_CLAIM_INPUTS, ids=lambda v: repr(v)[:60])
+def test_without_a_verified_bundle_chain_every_mismatch_is_no_claim(frame_bind):
+    """Missing, stripped, broken, malformed, or non-object input: no_claim at every spacing.
+
+    Fails if a spacing-only allow path comes back.
+    """
     for spacing in SPACINGS_MS:
-        assert pe.mismatch_claim_allowed(binding, video_ms=100_000 + spacing, log_ms=100_000) is False
-        assert pe.mismatch_claim_allowed(binding, 100_000, 100_000 + spacing) is False
-    assert pe.mismatch_claim_allowed(binding) is False
+        assert pe.mismatch_claim_allowed(frame_bind, video_ms=100_000 + spacing, log_ms=100_000) is False
+    assert pe.mismatch_claim_allowed(frame_bind) is False
 
 
-def test_binding_result_does_not_depend_on_observed_skew():
-    results = {pe.mismatch_claim_allowed(True, video_ms=100_000 + d, log_ms=100_000) for d in SPACINGS_MS}
+def test_default_is_no_claim_and_statuses_are_closed():
+    assert pe.mismatch_claim_allowed() is False
+    assert pe.FRAME_BIND_STATUSES == {"verified", "missing", "stripped", "broken"}
+
+
+def test_verified_chain_is_the_only_allow_path_and_spacing_does_not_matter():
+    results = {pe.mismatch_claim_allowed(_verified(), video_ms=100_000 + d, log_ms=100_000) for d in SPACINGS_MS}
     assert results == {True}
+
+    class Subclass(pe.FrameBindVerification):
+        pass
+
+    assert pe.mismatch_claim_allowed(Subclass(status="verified", bundle_id="m", chain_head=HEAD)) is False
     gate_src = inspect.getsource(pe.mismatch_claim_allowed)
     body = gate_src.split('"""')[-1]
-    for name in ("OBSERVED_MAX_CLIP_CLOCK_SKEW_MS", "OBSERVED_CLIP_CLOCK_SKEW_RANGE_MS", "SKEW_MARGIN_FACTOR", "719", "abs("):
+    for name in ("OBSERVED_MAX_CLIP_CLOCK_SKEW_MS", "OBSERVED_CLIP_CLOCK_SKEW_RANGE_MS", "SKEW_MARGIN_FACTOR", "719", "abs(", "os.environ", "getenv"):
         assert name not in body
+
+
+def test_nothing_in_qortime_produces_a_verified_frame_bind_yet():
+    """qorcap PR 75 is not merged; no non-test code constructs FrameBindVerification."""
+    users = []
+    for path in sorted((ROOT / "qor_receipt").rglob("*.py")):
+        if path.name == "pan_estimator.py":
+            continue
+        if "FrameBindVerification" in path.read_text(encoding="utf-8"):
+            users.append(str(path))
+    assert users == []
+    src = (ROOT / "qor_receipt" / "vision" / "pan_estimator.py").read_text(encoding="utf-8")
+    assert src.count("FrameBindVerification(") == 0  # the class is declared, never instantiated in the module
 
 
 def test_scorebug_mask_comes_from_the_local_scorebug_profile():

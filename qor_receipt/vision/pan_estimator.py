@@ -48,13 +48,21 @@ version string, the parameters, ``cv2.__version__``, and a SHA-256 of
 what a harness should record. The tested build is pinned in
 ``tests/constraints-pan-estimator.txt`` (``PINNED_OPENCV_WHEEL``).
 
-Clock binding gate (applies to any future video-vs-log mismatch detector)
--------------------------------------------------------------------------
+Per-bundle frame_bind gate (applies to any future video-vs-log mismatch detector)
+--------------------------------------------------------------------------------
 A detector that compares an on-screen event with the USB HID log (skill move,
 user catch, controlled-player motion with no matching logged press) must call
-``mismatch_claim_allowed``. Without per-frame clock binding it returns False for
-every event, whatever the spacing: the result is ``no_claim``. Spacing alone
-never permits a claim.
+``mismatch_claim_allowed(frame_bind)`` for the bundle it is judging. The gate is
+per bundle, not a code-level switch: a claim is allowed only when *that* bundle
+carries a frame_bind chain (qorcap PR 75 design: ``frames.jsonl`` plus a running
+hash in checkpoints) that verified, passed in as a ``FrameBindVerification``
+with status ``verified``. A missing, stripped, or broken chain, an unknown
+status, ``None``, or a bare bool is ``no_claim``, whatever the event spacing.
+Spacing alone never permits a claim.
+
+qorcap PR 75 is not merged, and nothing in qortime verifies a frame_bind chain
+yet, so no code path here can produce ``status="verified"`` today: in practice
+every mismatch claim is ``no_claim`` until a verifier exists.
 
 Observation only, not a limit or threshold: on the match 170123 highlight
 clips (one session, 3 clips), two independent clip-to-capture-clock alignments
@@ -97,22 +105,57 @@ OBSERVED_MAX_CLIP_CLOCK_SKEW_MS = 719
 # Margin someone might apply to the observed max. A guess, not a bound.
 SKEW_MARGIN_FACTOR = 1.5
 # Both observation constants get replaced once per-frame clock binding lands; the
-# binding itself, not these numbers, must then define any timing tolerance. The
-# gate below does not read them.
+# bundle's verified binding, not these numbers, must then define any timing
+# tolerance. The gate below does not read them.
+
+FRAME_BIND_VERIFIED = "verified"
+FRAME_BIND_MISSING = "missing"    # bundle has no frames.jsonl / no running hash in checkpoints
+FRAME_BIND_STRIPPED = "stripped"  # bundle shows signs a chain was there and was removed
+FRAME_BIND_BROKEN = "broken"      # chain present but a link, hash, or checkpoint does not verify
+FRAME_BIND_STATUSES = frozenset({FRAME_BIND_VERIFIED, FRAME_BIND_MISSING, FRAME_BIND_STRIPPED, FRAME_BIND_BROKEN})
 
 
-def mismatch_claim_allowed(per_frame_binding: bool, video_ms: int | None = None, log_ms: int | None = None) -> bool:
-    """Gate for any video-vs-log mismatch claim. False means ``no_claim``.
+@dataclass(frozen=True)
+class FrameBindVerification:
+    """Result of verifying one bundle's frame_bind chain (qorcap PR 75 design).
 
-    Without per-frame clock binding (``per_frame_binding is not True``) this is
-    always False, whatever ``video_ms`` and ``log_ms`` are: event spacing never
-    permits a claim. With binding it returns True and leaves timing tolerance to
-    the bound clock; there is no path here that relies on the observed skew.
-    ``video_ms`` and ``log_ms`` are accepted only so callers pass them and the
-    tests can prove they do not matter.
+    Produced by a frame_bind verifier for one specific bundle. No such verifier
+    exists in qortime yet, so nothing here produces ``status="verified"``.
+    ``chain_head`` is the verified chain head (64 lowercase hex) when verified.
+    """
+
+    status: str
+    bundle_id: str | None = None
+    chain_head: str | None = None
+    detail: str = ""
+
+
+def _hex64(value: Any) -> bool:
+    return isinstance(value, str) and len(value) == 64 and all(c in "0123456789abcdef" for c in value)
+
+
+def mismatch_claim_allowed(
+    frame_bind: FrameBindVerification | None = None,
+    video_ms: int | None = None,
+    log_ms: int | None = None,
+) -> bool:
+    """Per-bundle gate for any video-vs-log mismatch claim. False means ``no_claim``.
+
+    The only allow path: ``frame_bind`` is a ``FrameBindVerification`` for the
+    bundle being judged, with ``status == "verified"``, a ``bundle_id``, and a
+    64-hex ``chain_head``. The default (``None``), a missing, stripped, or broken
+    chain, any other status, a bare bool, or any other object is ``no_claim``.
+    ``video_ms`` and ``log_ms`` never change the answer: event spacing alone
+    never permits a claim, and nothing here relies on the observed skew.
     """
     del video_ms, log_ms
-    return per_frame_binding is True
+    if type(frame_bind) is not FrameBindVerification:
+        return False
+    if frame_bind.status != FRAME_BIND_VERIFIED:
+        return False
+    if not isinstance(frame_bind.bundle_id, str) or not frame_bind.bundle_id:
+        return False
+    return _hex64(frame_bind.chain_head)
 
 FracBox = tuple[float, float, float, float]  # x0, x1, y0, y1 as fractions of the full frame
 

@@ -71,21 +71,30 @@ The tested wheel is **`opencv-python-headless==5.0.0.93`** (OpenCV 5.0.0, `cp37-
 
 The committed red-team report (`motion-rule-v3-aimbot.md`) still uses the no_claim stubs. A test plugs this estimator in on synthetic frames and checks only the contract, the identity, and determinism. No catch rate is asserted or published, because pan versus right stick is not a valid Madden aimbot signal (see below).
 
-With that wheel the estimator hash is `2d2366343bd925fe201f6dc66c49c84e0b21f8911067e720d3ea934c2720bcb4`. Earlier revisions reported `e225c50d…` (before the OpenCV identity was hashed) and `dcb9d149…` (before the clock-binding gate). The per-bin outputs on the three clips are byte-identical across all three.
+With that wheel the estimator hash is `b0c8f40d58ce3e577fd868594196966674b4fadc57772f6607c108a4457e6cfe`. Earlier revisions reported `e225c50d…` (before the OpenCV identity was hashed), `dcb9d149…` (before the clock gate), and `2d236634…` (before the per-bundle frame_bind gate). The per-bin outputs on the three clips are byte-identical across all of them.
 
-## Clock binding gate for video-vs-log detectors
+## Per-bundle frame_bind gate for video-vs-log detectors
 
-Any video-vs-log mismatch detector must call `mismatch_claim_allowed(per_frame_binding, video_ms, log_ms)` before it claims anything. Examples of such a detector are a skill move, a user catch, or controlled-player motion with no matching logged press.
+Any video-vs-log mismatch detector must call `mismatch_claim_allowed(frame_bind, video_ms, log_ms)` for the bundle it is judging before it claims anything. Examples are a skill move, a user catch, or controlled-player motion with no matching logged press.
 
-- **Without per-frame clock binding, the gate always returns False, which means `no_claim`.** That holds whatever the spacing between the events. Spacing alone never permits a claim, and tests fail if a spacing-only allow path comes back.
-- With binding, the gate defers timing tolerance to the bound clock. It has no path that relies on the numbers below.
+The gate checks **that bundle**. It is not a code-level or global switch, and nothing turns it on when a PR merges.
+
+- **The only allow path:** `frame_bind` is a `FrameBindVerification` with `status="verified"`, a `bundle_id`, and a 64-hex `chain_head`. That means this bundle's frame_bind chain verified. The chain follows the qorcap PR 75 design: `frames.jsonl` plus a running hash in checkpoints.
+- **Everything else is `no_claim`:**
+  - the default (`None`);
+  - a `missing`, `stripped`, or `broken` chain;
+  - any other status;
+  - a bare bool, a dict, or a subclass.
+- **Spacing never matters.** `video_ms` and `log_ms` never change the answer, so spacing alone never permits a claim. Tests fail if a spacing-only allow path comes back.
+
+**Nothing produces `verified` today.** qorcap PR 75 is not merged, and qortime has no frame_bind verifier. No code path in qortime can produce `status="verified"`, so in practice every mismatch claim is `no_claim` for now. The tests build a verified object by hand to exercise the allow path. Another test checks that no non-test qortime code constructs one.
 
 **Observation only, not a limit or threshold:**
 
 - On these clips (one session, 3 clips), two independent ways of aligning clip time to the capture clock disagree by 120–719 ms. The two methods are segment-manifest interpolation and the checkpoint lock time.
 - `OBSERVED_MAX_CLIP_CLOCK_SKEW_MS = 719` is the observed max skew (3 clips). `OBSERVED_CLIP_CLOCK_SKEW_RANGE_MS = (120, 719)` is the observed range.
 - `SKEW_MARGIN_FACTOR = 1.5` is a guess, not a bound.
-- The gate reads none of these values. All of them get replaced once per-frame binding lands.
+- The gate reads none of these values. All of them get replaced once bundles carry a verified frame_bind chain, which then defines any timing tolerance.
 
 ## Real-data check: match 170123 highlight clips (not committed)
 
