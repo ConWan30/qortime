@@ -44,41 +44,18 @@ Determinism
 parameters, median-based estimation, and rounding of every output float to
 ``ROUND_DIGITS``. ``estimator_sha256()`` covers this module's source text, the
 version string, the parameters, ``cv2.__version__``, and a SHA-256 of
-``cv2.getBuildInformation()``, so two OpenCV builds never share a hash. It is
-what a harness should record. The tested build is pinned in
+``cv2.getBuildInformation()``, ``cv2.useOptimized()``, and ``numpy.__version__``.
+Different OpenCV builds therefore report different hashes. The same hash does
+NOT guarantee the same output on every host: OpenCV picks SIMD code paths at
+runtime from the host CPU. ``identity()`` reports ``opencv_pinned`` (from
+``opencv_matches_pin()``), and the tests pin golden output hashes on synthetic
+frames so drift fails CI. The tested build is pinned in
 ``tests/constraints-pan-estimator.txt`` (``PINNED_OPENCV_WHEEL``).
 
-Per-bundle frame_bind gate (applies to any future video-vs-log mismatch detector)
---------------------------------------------------------------------------------
-A detector that compares an on-screen event with the USB HID log (skill move,
-user catch, controlled-player motion with no matching logged press) must call
-``mismatch_claim_allowed`` for the bundle it is judging. The gate is per bundle,
-not a code-level switch. A claim is allowed only when ALL of these hold:
-
-1. ``frame_bind_status`` for *that* bundle is ``verified``. The status comes
-   from the bundle's frame_bind check (qorcap PR 75 design: ``frames.jsonl``
-   plus a running hash in checkpoints), one of verified / missing / stripped /
-   broken. Default is ``missing``. Any other or unknown value is ``no_claim``.
-2. ``encode_latency`` is a measured ``EncodeLatencyCalibration``. Frame
-   ``mono_ms`` is stamped after encoding and pipe buffering, while HID rows are
-   stamped at the USB read, so a press-to-frame gap includes encode latency
-   nobody has measured. Default is absent, which is ``no_claim``.
-3. The event falls inside a covered stretch of that bundle's frame_bind
-   ``coverage``. An ``align_gap`` is simply not covered: an event in a gap is
-   ``no_claim`` for that stretch. No coverage means nothing is covered.
-
-Event spacing alone never permits a claim.
-
-Nothing produces any of these today: qorcap PR 75 is not merged, qortime has
-no frame_bind check and no encode-latency calibration. Every mismatch claim is
-``no_claim`` until both exist.
-
-Observation only, not a limit or threshold: on the match 170123 highlight
-clips (one session, 3 clips), two independent clip-to-capture-clock alignments
-(segment-manifest interpolation vs. the checkpoint lock time) disagreed by
-120-719 ms. ``OBSERVED_MAX_CLIP_CLOCK_SKEW_MS`` (719) is the observed max skew
-(3 clips). ``SKEW_MARGIN_FACTOR`` (1.5) is a guess, not a bound. Neither value
-is used by the gate.
+Mismatch claims
+---------------
+The claim gate for video-vs-log mismatch detectors lives in
+``qor_receipt.vision.mismatch_gate``. It has no allow path.
 """
 from __future__ import annotations
 
@@ -87,7 +64,6 @@ import json
 import math
 from collections.abc import Iterable, Sequence
 from dataclasses import asdict, dataclass, field
-from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -101,111 +77,12 @@ ROUND_DIGITS = 3
 RATE_UNITS = "percent_of_frame_width_per_second"
 
 # Tested OpenCV wheel (see tests/constraints-pan-estimator.txt). Not enforced at
-# runtime: a different build still runs, but it reports a different sha256.
+# runtime: a different build still runs, but it reports a different sha256 and
+# identity()["opencv_pinned"] is False; tests/test_pan_estimator.py fails on it.
 PINNED_OPENCV_WHEEL = "opencv-python-headless==5.0.0.93"
 PINNED_OPENCV_VERSION = "5.0.0"
 # sha256(cv2.getBuildInformation()) of that wheel's cp37-abi3-manylinux_2_28_x86_64 build (CI and the box).
 PINNED_OPENCV_BUILD_INFO_SHA256 = "0ef08003c31127b3b5d34410ab13483c511e73b99e278b1a8abd6ddcb265699a"
-
-# Observed clip/capture clock skew, match 170123, single session, 3 highlight clips:
-# (min, max) in ms across the 3 clips. A measurement, not a limit or threshold.
-OBSERVED_CLIP_CLOCK_SKEW_RANGE_MS = (120, 719)
-# Observed max skew (3 clips). Not a limit, not a threshold.
-OBSERVED_MAX_CLIP_CLOCK_SKEW_MS = 719
-# Margin someone might apply to the observed max. A guess, not a bound.
-SKEW_MARGIN_FACTOR = 1.5
-# Both observation constants get replaced once per-frame clock binding lands; the
-# bundle's verified binding, not these numbers, must then define any timing
-# tolerance. The gate below does not read them.
-
-class FrameBindStatus(str, Enum):
-    """Result of one bundle's frame_bind check (qorcap PR 75 design)."""
-
-    VERIFIED = "verified"
-    MISSING = "missing"    # no frames.jsonl / no running hash in checkpoints
-    STRIPPED = "stripped"  # signs a chain was there and was removed
-    BROKEN = "broken"      # chain present but a link, hash, or checkpoint does not verify
-
-
-@dataclass(frozen=True)
-class EncodeLatencyCalibration:
-    """Measured capture-to-stamp latency for frames (encode + pipe buffering), in ms.
-
-    Must come from a measurement on the capture rig. Nothing in qortime produces
-    one yet. ``n_samples`` must be positive and the latencies finite, non-negative,
-    with ``p50_ms <= p99_ms``.
-    """
-
-    source: str
-    n_samples: int
-    p50_ms: float
-    p99_ms: float
-
-
-Stretch = tuple[int, int]  # half-open [start_ms, end_ms) of frame_bind coverage on the capture clock
-
-
-def _calibration_ok(cal: Any) -> bool:
-    if type(cal) is not EncodeLatencyCalibration:
-        return False
-    if not isinstance(cal.source, str) or not cal.source:
-        return False
-    if isinstance(cal.n_samples, bool) or not isinstance(cal.n_samples, int) or cal.n_samples <= 0:
-        return False
-    vals = (cal.p50_ms, cal.p99_ms)
-    if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v < 0 for v in vals):
-        return False
-    return cal.p50_ms <= cal.p99_ms
-
-
-def _covered(t_ms: Any, coverage: Any) -> bool:
-    if isinstance(t_ms, bool) or not isinstance(t_ms, int):
-        return False
-    if coverage is None or isinstance(coverage, (str, bytes)):
-        return False
-    try:
-        stretches = list(coverage)
-    except TypeError:
-        return False
-    for stretch in stretches:
-        try:
-            start, end = stretch
-        except (TypeError, ValueError):
-            continue
-        if any(isinstance(v, bool) or not isinstance(v, int) for v in (start, end)) or start >= end:
-            continue
-        if start <= t_ms < end:
-            return True
-    return False
-
-
-def mismatch_claim_allowed(
-    frame_bind_status: FrameBindStatus | str = FrameBindStatus.MISSING,
-    *,
-    coverage: Sequence[Stretch] | None = None,
-    encode_latency: EncodeLatencyCalibration | None = None,
-    video_ms: int | None = None,
-    log_ms: int | None = None,
-) -> bool:
-    """Per-bundle gate for any video-vs-log mismatch claim. False means ``no_claim``.
-
-    Allowed only when (1) ``frame_bind_status`` is ``verified`` for this bundle,
-    (2) ``encode_latency`` is a measured ``EncodeLatencyCalibration``, and
-    (3) ``video_ms`` (and ``log_ms`` when given) lie inside a covered stretch of
-    this bundle's ``coverage``. Missing, stripped, broken, unknown, or non-string
-    statuses; absent or malformed calibration; no coverage; and events in an
-    align_gap are all ``no_claim``. Spacing between ``video_ms`` and ``log_ms``
-    never permits a claim, and nothing here relies on the observed skew.
-    """
-    if not isinstance(frame_bind_status, str) or frame_bind_status != FrameBindStatus.VERIFIED.value:
-        return False
-    if not _calibration_ok(encode_latency):
-        return False
-    if not _covered(video_ms, coverage):
-        return False
-    if log_ms is not None and not _covered(log_ms, coverage):
-        return False
-    return True
 
 FracBox = tuple[float, float, float, float]  # x0, x1, y0, y1 as fractions of the full frame
 
@@ -301,14 +178,20 @@ class PairResult:
 
 
 def opencv_identity() -> dict[str, str]:
-    """``cv2.__version__`` plus a SHA-256 of ``cv2.getBuildInformation()`` (compile-time, stable per wheel)."""
+    """OpenCV version, SHA-256 of its build information, its optimisation switch, and the numpy version."""
     try:
         build = cv2.getBuildInformation()
     except Exception:
         build = "unavailable"
+    try:
+        optimized = str(bool(cv2.useOptimized()))
+    except Exception:
+        optimized = "unknown"
     return {
         "cv2_version": str(cv2.__version__),
         "build_info_sha256": hashlib.sha256(str(build).encode("utf-8")).hexdigest(),
+        "cv2_use_optimized": optimized,
+        "numpy_version": str(np.__version__),
     }
 
 
@@ -319,7 +202,7 @@ def opencv_matches_pin() -> bool:
 
 
 def estimator_sha256(params: PanParams = DEFAULT_PARAMS) -> str:
-    """SHA-256 over the version, the parameters, this module's source, and the OpenCV build identity."""
+    """SHA-256 over the version, the parameters, this module's source, and ``opencv_identity()``."""
     src = Path(__file__).read_bytes()
     blob = b"\n".join([
         ESTIMATOR_VERSION.encode("utf-8"),
@@ -369,6 +252,7 @@ class OpticalFlowPanEstimator:
             "bin_ms": BIN_MS,
             "params": self.params.to_json(),
             "opencv": opencv_identity(),
+            "opencv_pinned": opencv_matches_pin(),
         }
 
     # -- frame preparation -------------------------------------------------
