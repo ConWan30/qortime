@@ -2,7 +2,7 @@
 
 Test-only harness under `tests/redteam/`. It scores controller logs by calling `input_energy_series`, `score_motion`, `check_inputs`, `check_checkpoints`, and `check_input_files` in process. It does not sign a receipt, does not hold a referee key, and does not open a network connection. Nothing here is a submission.
 
-Harness `redteam-aimbot/v2` for package `qor-receipt==0.1.0`. Harness sha256 `68114ad11b9f1aaaae08ac86ab882b1d540eba7fe00cd6b09171ed5f3d03ae33` over 16 files.
+Harness `redteam-aimbot/v2` for package `qor-receipt==0.1.0`. Harness sha256 `9732b84afa28767b6dd66d05fb773c9403a203731e3a20f3812745196a7aaabf` over 16 files.
 
 ## Headline: honest USB log, assisted screen
 
@@ -73,7 +73,7 @@ Each scorer sha256 is the hash of `qor-receipt==0.1.0`, the scorer and estimator
 
 **SYNTHETIC-DATA CAVEAT:** these rates come from synthetic data with only one benign sample (n=1 control) and are NOT real-world or measured detection/false-alarm rates; '0/1 false alarms' is not a false-alarm rate.
 
-The event matcher's 150 ms window is valid only on synthetic data with a shared clock; on real footage, events closer than 719 ms are no-claim until per-frame binding lands (see #68's `within_clock_skew()`). That window sits inside the measured 120–719 ms clip-vs-capture clock skew.
+The 150 ms event window is valid only on synthetic data with a shared clock. On real footage, a video-vs-log mismatch claim is allowed only for a bundle that carries a frame_bind chain (qorcap #75, --frame-bind) that verifies; if that bundle's chain is missing, stripped or broken, every mismatch claim is no-claim. This is checked per bundle, not switched on by merging code, so older footage stays no-claim.
 
 | scorer | version | package | estimator | file set | sha256 | headline catch rate | headline false-alarm rate | abstained |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -136,7 +136,7 @@ report = evaluate(scorers=[PanAgreementScorer(MyPanEstimator()), EventPressAgree
       "tests/redteam/scorers.py"
     ],
     "package_version": "0.1.0",
-    "sha256": "68114ad11b9f1aaaae08ac86ab882b1d540eba7fe00cd6b09171ed5f3d03ae33",
+    "sha256": "9732b84afa28767b6dd66d05fb773c9403a203731e3a20f3812745196a7aaabf",
     "version": "redteam-aimbot/v2"
   },
   "headline_stick_aimbots": {

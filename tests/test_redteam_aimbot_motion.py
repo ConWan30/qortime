@@ -555,9 +555,11 @@ SYNTHETIC_RATE_CAVEAT = (
     "'0/1 false alarms' is not a false-alarm rate."
 )
 CLOCK_WINDOW_CAVEAT = (
-    "The event matcher's 150 ms window is valid only on synthetic data with a shared clock; "
-    "on real footage, events closer than 719 ms are no-claim until per-frame binding lands "
-    "(see #68's `within_clock_skew()`)."
+    "The 150 ms event window is valid only on synthetic data with a shared clock. "
+    "On real footage, a video-vs-log mismatch claim is allowed only for a bundle that carries a "
+    "frame_bind chain (qorcap #75, --frame-bind) that verifies; if that bundle's chain is missing, "
+    "stripped or broken, every mismatch claim is no-claim. This is checked per bundle, not switched "
+    "on by merging code, so older footage stays no-claim."
 )
 # trusted_referees stays here. The harness must not import qor_receipt.receipt, which is what loads it.
 _FORBIDDEN_MODULE_TOKENS = ("qor_receipt.referee", "referee_service", "trusted_referees")
@@ -585,12 +587,14 @@ def test_synthetic_rate_caveat_stays_beside_the_headline_table():
     assert CLOCK_WINDOW_CAVEAT in section
     lines = section.splitlines()
     caveat_at = next(i for i, line in enumerate(lines) if "SYNTHETIC-DATA CAVEAT" in line)
-    clock_at = next(i for i, line in enumerate(lines) if "within_clock_skew" in line)
+    clock_at = next(i for i, line in enumerate(lines) if "frame_bind chain" in line)
     table_at = next(i for i, line in enumerate(lines) if line.startswith("| scorer |"))
     assert caveat_at < clock_at < table_at
     assert table_at - caveat_at <= 6
     assert "headline false-alarm rate" in lines[table_at]
-    assert "120–719 ms" in lines[clock_at]
+    assert "every mismatch claim is no-claim" in lines[clock_at]
+    assert "older footage stays no-claim" in lines[clock_at]
+    assert "closer than 719" not in section
 
 
 def test_harness_process_does_not_import_referee_modules():

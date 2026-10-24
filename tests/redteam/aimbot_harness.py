@@ -746,7 +746,7 @@ def render_report(report: Report | None = None) -> str:
         "",
         "**SYNTHETIC-DATA CAVEAT:** these rates come from synthetic data with only one benign sample (n=1 control) and are NOT real-world or measured detection/false-alarm rates; '0/1 false alarms' is not a false-alarm rate.",
         "",
-        "The event matcher's 150 ms window is valid only on synthetic data with a shared clock; on real footage, events closer than 719 ms are no-claim until per-frame binding lands (see #68's `within_clock_skew()`). That window sits inside the measured 120–719 ms clip-vs-capture clock skew.",
+        "The 150 ms event window is valid only on synthetic data with a shared clock. On real footage, a video-vs-log mismatch claim is allowed only for a bundle that carries a frame_bind chain (qorcap #75, --frame-bind) that verifies; if that bundle's chain is missing, stripped or broken, every mismatch claim is no-claim. This is checked per bundle, not switched on by merging code, so older footage stays no-claim.",
         "",
         _md_table(
             ["scorer", "version", "package", "estimator", "file set", "sha256", "headline catch rate", "headline false-alarm rate", "abstained"],
