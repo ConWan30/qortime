@@ -11,10 +11,10 @@
 <meta property="og:url" content="https://qortime.com/"><meta property="og:image" content="https://qortime.com/assets/og.png">
 <meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="https://qortime.com/assets/og.png">
 <meta name="twitter:title" content="QorTime — One app. One recording. One receipt.">
-<meta name="twitter:description" content="Signed, verifiable console match results. Verified Match is early access and Stripe test mode until KYC — not a live paid product.">
+<meta name="twitter:description" content="Signed, verifiable console match results. Self-verify is free in the browser. Verified Match, a hosted referee countersign, is planned.">
 <meta name="twitter:site" content="@QorTimeHQ">
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"WebSite","name":"QorTime","url":"https://qortime.com/","description":"Signed Madden match receipts anyone can verify in a browser. Verified Match hosted-referee countersign is early access and Stripe test mode until business KYC."}
+{"@context":"https://schema.org","@type":"WebSite","name":"QorTime","url":"https://qortime.com/","description":"Signed Madden match receipts anyone can verify in a browser. Self-verify is free. Verified Match, a hosted referee countersign, is planned."}
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
@@ -32,9 +32,8 @@
   <p class="kicker reveal-up"><span class="dot"></span> capture · prove · share · Madden NFL 27 first</p>
   <h1 class="kinetic"><span class="line">One app.</span><span class="line">One recording.</span><span class="line accent">One receipt.</span></h1>
   <p class="lede reveal-up">Play your match with <b>QorCap</b>, one lightweight Windows app that records the capture card and fingerprints every second of video. When the match is over, QorTime does the heavy lifting on the finished recording: a signed receipt, an AI referee verdict, and a public verify link. Nothing heavy runs while you play.</p>
-  <div class="ctas reveal-up"><a class="btn mag" href="verify/"><span>Verify a receipt</span></a><a class="btn ghost mag" href="https://github.com/ConWan30/qorcap/releases/latest"><span>Download QorCap</span></a><a class="btn ghost mag" href="early-access/"><span>Verified Match — early access</span></a></div>
-  <div class="ctas reveal-up vm-hero"><a class="btn vm mag" href="https://buy.stripe.com/test_3cI4gy7he9Uuarqczl00000" target="_blank" rel="noopener noreferrer"><span>Buy Verified Match (test)</span></a></div>
-  <p class="vm-hero-note reveal-up">Stripe test mode · $9.99 USD · not a live charge · early access until KYC</p>
+  <div class="ctas reveal-up"><a class="btn mag" href="verify/"><span>Verify a receipt</span></a><a class="btn ghost mag" href="https://github.com/ConWan30/qorcap/releases/latest"><span>Download QorCap</span></a></div>
+  <p class="plan-note reveal-up">Verified Match, a hosted referee countersign, is planned at $9.99. Self-verify is free today.</p>
  </div>
  <div class="hero-foot reveal-up"><span>scroll to seal a match</span><i></i></div>
  <div class="marquee" aria-hidden="true"><div class="mq-track"><span>ONE APP ◆ ONE RECORDING ◆ ONE RECEIPT ◆ CAPTURE ◆ PROVE ◆ SHARE ◆ </span><span>ONE APP ◆ ONE RECORDING ◆ ONE RECEIPT ◆ CAPTURE ◆ PROVE ◆ SHARE ◆ </span></div></div>
@@ -47,7 +46,7 @@
  <div class="cards">
   <div class="card glass"><h3>1 · Capture</h3><p><b>QorCap</b> is the one app you run, on Windows, during the match. It records the capture card and fingerprints the video as it is written: every segment is hashed and chained, with timestamped checkpoints. It stays light, so it doesn't strain your laptop.</p><span class="tag">controller button log in the same session · since v0.3.0</span></div>
   <div class="card glass"><h3>2 · Prove</h3><p>After the final whistle, QorTime works on the finished recording. It re-checks the fingerprints, reads the score, and seals a signed receipt. The <b>AI referee</b> reviews the evidence and signs a verdict: <b>accept</b>, <b>dispute</b>, or <b>abstain</b>, with plain reasons and the evidence frames.</p></div>
-  <div class="card glass"><h3>3 · Share</h3><p>Send the receipt to your opponent, a tournament, or a platform. Anyone can check it in the free <a href="verify/">browser verifier</a>, and nothing is uploaded. A hosted referee countersign, Verified Match, is in test-mode early access.</p></div>
+  <div class="card glass"><h3>3 · Share</h3><p>Send the receipt to your opponent, a tournament, or a platform. Anyone can check it in the free <a href="verify/">browser verifier</a>, and nothing is uploaded. A hosted referee countersign, Verified Match, is planned.</p></div>
  </div>
  <div class="glass limits" style="margin-top:22px">
   <h2>Inside the Prove step</h2>
@@ -195,27 +194,12 @@ receipt_hash</pre>
  <a class="btn ghost mag" href="https://github.com/ConWan30/qortime/blob/main/docs/RISKS.md"><span>Read RISKS.md</span></a></div>
 </section>
 
-<section class="wrap vm" id="verified-match">
- <div class="vm-panel glass">
-  <div class="vm-grid">
-   <div>
-    <p class="vm-kicker"><span class="dot"></span> test · early access until KYC</p>
-    <h2 class="split">Buy the seal. Test money only.</h2>
-    <p>Verified Match is a $9.99 hosted-referee countersign after a completed match. It is early access. The button opens a Stripe <b>test</b> Payment Link. Business KYC is still open, so this is not a live paid product and it does not charge real money.</p>
-    <ul class="ticks"><li>$9.99 USD list price · one-time · test checkout</li><li>test card 4242 4242 4242 4242</li><li>free self-verify stays in the browser</li></ul>
-    <div class="ctas"><a class="btn vm mag" href="https://buy.stripe.com/test_3cI4gy7he9Uuarqczl00000" target="_blank" rel="noopener noreferrer"><span>Buy Verified Match (test)</span></a><a class="btn ghost mag" href="early-access/"><span>Early access</span></a><a class="btn ghost mag" href="pricing/"><span>Pricing</span></a></div>
-    <p class="vm-cancel" id="vm-cancel" hidden>Test checkout canceled. Nothing was recorded as paid.</p>
-    <p class="note">A test payment shows a neutral “paid, test mode” tag. Gold appears only after the verifier reports VERIFIED for that receipt. A Payment Link purchase alone has no receipt id.</p>
-   </div>
-   <div class="vm-seal" aria-hidden="true">
-    <div class="vm-coin">
-     <img src="assets/logo.svg" alt="" width="64" height="64">
-     <b>Verified Match</b>
-     <span>TEST MODE</span>
-     <small>$9.99</small>
-    </div>
-   </div>
-  </div>
+<section class="wrap plan-sec" id="verified-match">
+ <div class="plan-panel glass">
+  <p class="plan-kicker"><span class="dot"></span> planned</p>
+  <h2>Verified Match</h2>
+  <p>Verified Match, a hosted referee countersign, is planned at $9.99. Self-verify is free today. Payments are not open yet, so there is nothing to buy on this site.</p>
+  <div class="ctas"><a class="btn mag" href="verify/"><span>Self-verify, free</span></a><a class="btn ghost mag" href="early-access/"><span>Early access</span></a><a class="btn ghost mag" href="pricing/"><span>Pricing</span></a></div>
  </div>
 </section>
 

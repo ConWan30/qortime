@@ -228,3 +228,18 @@ body.page{background:radial-gradient(880px 520px at 92% -8%,rgba(228,197,109,.16
  .sb-score{font-size:40px;padding:8px}.sb-team{padding:0 8px;font-size:12px;gap:6px}.sb-clock{padding:0 6px;font-size:12px}
  .hero h1.kinetic{font-size:40px}
 }
+/* Verified Match: planned (cobalt, never gold; gold is reserved for referee-VERIFIED results) */
+.plan-note{margin-top:16px;max-width:560px;font:500 14px/1.55 var(--mono);color:#a9bdff}
+.plan-kicker{display:inline-flex;align-items:center;gap:8px;margin-bottom:8px;padding:6px 12px;border-radius:999px;border:1px solid rgba(79,124,255,.5);color:#a9bdff;font:600 12px var(--mono);letter-spacing:.16em;text-transform:uppercase;background:rgba(7,10,22,.6)}
+.plan-kicker .dot{background:var(--ac);box-shadow:0 0 10px var(--ac)}
+.plan-sec{padding-top:24px}
+.plan-panel{padding:clamp(26px,4vw,48px);border-color:rgba(79,124,255,.38);background:radial-gradient(620px 300px at 100% -10%,rgba(79,124,255,.16),transparent 60%),rgba(8,11,22,.72)}
+.plan-panel h2{font:900 clamp(34px,5vw,60px)/.95 var(--disp);text-transform:uppercase;letter-spacing:.02em;margin-bottom:12px}
+.plan-panel p{color:#c5cde0;max-width:620px}
+.plan-honest{margin:22px 0 8px;padding:14px 16px;border-radius:14px;border:1px solid rgba(79,124,255,.45);background:rgba(10,14,30,.72);color:#c9d5ff;font:600 13px/1.55 var(--mono);max-width:640px}
+.stamp.plan{color:#dfe6ff;background:rgba(79,124,255,.18);border:1px solid rgba(79,124,255,.6)}
+.price-card.planned{border-color:rgba(79,124,255,.38)}
+.price-card.planned .price{color:#c5cde0}
+.step.plan{border-color:rgba(79,124,255,.4)}
+.step.plan .n{color:var(--ac)}
+@media (max-width:640px){.plan-panel .ctas .btn{flex:1 1 auto}}

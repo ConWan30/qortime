@@ -1,11 +1,11 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>QorTime verifier — VERIFIED, PARTIAL, or FAIL</title>
-<meta name="description" content="Paste a QorTime match receipt and check it in the browser. VERIFIED, PARTIAL, or FAIL. Verified Match badge is test mode until KYC.">
+<meta name="description" content="Paste a QorTime match receipt and check it in the browser. VERIFIED, PARTIAL, or FAIL. Verified Match, a hosted referee countersign, is planned.">
 <link rel="canonical" href="https://qortime.com/verify/">
 <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
 <meta property="og:title" content="QorTime verifier">
-<meta property="og:description" content="In-browser receipt check. Verified Match is early access and Stripe test mode, not a live paid product.">
+<meta property="og:description" content="In-browser receipt check. Self-verify is free. Verified Match, a hosted referee countersign, is planned.">
 <meta property="og:url" content="https://qortime.com/verify/">
 <meta property="og:image" content="https://qortime.com/assets/og.png">
 <meta name="twitter:card" content="summary_large_image">
@@ -20,12 +20,12 @@
 </head><body>
 <header class="top">
  <a class="brand" href="../">QorTime</a>
- <nav><a href="../">Home</a><a href="../how-it-works/">How it works</a><a href="../matches/">Matches</a><a href="../early-access/">Verified Match early access</a></nav>
+ <nav><a href="../">Home</a><a href="../how-it-works/">How it works</a><a href="../matches/">Matches</a><a href="../early-access/">Verified Match (planned)</a></nav>
 </header>
 <main class="wrap">
 <section class="hero">
  <h1>Check a match receipt</h1>
- <p>Signature checks run in this browser. The receipt JSON is not uploaded. The Verified Match badge sends only the receipt id to the test checkout service. That badge is TEST / early access until KYC. It is not a live paid product.</p>
+ <p>Signature checks run in this browser. The receipt JSON is not uploaded. Self-verify is free. Verified Match, a hosted referee countersign, is planned.</p>
 </section>
 
 <section class="card" id="input" aria-label="Receipt input">
@@ -61,13 +61,16 @@
 </section>
 
 <section class="vm" id="vm">
- <h2>Verified Match <span class="vm-test">test mode</span></h2>
- <p><small>A test payment alone shows a neutral “paid, test mode” tag. Gold appears only when this page’s signature verdict is VERIFIED. The payment does not change that verdict. Live payouts stay off until KYC is done.</small></p>
+ <h2>Verified Match <span class="vm-test">planned</span></h2>
+ <p>Verified Match, a hosted referee countersign, is planned at $9.99. Self-verify is free today, and the check above is the whole of it. Payments are not open yet.</p>
+ <!-- Checkout UI kept for when payments open; not rendered while VM_CHECKOUT_LIVE is false. -->
+ <div id="vm-live" hidden>
  <p id="vm-return" hidden></p>
- <div id="vm-badge" class="vm-badge" hidden>paid, test mode</div>
- <p id="vm-state"><small>Paste a receipt to look up its id.</small></p>
- <button id="vm-buy" class="btn ghost" type="button" disabled>Checkout this receipt (test)</button>
+ <div id="vm-badge" class="vm-badge" hidden></div>
+ <p id="vm-state"></p>
+ <button id="vm-buy" class="btn ghost" type="button" disabled>Checkout this receipt</button>
  <p id="vm-err"></p>
+ </div>
 </section>
 
 <details class="raw-out"><summary>Raw verifier output</summary><pre id="out">Nothing checked yet.</pre></details>
@@ -86,6 +89,8 @@
 import { apiBase, badgeMatchesReceipt, isValidReceiptId, receiptIdFrom } from "./verified-match.js";
 import { sha256Hex } from "./verify.js";
 import { runVerify, setIdle, logPanel, observe, describeSidecar } from "./viewer-ui.js";
+// Verified Match checkout is paused until payments open (business KYC). Keep false: no lookups, no checkout UI.
+const VM_CHECKOUT_LIVE = false;
 const $ = (id) => document.getElementById(id);
 const q = new URLSearchParams(location.search);
 const ui = { verdict: $("verdict"), word: $("word"), line: $("line"), tags: $("tags"), seal: $("seal"),
@@ -137,7 +142,7 @@ function setPaid(data, id, contentSha) {
   }
   const status = data?.payment_status;
   if (!apiBase()) {
-    $("vm-state").innerHTML = "<small>Receipt checkout API is not configured on this deploy yet. The Payment Link on the home page still opens Stripe test checkout.</small>";
+    $("vm-state").innerHTML = "<small>Receipt checkout is not configured on this deploy.</small>";
     $("vm-buy").disabled = true;
     return;
   }
@@ -168,6 +173,7 @@ async function refreshPaid(id) {
 }
 
 function watchReceipt() {
+  if (!VM_CHECKOUT_LIVE) return;
   const id = receiptIdFrom(currentReceipt());
   refreshPaid(id).catch((err) => { $("vm-err").textContent = err instanceof Error ? err.message : "Paid lookup failed"; });
 }
@@ -275,6 +281,7 @@ if (preloaded) {
   });
 }
 $("vm-buy").onclick = async () => {
+  if (!VM_CHECKOUT_LIVE) return;
   const id = receiptIdFrom(currentReceipt());
   $("vm-err").textContent = "";
   const base = apiBase();
@@ -299,9 +306,9 @@ $("vm-buy").onclick = async () => {
 };
 
 const returned = q.get("receipt_id");
-if (q.get("checkout") === "success" && isValidReceiptId(returned)) {
+if (VM_CHECKOUT_LIVE && q.get("checkout") === "success" && isValidReceiptId(returned)) {
   $("vm-return").hidden = false;
-  $("vm-return").textContent = "Test checkout returned. After the webhook records this receipt, the tag says paid, test mode. Gold appears only if the signature verdict is VERIFIED.";
+  $("vm-return").textContent = "Checkout returned. After the webhook records this receipt, the tag says paid, test mode. Gold appears only if the signature verdict is VERIFIED.";
   let tries = 0;
   const tick = () => refreshPaid(returned).catch((err) => { $("vm-err").textContent = err instanceof Error ? err.message : "Paid lookup failed"; });
   tick();

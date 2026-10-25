@@ -3,10 +3,6 @@
   const fine = matchMedia('(pointer: fine)').matches;
   const $ = (s, r = document) => r.querySelector(s), $$ = (s, r = document) => [...r.querySelectorAll(s)];
   if (RM) document.documentElement.classList.add('rm');
-  if (new URLSearchParams(location.search).get('checkout') === 'cancel') {
-    const note = document.getElementById('vm-cancel');
-    if (note) note.hidden = false;
-  }
 
   // digit columns (final value is the resting state)
   $$('.dg').forEach(d => {
