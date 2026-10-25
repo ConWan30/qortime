@@ -1,6 +1,6 @@
 # QorTime
 
-**Repo:** https://github.com/ConWan30/qortime · **Site:** https://conwan30.github.io/qortime/ · **Verifier:** https://conwan30.github.io/qortime/verify/
+**Repo:** https://github.com/ConWan30/qortime · **Site:** https://qortime.com/ · **Verifier:** https://qortime.com/verify/
 
 ## What it is
 QorTime produces a **signed Madden end-of-game receipt**: final score, teams, how the final was decided, and the evidence chain, signed with Ed25519. Anyone can drop the receipt into the public verify page and get **VERIFIED / PARTIAL / FAIL**. Change one number and it fails.

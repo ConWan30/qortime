@@ -47,7 +47,7 @@
 
 2 (Oct 15): Tested the score reader on 236 hand-labeled Madden 27 frames. Wrong reads: 0. When it's unsure, it refuses instead of guessing. A missed read is fine. A wrong one isn't.
 
-3 (Oct 16): Drop a QorTime receipt into the verify page and get VERIFIED, PARTIAL or FAIL. Edit one number in the score and it fails. No account, no trusting us. https://conwan30.github.io/qortime/verify/
+3 (Oct 16): Drop a QorTime receipt into the verify page and get VERIFIED, PARTIAL or FAIL. Edit one number in the score and it fails. No account, no trusting us. https://qortime.com/verify/
 
 4 (Oct 17): How do you prove a person is playing, not a bot? At random moments the referee asks for a pause plus a button pattern. The controller log and the video both have to show it within 600 ms.
 

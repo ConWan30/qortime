@@ -20,7 +20,7 @@ Money matches and ladder games in Madden run on trust. **QorTime** turns a game 
 ## Current state at a glance (2026-10-14)
 | Area | State |
 |---|---|
-| QorTime repo | PRs #1–#9 merged, CI green. Site live: https://conwan30.github.io/qortime/ and verifier at /verify/ |
+| QorTime repo | PRs #1–#9 merged, CI green. Site live: https://qortime.com/ and verifier at /verify/ |
 | Score reader | 236 hand-labeled frames: **0 wrong reads**. Clocks 40 correct / 122 refused / 0 wrong. Red clock 14/16 |
 | QorCap | v0.1.0, v0.2.0, v0.2.1 released. Site: https://conwan30.github.io/qorcap/ |
 | First real test | 2026-10-14 on laptop **MyTurn**: about 14.5 min recorded, 439 segments, verify-bundle OK. Game didn't reach Q4 0:00, so **no signed receipt** yet |

@@ -5,8 +5,8 @@
 
 **Always true in these drafts:**
 
-- Free public verify: https://conwan30.github.io/qortime/verify/
-- Product site: https://conwan30.github.io/qortime/
+- Free public verify: https://qortime.com/verify/
+- Product site: https://qortime.com/
 - Code/spec: https://github.com/ConWan30/qortime
 - Verified Match = $9.99 hosted-referee countersign, **early access / Stripe test mode until business KYC** — not claiming live real-money checkout.
 
@@ -22,8 +22,8 @@ Hi [Name] —
 
 I built **QorTime**: signed end-of-game receipts for console Madden matches. A player-side agent reads the scorebug off a capture card, runs live DualSense challenges, and an independent referee countersigns a rolling hash chain. Anyone can paste the JSON into a browser verifier and get **VERIFIED / PARTIAL / FAIL** (nothing uploaded).
 
-Verify demo: https://conwan30.github.io/qortime/verify/  
-Overview: https://conwan30.github.io/qortime/  
+Verify demo: https://qortime.com/verify/  
+Overview: https://qortime.com/  
 Spec + MIT code: https://github.com/ConWan30/qortime
 
 I noticed [Locked / MatchPoint / TrustBridge] already holds stakes in escrow and resolves score disputes with screenshots / review. A sealed receipt won’t solve account-sharing or collusion (we document those limits), but it can cut “wrong final score” tickets and give mods something deterministic to check.
@@ -37,9 +37,9 @@ https://x.com/ConWanZo · brand https://x.com/QorTimeHQ
 
 ## Variant B — Shorter X / Discord DM (platforms or league admins)
 
-Hey [Name] — quick one. Building **QorTime**: Ed25519 receipts for Madden finals (scorebug + human-on-pad challenges + referee countersign). Public in-browser verify: https://conwan30.github.io/qortime/verify/
+Hey [Name] — quick one. Building **QorTime**: Ed25519 receipts for Madden finals (scorebug + human-on-pad challenges + referee countersign). Public in-browser verify: https://qortime.com/verify/
 
-Figured it might help [escrow disputes / league score arguments]. Verified Match ($9.99 hosted referee) is **early access / test until KYC** — not live paid yet. Open format, MIT. Site: https://conwan30.github.io/qortime/ — open to a 15‑min look if useful.
+Figured it might help [escrow disputes / league score arguments]. Verified Match ($9.99 hosted referee) is **early access / test until KYC** — not live paid yet. Open format, MIT. Site: https://qortime.com/ — open to a 15‑min look if useful.
 
 — Con (@ConWanZo)
 
@@ -55,8 +55,8 @@ I run **QorTime**, a small open tool that seals Madden end-of-game results: capt
 
 For weekly money matchups / KOTH, the useful bit is a shareable verify link after the final whistle instead of screenshot wars in Discord.
 
-- Verify: https://conwan30.github.io/qortime/verify/  
-- Product: https://conwan30.github.io/qortime/  
+- Verify: https://qortime.com/verify/  
+- Product: https://qortime.com/  
 - GitHub: https://github.com/ConWan30/qortime  
 
 **Verified Match** (hosted referee countersign, $9.99) is **coming soon / early access** — Stripe still in test until KYC. No ask to change your broadcast format; would you be open to a sealed demo on one non-critical match?
@@ -73,7 +73,7 @@ Thanks for everything you’ve already built for the Madden money-match communit
 
 Hi [Team] —
 
-**QorTime** produces signed Madden match receipts (open JSON + Ed25519) that anyone can verify offline or at https://conwan30.github.io/qortime/verify/
+**QorTime** produces signed Madden match receipts (open JSON + Ed25519) that anyone can verify offline or at https://qortime.com/verify/
 
 You’re already the system of record for standings/imports. I’m exploring whether commissioners would want an optional “attach receipt / verify URL” on disputed H2H results — not replacing your imports, just evidence when two players disagree.
 

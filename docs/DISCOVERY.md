@@ -1,7 +1,7 @@
 # QorTime — Discovery / Findability Plan
 
 **Date:** 2026-10-15 (CT)  
-**Product:** Signed Madden end-of-game receipts + public verify at https://conwan30.github.io/qortime/  
+**Product:** Signed Madden end-of-game receipts + public verify at https://qortime.com/  
 **Upsell:** Verified Match — $9.99 hosted-referee countersign (**early access / test until Stripe KYC**; do not claim live paid product for real money)
 
 **Constraint:** Research + drafts only. No third-party sends from bots.
@@ -32,7 +32,7 @@ Current site: marketing homepage + `/verify/` only. No pricing, no Verified Matc
 
 **Already present (keep):**
 
-- `<title>`, meta description, canonical `https://conwan30.github.io/qortime/`
+- `<title>`, meta description, canonical `https://qortime.com/`
 - `og:title`, `og:description`, `og:url`, `og:image` → `assets/og.png`
 - `twitter:card` = `summary_large_image`
 
@@ -59,8 +59,8 @@ README already positions QorTime for escrow platforms (Locked, TrustBridge, Arca
 
 ```markdown
 ## Try it
-- Site: https://conwan30.github.io/qortime/
-- Verify in browser: https://conwan30.github.io/qortime/verify/
+- Site: https://qortime.com/
+- Verify in browser: https://qortime.com/verify/
 - **Verified Match** ($9.99 hosted-referee countersign): early access / Stripe test mode until business KYC — not a live paid product yet.
 ```
 
@@ -81,7 +81,7 @@ Also:
 
 > The final whistle, sealed.  
 > QorTime reads the Madden scorebug, logs controller reports from the same session, and seals an Ed25519 receipt a referee co-signs. It does not prove who held the controller, or that the console obeyed that pad. Anyone verifies in-browser — nothing uploaded.  
-> Verify: https://conwan30.github.io/qortime/verify/  
+> Verify: https://qortime.com/verify/  
 > Verified Match (hosted referee countersign, $9.99): **early access / coming soon** until we finish KYC.  
 > Spec + code: github.com/ConWan30/qortime
 
