@@ -66,7 +66,7 @@ Optional, not secrets:
 |---|---|
 | `PORT` | `8080` |
 | `STORE_PATH` | `/data/receipts.json` |
-| `SITE_ORIGIN` | `https://conwan30.github.io/qortime` |
+| `SITE_ORIGIN` | `https://qortime.com` |
 
 Empty template: `services/verified-match/.env.example`.
 
