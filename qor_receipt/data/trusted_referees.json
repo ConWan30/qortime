@@ -2,7 +2,7 @@
   "schema": "qortime-trusted-referees/v1",
   "version": 2,
   "updated": "2026-10-16",
-  "docs": "https://conwan30.github.io/qortime/verify/",
+  "docs": "https://qortime.com/verify/",
   "rotation": "qortime-v1 is the OFFLINE root (can_delegate): it never runs online. The referee service signs with a short-lived online key certified by a root-signed delegation (receipt referee.delegation); see docs/REFEREE_KEYS.md. Revoked delegations are listed in referee_revocations.json (root-signed). Private keys live only on the operator box, never in git.",
   "referees": [
     {
