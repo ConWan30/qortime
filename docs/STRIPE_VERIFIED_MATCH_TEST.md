@@ -37,7 +37,7 @@ Prefer a **restricted test key** (`rk_test_…`) with write access to Checkout S
 
 ## What shipped
 
-1. **Site CTA** on `site/index.html` (GitHub Pages: https://conwan30.github.io/qortime/). A navy/aqua/gold **Buy Verified Match (test)** button in the hero and in the `#verified-match` section opens the Payment Link above. The label says test. Cancel returns to `/?checkout=cancel#verified-match`.
+1. **Site CTA** on `site/index.html` (GitHub Pages: https://qortime.com/). A navy/aqua/gold **Buy Verified Match (test)** button in the hero and in the `#verified-match` section opens the Payment Link above. The label says test. Cancel returns to `/?checkout=cancel#verified-match`.
 2. **Receipt-tied Checkout** in `services/verified-match/` (Node 22, Stripe Node SDK 23, API `2026-09-30.endive`). `POST /v1/checkout` creates a hosted Checkout Session for `STRIPE_PRICE_ID` with `metadata.receipt_id`, `client_reference_id`, and `payment_intent_data.metadata.receipt_id`. Success URL: `{SITE}/verify/?checkout=success&receipt_id=…&session_id={CHECKOUT_SESSION_ID}`. Dynamic payment methods stay on (`payment_method_types` is not sent). Tax is off (no registration). Adaptive Pricing is enabled.
 3. **Webhook** `POST /v1/webhook` verifies `Stripe-Signature` with `STRIPE_WEBHOOK_SECRET` (5 minute tolerance), then handles:
    - `checkout.session.completed`
