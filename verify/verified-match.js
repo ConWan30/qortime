@@ -6,7 +6,8 @@ export const VERIFIED_MATCH = {
   productId: "prod_VRlRQfOgasBJJj",
   priceId: "price_1UQruXCepyIJsHZulKEdcVkX",
   paymentLinkId: "plink_1UQrueCepyIJsHZuXcqSnjnH",
-  paymentLinkUrl: "https://buy.stripe.com/test_3cI4gy7he9Uuarqczl00000",
+  // Payment Link paused until KYC; not rendered on the site. Test link lives in docs/STRIPE_VERIFIED_MATCH_TEST.md.
+  paymentLinkUrl: "",
   apiBase: "https://qortime-verified-match-production.up.railway.app",
 };
 
