@@ -66,7 +66,7 @@ Optional, not secrets:
 |---|---|
 | `PORT` | `8080` |
 | `STORE_PATH` | `/data/receipts.json` |
-| `SITE_ORIGIN` | `https://conwan30.github.io/qortime` |
+| `SITE_ORIGIN` | `https://qortime.com` |
 
 Empty template: `services/verified-match/.env.example`.
 
@@ -75,7 +75,7 @@ Empty template: `services/verified-match/.env.example`.
 | Method | Path | Role |
 |---|---|---|
 | `GET` | `/health` | Liveness. Reports whether key, webhook, and price are configured. Does not echo secrets. |
-| `POST` | `/v1/checkout` | Body `{"receipt_id":"<id>"}`. Response `{"url":"https://checkout.stripe.com/…"}`. CORS allows `https://conwan30.github.io` and localhost. |
+| `POST` | `/v1/checkout` | Body `{"receipt_id":"<id>"}`. Response `{"url":"https://checkout.stripe.com/…"}`. CORS allows `https://qortime.com`, `https://www.qortime.com`, `https://conwan30.github.io`, the `SITE_ORIGIN` host, and localhost. |
 | `POST` | `/v1/webhook` | Stripe webhook. Raw body, `Stripe-Signature` required. |
 | `GET` | `/v1/receipts/:receipt_id` | Public paid lookup. `paid`, `tier` (`verified-match` or null), `mode: "test"`, `livemode: false`. |
 

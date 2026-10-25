@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://conwan30.github.io/qortime/sitemap.xml
+Sitemap: https://qortime.com/sitemap.xml

@@ -250,6 +250,12 @@ test("checkout and receipt routes stay in test mode", async () => {
     });
     assert.equal(created.status, 200);
     assert.equal(created.headers.get("access-control-allow-origin"), "https://conwan30.github.io");
+    for (const origin of ["https://qortime.com", "https://www.qortime.com"]) {
+      const pre = await fetch(`${base}/v1/checkout`, { method: "OPTIONS", headers: { origin } });
+      assert.equal(pre.headers.get("access-control-allow-origin"), origin);
+    }
+    const evil = await fetch(`${base}/v1/checkout`, { method: "OPTIONS", headers: { origin: "https://evil.example" } });
+    assert.equal(evil.headers.get("access-control-allow-origin"), null);
     const createdBody = await created.json();
     assert.equal(createdBody.url, "https://checkout.stripe.com/c/pay/cs_test_mock");
     assert.equal(stripe.created[0].metadata.receipt_id, "match_42");

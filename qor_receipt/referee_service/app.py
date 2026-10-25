@@ -28,7 +28,7 @@ Live helpers (optional, during Start Match):
 Head-to-head challenge links (free, not for betting; qor_receipt/h2h.py; state in $QORTIME_STATE_DIR/h2h):
   POST /v1/h2h  GET /v1/h2h/{id}  POST /v1/h2h/{id}/accept  POST /v1/h2h/{id}/receipts (Bearer player token)
   GET /v1/h2h/{id}/receipts/{sha16}
-  QORTIME_CORS_ORIGINS (default https://conwan30.github.io) / QORTIME_RATE_H2H_HOUR (default 300)
+  QORTIME_CORS_ORIGINS (default https://qortime.com,https://www.qortime.com,https://conwan30.github.io) / QORTIME_RATE_H2H_HOUR (default 300)
 """
 from __future__ import annotations
 
@@ -127,9 +127,12 @@ class H2HAccept(BaseModel):
     handle: str | None = None
 
 
+_DEFAULT_CORS = "https://qortime.com,https://www.qortime.com,https://conwan30.github.io"
+
+
 def create_app(referee: Referee | None = None, guard: SubmitGuard | None = None, h2h: H.Store | None = None) -> FastAPI:
     app = FastAPI(title="QorTime official referee", version=VERSION)
-    origins = [o.strip() for o in os.getenv("QORTIME_CORS_ORIGINS", "https://conwan30.github.io").split(",") if o.strip()]
+    origins = [o.strip() for o in os.getenv("QORTIME_CORS_ORIGINS", _DEFAULT_CORS).split(",") if o.strip()]
     app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["GET", "POST"],
                        allow_headers=["Authorization", "Content-Type"], max_age=600)
     if referee is None:

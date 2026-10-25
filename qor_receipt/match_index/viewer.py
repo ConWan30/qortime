@@ -46,7 +46,7 @@ def write_viewer(idx: dict, out: Path, embed: bool = True, name: str = "viewer.h
     return p
 
 
-_ORIGIN = "https://conwan30.github.io/qortime"
+_ORIGIN = "https://qortime.com"
 # 5x7 glyphs, low 5 bits. Used only for the social preview card.
 _GLYPH = {
     " ": (0, 0, 0, 0, 0, 0, 0), "-": (0, 0, 0, 31, 0, 0, 0), ".": (0, 0, 0, 0, 0, 12, 12),
