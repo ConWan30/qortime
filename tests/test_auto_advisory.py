@@ -281,3 +281,19 @@ def test_admin_endpoint_closed_without_token(tmp_path, monkeypatch):
 
 def test_untouched_receipt_module():
     assert R.verify_receipt  # receipt.v0 schema and verify_receipt are not edited by this feature
+
+
+def test_muse_error_carries_only_the_short_api_code():
+    import io
+    import urllib.error
+
+    from qor_receipt.ai_ruling import muse
+
+    e = urllib.error.HTTPError("u", 404, "nf", {}, io.BytesIO(b'{"error":{"code":"Model Not-Found!","message":"secret detail"}}'))
+    assert muse._error_code(e) == {"_error_code": "modelnotfound"}
+    c = muse.MuseClient(api_key="k", transport=lambda *a: (404, {"_error_code": "model_not_found"}))
+    with pytest.raises(muse.MuseError, match=r"^http_404:model_not_found$"):
+        c.chat("s", "u")
+    c = muse.MuseClient(api_key="k", transport=lambda *a: (500, None))
+    with pytest.raises(muse.MuseError, match=r"^http_500$"):
+        c.chat("s", "u")
