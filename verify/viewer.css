@@ -296,3 +296,10 @@ details pre,.raw-out pre{background:#070b13;border:1px solid var(--line);padding
   .seal .sheen{display:none}
   .verdict[data-tone=checking]::after{display:none}
 }
+/* Hackathon: advisory AI explanation panel (verify/ai-ruling-view.js). Info tone only, never gold. */
+#aiSlot:empty{display:none}
+.ai-panel{grid-column:1/-1}
+.ai-panel .ai-text{margin-top:10px;max-width:68ch}
+.ai-panel .ai-text p{margin:0 0 8px;font-size:15px;line-height:1.55;color:var(--ink);overflow-wrap:anywhere}
+.ai-panel .ai-text p:last-child{margin-bottom:0}
+@media (max-width:640px){.ai-panel .ai-text p{font-size:14px}}

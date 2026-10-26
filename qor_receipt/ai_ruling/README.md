@@ -53,5 +53,20 @@ Real Muse Spark output for match 170123 (pinned → VERIFIED, unpinned → PARTI
 errors, returns nothing or trips the guardrail; missing key makes no call; key never in the sidecar, repr, request
 body or error text; guardrail cases; no PII in facts; sidecar shape; CLI writes nothing on failure.
 
-## Not done yet
-- Sidecar signing (Ed25519 like `referee_verdict.json`) and a verifier panel that shows the explanation.
+## Signing (separate AI advisory key)
+`signing.py` signs `ai_ruling.json` with a **separate advisory key** (`key_kind` `qortime-ai-advisory`, allowlist
+`advisory_keys.json`, mirrored for the browser in `verify/ai_advisory_keys.inc.js`). It is never mistakable for a
+referee verdict signature:
+- different field (`advisory_signature` + `advisory_key`, never `signature` / `signatures` / `referee`);
+- different key kind and allowlist; signing refuses a key on the trusted referee list, and checking rejects an
+  advisory key that is a referee key or the receipt's own referee key;
+- bound to the receipt by `receipt_jcs_sha256` = SHA-256(JCS(receipt)), the same value in Python and the browser.
+
+`python -m qor_receipt.ai_ruling RECEIPT --pub HEX --sign-key PATH` writes a signed sidecar. The private key stays on
+the operator box (never in git).
+
+## Verifier panel
+`verify/ai-ruling-view.js` shows an **"AI explanation · advisory"** panel (info tone, never gold) only when the
+advisory signature, the advisory key allowlist, the receipt binding and the echoed status (must equal what
+`verify.js` just computed) all check out. Otherwise nothing is shown. Sources: a dropped `ai_ruling.json`, or the
+`ai_ruling.json` next to a same-origin `?receipt=` URL. Live example: match 170123.

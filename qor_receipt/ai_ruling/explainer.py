@@ -116,6 +116,7 @@ def explain(receipt: dict[str, Any], verify_result: dict[str, Any], *, client: M
         sidecar = {
             "schema": SCHEMA, "label": LABEL, "built_during": BUILT_DURING, "affects_verdict": False,
             "receipt_sha256": receipt_sha256(receipt, receipt_bytes),
+            "receipt_jcs_sha256": hashlib.sha256(canonicalize(receipt)).hexdigest(),
             "verdict_echo": {"status": status, "errors": list(verify_result.get("errors") or []),
                              "partial": list(verify_result.get("partial") or [])},
             "model": reply.model, "explanation": text,

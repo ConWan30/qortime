@@ -244,5 +244,8 @@ def test_cli_fail_closed_writes_nothing(tmp_path, monkeypatch, capsys):
 
 # ---- isolation: the verdict path never imports the AI layer ------------------------------------------------------
 def test_verdict_path_does_not_import_ai_ruling():
-    for p in [ROOT / "qor_receipt" / "receipt.py", ROOT / "qor_receipt" / "cli.py", *(ROOT / "verify").glob("*.js")]:
-        assert "ai_ruling" not in p.read_text(encoding="utf-8"), p
+    # The browser's advisory panel (ai-ruling-view.js) is display-only; the verdict code must not know it exists.
+    verdict_js = [ROOT / "verify" / n for n in ("verify.js", "viewer-ui.js", "receipt-view.js", "auto-pin.js", "frame-bind-status.js")]
+    for p in [ROOT / "qor_receipt" / "receipt.py", ROOT / "qor_receipt" / "cli.py", *verdict_js]:
+        t = p.read_text(encoding="utf-8")
+        assert "ai_ruling" not in t and "ai-ruling" not in t and "advisory_signature" not in t, p

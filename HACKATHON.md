@@ -21,7 +21,8 @@ Each item lives in its own new path and is labeled in the code.
 | What | Where | Meta model |
 |---|---|---|
 | Advisory receipt explainer: receipt + referee results → plain-language explanation, fail-closed, deterministic guardrail, never changes the verdict | `qor_receipt/ai_ruling/`, `tests/test_ai_ruling.py`, `docs/hackathon/` | Muse Spark 1.3 |
-| Verifier auto-pin: shared links pin the referee key automatically only when it is on the built-in trusted list (separate PR) | `verify/auto-pin.js`, `verify/AUTO_PIN.md`, `verify/auto-pin.test.mjs`, a small hook in `verify/index.html` | none |
+| Verifier auto-pin: shared links pin the referee key automatically only when it is on the built-in trusted list  | `verify/auto-pin.js`, `verify/AUTO_PIN.md`, `verify/auto-pin.test.mjs`, a small hook in `verify/index.html` | none |
+| Signed advisory explanation (separate AI advisory key, never a referee key) + verifier panel shown only when signature, receipt binding and echoed status check out | `qor_receipt/ai_ruling/signing.py`, `qor_receipt/ai_ruling/advisory_keys.json`, `verify/ai-ruling-view.js`, `verify/ai_advisory_keys.inc.js`, `verify/ai-ruling.test.mjs`, `site/matches/170123/ai_ruling.json`, small hooks in `verify/index.html` and `verify/viewer.css` | Muse Spark 1.3 |
 | This file | `HACKATHON.md` | |
 
 Measured during the hackathon (box benchmark, not in this repo): Muse Spark 1.3 on the same 134 Madden scorebug crops
