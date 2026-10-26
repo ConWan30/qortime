@@ -424,6 +424,16 @@ def create_app(referee: Referee | None = None, guard: SubmitGuard | None = None,
             raise HTTPException(404, "no advisory file for this receipt (Muse unchecked, no penalty)")
         return Response(raw, media_type="application/json", headers={"Cache-Control": "public, max-age=60"})
 
+    @app.get("/v1/advisory/diag")
+    def advisory_diag(authorization: str | None = Header(default=None)):
+        """Operator-only: which Meta models this service's key can see (free call). No key material is returned."""
+        bearer = (authorization or "").removeprefix("Bearer ").strip()
+        if not admin_token or not hmac.compare_digest(bearer, admin_token):
+            raise HTTPException(401, "admin token required")
+        from qor_receipt.ai_ruling.muse import list_models
+
+        return list_models()
+
     @app.post("/v1/advisory/reprocess")
     def advisory_reprocess(req: AdvisoryReprocess, authorization: str | None = Header(default=None)):
         """Operator-only. Explanation for an already-final receipt (no video on this path). publish=false is a dry run

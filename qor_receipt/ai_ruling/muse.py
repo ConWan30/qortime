@@ -107,3 +107,20 @@ def _error_code(e) -> dict | None:
         return None
     code = "".join(ch for ch in code.lower() if ch.isalnum() or ch == "_")[:40]
     return {"_error_code": code} if code else None
+
+
+def list_models(api_key: str | None = None, *, base_url: str = BASE_URL, timeout_s: float = 15.0) -> dict:
+    """Operator diagnostic: model ids visible to this key (free GET /models). Never returns the key. Never raises."""
+    key = api_key if api_key is not None else api_key_from_env()
+    if not key:
+        return {"status": None, "error_code": "api_key_missing", "models": []}
+    req = urllib.request.Request(base_url.rstrip("/") + "/models", headers={"Authorization": "Bearer " + key})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout_s) as r:
+            data = json.loads(r.read())
+        ids = sorted(str(m.get("id")) for m in (data.get("data") or []) if isinstance(m, dict))
+        return {"status": 200, "models": ids}
+    except urllib.error.HTTPError as e:
+        return {"status": e.code, "error_code": (_error_code(e) or {}).get("_error_code"), "models": []}
+    except Exception as e:  # noqa: BLE001
+        return {"status": None, "error_code": f"network_{type(e).__name__}", "models": []}

@@ -297,3 +297,25 @@ def test_muse_error_carries_only_the_short_api_code():
     c = muse.MuseClient(api_key="k", transport=lambda *a: (500, None))
     with pytest.raises(muse.MuseError, match=r"^http_500$"):
         c.chat("s", "u")
+
+
+def test_diag_needs_admin_and_never_returns_the_key(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from qor_receipt.ai_ruling import muse
+    from qor_receipt.referee_service import app as appmod
+
+    class Ref:
+        key = SoftwareKey()
+        subs: dict = {}
+        log = None
+        delegation = None
+        advisory_hook = None
+    monkeypatch.setenv("QORTIME_AI_ADMIN_TOKEN", "t0k")
+    monkeypatch.setattr(muse, "list_models", lambda: {"status": 200, "models": ["muse-spark-1.3"]})
+    c = TestClient(appmod.create_app(Ref(), advisor=A.AutoAdvisor(Ref(), tmp_path, env=ON, signer=SoftwareKey())))
+    assert c.get("/v1/advisory/diag").status_code == 401
+    assert c.get("/v1/advisory/diag", headers={"Authorization": "Bearer t0k"}).json()["models"] == ["muse-spark-1.3"]
+    assert muse.list_models.__module__  # patched
+    monkeypatch.undo()
+    assert muse.list_models(api_key="")["error_code"] == "api_key_missing"
