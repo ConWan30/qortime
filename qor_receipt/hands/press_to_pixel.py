@@ -33,18 +33,37 @@ MIN_PRESSES = 8
 NO_PRESS_LOOKBACK_MS = 600
 
 
-def input_changes(records: list[dict[str, Any]], stick_delta: int = 40, trig_delta: int = 60) -> list[int]:
-    """Mono ms of every button rising edge or big stick/trigger move (verified, time-sorted records)."""
+def input_changes(records: list[dict[str, Any]], stick_delta: int = 40, trig_delta: int = 60,
+                  window_ms: int = 100) -> list[int]:
+    """Mono ms of every button rising edge, or a stick/trigger move of >= delta within ``window_ms``.
+
+    Sticks move in small steps at the report rate (a Madden kick swing is 255 -> 128 over ~100 ms in steps of 2-20),
+    so moves are measured against a baseline that resets every ``window_ms``, not against the previous report.
+    """
     out: list[int] = []
-    prev: dict[str, Any] | None = None
+    prev_b = None
+    base: dict[str, tuple[int, int]] = {}
     for r in records:
-        if prev is not None:
-            rise = int(r.get("b") or 0) & ~int(prev.get("b") or 0)
-            moved = any(abs(int(r.get(k) or 0) - int(prev.get(k) or 0)) >= stick_delta for k in ("lx", "ly", "rx", "ry"))
-            trig = any(int(r.get(k) or 0) - int(prev.get(k) or 0) >= trig_delta for k in ("l2", "r2"))
-            if rise or moved or trig:
-                out.append(r["t_us"] // 1000)
-        prev = r
+        t = r["t_us"] // 1000
+        hit = False
+        b = int(r.get("b") or 0)
+        if prev_b is not None and b & ~prev_b:
+            hit = True
+        prev_b = b
+        for k, d in (("lx", stick_delta), ("ly", stick_delta), ("rx", stick_delta), ("ry", stick_delta),
+                     ("l2", trig_delta), ("r2", trig_delta)):
+            v = int(r.get(k) or 0)
+            if k not in base:
+                base[k] = (v, t)
+                continue
+            bv, bt = base[k]
+            if abs(v - bv) >= d and (k in ("lx", "ly", "rx", "ry") or v > bv):
+                hit = True
+                base[k] = (v, t)
+            elif t - bt > window_ms:
+                base[k] = (v, t)
+        if hit and (not out or t - out[-1] >= 50):
+            out.append(t)
     return out
 
 
@@ -95,13 +114,65 @@ def score_clip(records: list[dict[str, Any]], actions_ms: list[int], stimuli_ms:
     for a in actions_ms:
         i = bisect.bisect_right(changes, a) - 1
         if i < 0 or a - changes[i] > lo:
-            flags.append({"kind": "no_press", "t_ms": a})
+            flags.append({"kind": "no_press", "t_ms": int(a)})
     for s in stimuli_ms or []:
         j = bisect.bisect_right(changes, s)
         if j < len(changes) and changes[j] - s < MIN_REACTION_MS:
-            flags.append({"kind": "too_fast", "t_ms": s, "reaction_ms": changes[j] - s})
+            flags.append({"kind": "too_fast", "t_ms": int(s), "reaction_ms": int(changes[j] - s)})
     cv = interval_cv(presses_hw(records))
-    out["press_interval_cv"] = None if cv is None else round(cv, 4)
+    out["press_interval_cv_permille"] = None if cv is None else round(cv * 1000)
     if cv is not None and cv < MAX_CV:
-        flags.append({"kind": "machine_regular", "cv": round(cv, 4)})
+        flags.append({"kind": "machine_regular", "cv_permille": round(cv * 1000)})
+    return out
+
+
+def score_match(clips: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Score several clips of one match with ONE pipeline lag (console + capture lag is a session property).
+
+    clips: [{id, records, actions_ms, stimuli_ms}]. Anchors are pooled across clips; if the pool fails the alignment
+    rules, every clip is unscorable and no flag counts.
+    """
+    pooled: list[float] = []
+    per: list[tuple[dict[str, Any], list[int]]] = []
+    for c in clips:
+        ch = input_changes(c["records"])
+        per.append((c, ch))
+        for a in c.get("actions_ms") or []:
+            i = bisect.bisect_right(ch, a) - 1
+            if i >= 0 and 0 <= a - ch[i] <= MAX_REACTION_MS:
+                pooled.append(a - ch[i])
+    why = None
+    lag = resid = None
+    if len(pooled) < MIN_ANCHORS:
+        why = "too_few_anchors"
+    else:
+        lag = statistics.median(pooled)
+        resid = statistics.median(abs(x - lag) for x in pooled)
+        if not PLAUSIBLE_LAG_MS[0] <= lag <= PLAUSIBLE_LAG_MS[1]:
+            why = "implausible_lag"
+        elif resid > MAX_RESID_MS:
+            why = "alignment_residual_too_large"
+    out = []
+    for c, ch in per:
+        row: dict[str, Any] = {"id": str(c.get("id", "clip")), "actions": len(c.get("actions_ms") or []),
+                               "match_anchors": len(pooled), "lag_ms": None if lag is None else round(lag),
+                               "resid_ms": None if resid is None else round(resid), "scorable": why is None, "flags": []}
+        cv = interval_cv(presses_hw(c["records"]))
+        row["press_interval_cv_permille"] = None if cv is None else round(cv * 1000)
+        if why:
+            row["why"] = why
+            out.append(row)
+            continue
+        lo = round(lag) + MAX_RESID_MS + NO_PRESS_LOOKBACK_MS
+        for a in c.get("actions_ms") or []:
+            i = bisect.bisect_right(ch, a) - 1
+            if i < 0 or a - ch[i] > lo:
+                row["flags"].append({"kind": "no_press", "t_ms": int(a)})
+        for st in c.get("stimuli_ms") or []:
+            j = bisect.bisect_right(ch, st)
+            if j < len(ch) and ch[j] - st < MIN_REACTION_MS:
+                row["flags"].append({"kind": "too_fast", "t_ms": int(st), "reaction_ms": int(ch[j] - st)})
+        if cv is not None and cv < MAX_CV:
+            row["flags"].append({"kind": "machine_regular", "cv_permille": round(cv * 1000)})
+        out.append(row)
     return out

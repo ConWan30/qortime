@@ -64,7 +64,7 @@ def test_broken_chain_and_uncommitted_chunk(human):
 def test_track_resamples_to_30fps(human):
     recs, presses, _, _ = human
     tr = build_track(recs, presses[0] - 100, duration_s=1.0)
-    assert len(tr) == 30 and tr[0]["buttons"] == [] and tr[3]["buttons"] == ["CROSS"] and tr[0]["ls"] == [0.0, 0.0]
+    assert len(tr) == 30 and tr[0]["buttons"] == [] and tr[3]["buttons"] == ["CROSS"] and tr[0]["ls"] == [0, 0]
     assert buttons(0b1000_0000_0000_0011) == ["CROSS", "CIRCLE", "RIGHT"]
 
 
@@ -74,7 +74,7 @@ def test_legit_human_clip_has_no_flags(human):
     doc = S.build(receipt, recs, chunks, [clip(presses)])
     c = doc["clips"][0]
     assert doc["inputs_verified"] and c["scorable"] and c["flags"] == [] and doc["cap"] is None
-    assert abs(c["lag_ms"] - 90) <= 4 and c["press_interval_cv"] > 0.2 and len(c["track"]) == 1200
+    assert abs(c["lag_ms"] - 90) <= 4 and c["press_interval_cv_permille"] > 200 and len(c["track"]) == 1200
 
 
 def test_actions_with_no_press_are_flagged(human):
@@ -97,7 +97,7 @@ def test_sub_human_reaction_flagged(human):
 def test_machine_regular_timing_flagged():
     recs, presses = human_session(regular=True)
     c = P.score_clip(recs, [p + 90 for p in presses])
-    assert c["scorable"] and c["press_interval_cv"] < P.MAX_CV and [f["kind"] for f in c["flags"]] == ["machine_regular"]
+    assert c["scorable"] and c["press_interval_cv_permille"] < P.MAX_CV * 1000 and [f["kind"] for f in c["flags"]] == ["machine_regular"]
     assert S.decide_cap([c]) is None   # one flag alone never caps
 
 
@@ -148,6 +148,6 @@ def test_sidecar_never_carries_device_path(human):
 
 
 def test_not_wired_into_verifier():
-    for p in [ROOT / "qor_receipt" / "receipt.py", ROOT / "verify" / "verify.js", ROOT / "verify" / "index.html",
-              ROOT / "verify" / "viewer-ui.js"]:
+    # The page shows a signed hands.json through verify/hands-view.js + the lower-only guard; the verifiers never import it.
+    for p in [ROOT / "qor_receipt" / "receipt.py", ROOT / "verify" / "verify.js", ROOT / "verify" / "viewer-ui.js"]:
         assert "hands" not in p.read_text(encoding="utf-8").lower().replace("handshake", "")

@@ -14,17 +14,19 @@ def buttons(mask: int) -> list[str]:
     return [n for n, b in BUTTON_BITS if mask & (1 << b)]
 
 
-def _stick(v: Any) -> float:
-    return round(max(-1.0, min(1.0, (int(v) - 128) / 127.0)), 3) if isinstance(v, int) else 0.0
+def _stick(v: Any) -> int:
+    """Stick axis in permille, -1000..1000 (centre 128). Integers only: sidecars are JCS-signed (no floats)."""
+    return max(-1000, min(1000, round((int(v) - 128) * 1000 / 127))) if isinstance(v, int) else 0
 
 
-def _trig(v: Any) -> float:
-    return round(max(0.0, min(1.0, int(v) / 255.0)), 3) if isinstance(v, int) else 0.0
+def _trig(v: Any) -> int:
+    """Trigger in permille, 0..1000."""
+    return max(0, min(1000, round(int(v) * 1000 / 255))) if isinstance(v, int) else 0
 
 
 def frame_state(r: dict[str, Any] | None) -> dict[str, Any]:
     if r is None:
-        return {"buttons": [], "ls": [0.0, 0.0], "rs": [0.0, 0.0], "l2": 0.0, "r2": 0.0}
+        return {"buttons": [], "ls": [0, 0], "rs": [0, 0], "l2": 0, "r2": 0}
     return {"buttons": buttons(int(r.get("b") or 0)), "ls": [_stick(r.get("lx")), _stick(r.get("ly"))],
             "rs": [_stick(r.get("rx")), _stick(r.get("ry"))], "l2": _trig(r.get("l2")), "r2": _trig(r.get("r2"))}
 

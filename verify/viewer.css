@@ -307,3 +307,4 @@ details pre,.raw-out pre{background:#070b13;border:1px solid var(--line);padding
 #xcSlot:empty{display:none}
 .xc-panel{grid-column:1/-1}
 .xc-panel .xc-line{margin:10px 0 0;font-size:15px;line-height:1.5;color:var(--ink);overflow-wrap:anywhere}
+#handsSlot:empty{display:none}

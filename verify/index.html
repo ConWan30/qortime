@@ -59,6 +59,7 @@
  <div class="panels" id="panels"></div>
  <div class="panels" id="logSlot" style="margin-top:12px"></div>
  <div class="panels" id="xcSlot" style="margin-top:12px"></div>
+ <div class="panels" id="handsSlot" style="margin-top:12px"></div>
  <div class="panels" id="aiSlot" style="margin-top:12px"></div>
 </section>
 
@@ -93,6 +94,7 @@ import { sha256Hex } from "./verify.js";
 import { runVerify, setIdle, logPanel, observe, describeSidecar } from "./viewer-ui.js";
 import { autoPinFor, AUTO_PIN_NOTE } from "./auto-pin.js";
 import { checkAiRuling, aiRulingPanel } from "./ai-ruling-view.js";
+import { checkHands, applyHands, handsPanel } from "./hands-view.js"; // hackathon: Show Your Hands
 import { checkCrosscheck, applyCrosscheck, crosscheckPanel } from "./score-crosscheck-view.js"; // hackathon: Muse score cross-check // hackathon: advisory AI explanation (HACKATHON.md) // hackathon: verifier auto-pin (verify/AUTO_PIN.md)
 // Verified Match checkout is paused until payments open (business KYC). Keep false: no lookups, no checkout UI.
 const VM_CHECKOUT_LIVE = false;
@@ -116,6 +118,9 @@ let aiRulingUrl = null;    // sibling ai_ruling.json of a same-origin ?receipt= 
 let xcText = null;         // a dropped score_crosscheck.json (hackathon Muse cross-check)
 let xcUrl = null;          // sibling score_crosscheck.json of a same-origin ?receipt= URL
 let xcResult = null;
+let handsText = null;      // a dropped hands.json (hackathon Show Your Hands)
+let handsUrl = null;       // sibling hands.json of a same-origin ?receipt= URL
+let handsResult = null;
 
 function currentReceipt() {
   try { return JSON.parse($("json").value); } catch { return null; }
@@ -209,6 +214,8 @@ async function ingest(files) {
   aiRulingUrl = null;
   const xcf = read.find((x) => x !== receipt && /(^|[\\/])score_crosscheck\.json$/i.test(x.name));
   xcText = xcf ? xcf.text : null; xcUrl = null;
+  const hf = read.find((x) => x !== receipt && /(^|[\\/])hands\.json$/i.test(x.name));
+  handsText = hf ? hf.text : null; handsUrl = null;
   paintAttached();
   if (receipt) { sigStatus = null; $("json").value = receipt.text; }
   if ($("json").value.trim()) await check();
@@ -245,13 +252,18 @@ async function check() {
     let auto = null;
     if (!pin) { auto = await autoPinFor(currentReceipt()); pin = auto.pin; }
     paintAutoPin(auto && auto.pin ? auto : null);
-    xcResult = null;
+    xcResult = null; handsResult = null;
     const adjust = async (r, v0) => {
       let t = xcText;
       if (t == null && xcUrl) { try { const res = await fetch(xcUrl); t = res.ok ? await res.text() : null; } catch { t = null; } }
       let doc = null; if (t != null) { try { doc = JSON.parse(t); } catch { doc = null; } }
       xcResult = doc ? await checkCrosscheck(doc, r) : null;
-      return applyCrosscheck(v0, xcResult);
+      const v1 = applyCrosscheck(v0, xcResult);
+      let ht = handsText;
+      if (ht == null && handsUrl) { try { const res = await fetch(handsUrl); ht = res.ok ? await res.text() : null; } catch { ht = null; } }
+      let hdoc = null; if (ht != null) { try { hdoc = JSON.parse(ht); } catch { hdoc = null; } }
+      handsResult = hdoc ? await checkHands(hdoc, r) : null;
+      return applyHands(v1, handsResult);
     };
     const { receipt, v } = await runVerify(ui, text, pin, { sidecars, adjust });
     sigStatus = v ? v.status : null;
@@ -260,6 +272,7 @@ async function check() {
       $("logSlot").replaceChildren(logPanel(currentReceipt));
       observe($("logSlot").children);
       $("xcSlot").replaceChildren(crosscheckPanel(xcResult)); observe($("xcSlot").children);
+      const hp = handsPanel(handsResult); $("handsSlot").replaceChildren(...(hp ? [hp] : [])); observe($("handsSlot").children);
       paintAiRuling(receipt, v.status);
       const res = receipt.result || {};
       const basis = v.verification_basis === "official-post-hoc-review"
@@ -273,7 +286,7 @@ async function check() {
         `final: away ${res.away_score} @ home ${res.home_score} (Q${res.quarter}), winner ${res.winner}\n` + basis + deleg + "\n" + JSON.stringify(v, null, 2);
     } else {
       $("logSlot").replaceChildren();
-      $("aiSlot").replaceChildren(); $("xcSlot").replaceChildren();
+      $("aiSlot").replaceChildren(); $("xcSlot").replaceChildren(); $("handsSlot").replaceChildren();
       $("out").textContent = "The verifier did not run.";
     }
   } finally {
@@ -295,7 +308,7 @@ $("sample").onclick = async () => {
   try {
     const res = await fetch("./sample-receipt.json");
     if (!res.ok) throw new Error("Demo receipt failed to load");
-    sigStatus = null; aiRulingText = null; aiRulingUrl = null; xcText = null; xcUrl = null;
+    sigStatus = null; aiRulingText = null; aiRulingUrl = null; xcText = null; xcUrl = null; handsText = null; handsUrl = null;
     $("json").value = await res.text();
     await check();
   } catch (err) {
@@ -304,7 +317,7 @@ $("sample").onclick = async () => {
 };
 const stale = () => {
   sigStatus = null;
-  if (checked) { checked = false; setIdle(ui, "The receipt or pinned key changed. Press Verify to check it again."); $("logSlot").replaceChildren(); $("aiSlot").replaceChildren(); $("xcSlot").replaceChildren(); }
+  if (checked) { checked = false; setIdle(ui, "The receipt or pinned key changed. Press Verify to check it again."); $("logSlot").replaceChildren(); $("aiSlot").replaceChildren(); $("xcSlot").replaceChildren(); $("handsSlot").replaceChildren(); }
   watchReceipt();
 };
 $("json").addEventListener("input", stale);
@@ -324,6 +337,7 @@ const preloaded = sameOriginReceipt(q.get("receipt"));
 if (preloaded) {
   aiRulingUrl = new URL("ai_ruling.json", preloaded).href;
   xcUrl = new URL("score_crosscheck.json", preloaded).href;
+  handsUrl = new URL("hands.json", preloaded).href;
   fetch(preloaded).then((res) => {
     if (!res.ok) throw new Error("receipt");
     return res.text();
