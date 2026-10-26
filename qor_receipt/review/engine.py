@@ -141,6 +141,8 @@ class Referee:
         self.subs: dict[str, Submission] = {}
         # pairing_id -> {nonce, roles: {home|away: submission id}, conflicts: [str]}
         self.pairs: dict[str, dict[str, Any]] = {}
+        # HACKATHON: optional post-verdict advisory hook (qor_receipt.ai_ruling.auto.AutoAdvisor.hook). None = off.
+        self.advisory_hook: Callable[[Any], bool] | None = None
 
     # ------------------------------------------------------------ info / live tokens
     def info(self) -> dict[str, Any]:
@@ -691,8 +693,20 @@ class Referee:
         sub.receipt["signatures"]["players"][p["role"]] = {"key_id": kid(p["pubkey"]), "sig": sig}
         sub.verify = R.verify_receipt(sub.receipt, referee_pub=self.key.pubkey_hex)
         sub.state = "complete"
-        self.cleanup_segments(sub)
-        return {"receipt": sub.receipt, "verify": sub.verify}
+        out = {"receipt": sub.receipt, "verify": sub.verify}
+        # HACKATHON (Meta AI Developer Hackathon): optional advisory hook, called only after the verdict is final.
+        # It gets the finished submission, must not raise into us, and can only take over deleting the segments
+        # (it queues a background job that reads them, then deletes them). It never sees or edits ``out``.
+        hook = self.advisory_hook
+        took = False
+        if hook is not None:
+            try:
+                took = bool(hook(sub))
+            except Exception:  # noqa: BLE001  advisory layer must never affect the referee
+                took = False
+        if not took:
+            self.cleanup_segments(sub)
+        return out
 
     def cleanup_segments(self, sub: Submission) -> None:
         shutil.rmtree(sub.dir / "segs", ignore_errors=True)
