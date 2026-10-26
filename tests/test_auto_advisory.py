@@ -444,3 +444,45 @@ def test_advisor_gives_up_after_three_attempts(tmp_path):
         assert st["attempts"] == n
     assert st["retryable"] is False and len(timers) == 2
     assert adv.store.read(A.receipt_hash(RECEIPT), "ai_ruling.json") is None  # no file = Muse unchecked
+
+
+def test_muse_connect_prefers_ipv6_then_falls_back(monkeypatch):
+    import socket as S
+
+    from qor_receipt.ai_ruling import muse
+
+    tried = []
+
+    class FakeSock:
+        def __init__(self, fam, *a):
+            self.family = fam
+
+        def settimeout(self, t):
+            pass
+
+        def connect(self, addr):
+            tried.append(("v6", addr))
+            if addr[0] == "::bad":
+                raise OSError("unreachable")
+
+        def close(self):
+            pass
+
+    v6 = [(S.AF_INET6, S.SOCK_STREAM, 6, "", ("::bad", 443, 0, 0)), (S.AF_INET6, S.SOCK_STREAM, 6, "", ("::1", 443, 0, 0))]
+    monkeypatch.setattr(muse.socket, "getaddrinfo", lambda *a, **k: v6)
+    monkeypatch.setattr(muse.socket, "socket", FakeSock)
+    hint = []
+    s = muse._connect_prefer_ipv6("api.meta.ai", 443, 10, hint)
+    assert hint == ["ipv6"] and s.family == S.AF_INET6 and [a for _, a in tried] == [v6[0][4], v6[1][4]]
+
+    class V4:
+        family = S.AF_INET
+    monkeypatch.setattr(muse.socket, "getaddrinfo", lambda *a, **k: [v6[0]])
+    monkeypatch.setattr(muse.socket, "create_connection", lambda addr, t: V4())
+    hint = []
+    assert muse._connect_prefer_ipv6("api.meta.ai", 443, 10, hint).family == S.AF_INET and hint == ["ipv4"]
+    monkeypatch.setenv("QORTIME_MUSE_PREFER_IPV6", "0")
+    tried.clear()
+    hint = []
+    muse._connect_prefer_ipv6("api.meta.ai", 443, 10, hint)
+    assert tried == [] and hint == ["ipv4"]  # switch off = normal resolver order only

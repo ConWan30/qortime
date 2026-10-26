@@ -6,8 +6,10 @@
 """
 from __future__ import annotations
 
+import http.client
 import json
 import os
+import socket
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -90,7 +92,7 @@ def _urllib_transport(url: str, key: str, body: dict, timeout_s: float) -> tuple
     req = urllib.request.Request(url, data=json.dumps(body).encode(), method="POST",
                                  headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"})
     try:
-        with urllib.request.urlopen(req, timeout=timeout_s) as r:
+        with _open(req, timeout_s) as r:
             return r.status, json.loads(r.read())
     except urllib.error.HTTPError as e:
         return e.code, _error_code(e)
@@ -116,11 +118,73 @@ def list_models(api_key: str | None = None, *, base_url: str = BASE_URL, timeout
         return {"status": None, "error_code": "api_key_missing", "models": []}
     req = urllib.request.Request(base_url.rstrip("/") + "/models", headers={"Authorization": "Bearer " + key})
     try:
-        with urllib.request.urlopen(req, timeout=timeout_s) as r:
+        with _open(req, timeout_s) as r:
             data = json.loads(r.read())
         ids = sorted(str(m.get("id")) for m in (data.get("data") or []) if isinstance(m, dict))
-        return {"status": 200, "models": ids}
+        return {"status": 200, "models": ids, "ip_family": last_ip_family()}
     except urllib.error.HTTPError as e:
         return {"status": e.code, "error_code": (_error_code(e) or {}).get("_error_code"), "models": []}
     except Exception as e:  # noqa: BLE001
         return {"status": None, "error_code": f"network_{type(e).__name__}", "models": []}
+
+
+# HACKATHON (Meta AI Developer Hackathon): prefer IPv6 for Meta Model API calls, IPv4 fallback.
+# Measured 2026-10-26 on Railway (same key, same sfo region): GET /v1/models over Railway's shared IPv4 egress
+# returned an empty catalog, over IPv6 it returned all 9 models. Same provider, same country, same account; this only
+# picks the address family. QORTIME_MUSE_PREFER_IPV6=0 turns it off.
+IPV6_CONNECT_TIMEOUT_S = 5.0
+
+
+def _prefer_ipv6() -> bool:
+    return (os.environ.get("QORTIME_MUSE_PREFER_IPV6") or "1").strip() != "0"
+
+
+def _connect_prefer_ipv6(host: str, port: int, timeout: float | None, family_hint: list | None = None) -> socket.socket:
+    """Try every IPv6 address first (short connect timeout), then the normal resolver order."""
+    if _prefer_ipv6():
+        try:
+            infos = socket.getaddrinfo(host, port, socket.AF_INET6, socket.SOCK_STREAM)
+        except OSError:
+            infos = []
+        for fam, typ, proto, _c, addr in infos:
+            sock = socket.socket(fam, typ, proto)
+            try:
+                sock.settimeout(min(IPV6_CONNECT_TIMEOUT_S, timeout or IPV6_CONNECT_TIMEOUT_S))
+                sock.connect(addr)
+                sock.settimeout(timeout)
+                if family_hint is not None:
+                    family_hint.append("ipv6")
+                return sock
+            except OSError:
+                sock.close()
+    sock = socket.create_connection((host, port), timeout)
+    if family_hint is not None:
+        family_hint.append("ipv6" if sock.family == socket.AF_INET6 else "ipv4")
+    return sock
+
+
+class _V6FirstHTTPSConnection(http.client.HTTPSConnection):
+    def connect(self) -> None:  # same as HTTPSConnection.connect, but with the IPv6-first socket
+        hint: list = []
+        self.sock = _connect_prefer_ipv6(self.host, self.port, self.timeout, hint)
+        _LAST_FAMILY[:] = hint[-1:]
+        if self._tunnel_host:
+            self._tunnel()
+        self.sock = self._context.wrap_socket(self.sock, server_hostname=self._tunnel_host or self.host)
+
+
+class _V6FirstHTTPSHandler(urllib.request.HTTPSHandler):
+    def https_open(self, req):
+        return self.do_open(_V6FirstHTTPSConnection, req, context=self._context)
+
+
+_LAST_FAMILY: list = []
+_OPENER = urllib.request.build_opener(_V6FirstHTTPSHandler())
+
+
+def _open(req, timeout_s: float):
+    return _OPENER.open(req, timeout=timeout_s)
+
+
+def last_ip_family() -> str | None:
+    return _LAST_FAMILY[0] if _LAST_FAMILY else None

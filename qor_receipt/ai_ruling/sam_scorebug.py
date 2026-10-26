@@ -20,7 +20,7 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from qor_receipt.ai_ruling.muse import BASE_URL, api_key_from_env
+from qor_receipt.ai_ruling.muse import BASE_URL, _open, api_key_from_env
 from qor_receipt.jcs import canonicalize
 
 SCHEMA = "qortime.sam_scorebug.v0"
@@ -102,7 +102,7 @@ def _urllib_transport(url: str, key: str, body: dict, timeout_s: float) -> tuple
     req = urllib.request.Request(url, data=json.dumps(body).encode(), method="POST",
                                  headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"})
     try:
-        with urllib.request.urlopen(req, timeout=timeout_s) as r:
+        with _open(req, timeout_s) as r:
             return r.status, json.loads(r.read())
     except urllib.error.HTTPError as e:
         return e.code, None
