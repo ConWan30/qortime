@@ -26,7 +26,7 @@ Money matches and ladder games in Madden run on trust. **QorTime** turns a game 
 | First real test | 2026-10-14 on laptop **MyTurn**: about 14.5 min recorded, 439 segments, verify-bundle OK. Game didn't reach Q4 0:00, so **no signed receipt** yet |
 | v0.2.1 on MyTurn | **Not installed yet** (v0.2.0 is at `C:\QorCap\qorcap-v0.2.0-windows-x64`) |
 | Trust tier | Tops out at **PARTIAL / self-attested**. There is no hosted referee server yet |
-| Meta hackathon | Applied (Pending). Oct 26 – Nov 4 2026, Indie track |
+| Meta hackathon | Accepted; building. Oct 26 – Nov 4 2026 (submissions close Wed Nov 4, 8:00 PM CT), **Startup** track. See `HACKATHON.md` |
 | X | @QorTimeHQ, launch post pinned, posts 2–5 queued. Account "Under review" |
 | Stripe | Test-mode account created. KYC not done. Connector not connected |
 
