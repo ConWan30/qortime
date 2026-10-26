@@ -39,7 +39,7 @@
  <label class="lbl" for="pub">Pinned referee public key (hex). Optional. Leave blank and the key is pinned automatically only if it is on QorTime's built-in trusted list; otherwise the result is at most self-signed.</label>
  <input type="text" id="pub" placeholder="64 hex chars" autocomplete="off" spellcheck="false">
  <div class="attached" id="attached" aria-label="Attached evidence files"></div>
- <div class="go-row"><button type="button" class="btn primary" id="go">Verify</button><small>The verdict comes only from verify.js. Nothing on this page changes it.</small></div>
+ <div class="go-row"><button type="button" class="btn primary" id="go">Verify</button><small>The verdict comes from verify.js. A signed Muse score cross-check can only lower VERIFIED to PARTIAL, never raise it.</small></div>
 </section>
 
 <section id="verdict" class="verdict" data-tone="idle" aria-live="polite" aria-atomic="false">
@@ -58,6 +58,7 @@
  <h2 class="sec">Evidence in this receipt</h2>
  <div class="panels" id="panels"></div>
  <div class="panels" id="logSlot" style="margin-top:12px"></div>
+ <div class="panels" id="xcSlot" style="margin-top:12px"></div>
  <div class="panels" id="aiSlot" style="margin-top:12px"></div>
 </section>
 
@@ -91,7 +92,8 @@ import { apiBase, badgeMatchesReceipt, isValidReceiptId, receiptIdFrom } from ".
 import { sha256Hex } from "./verify.js";
 import { runVerify, setIdle, logPanel, observe, describeSidecar } from "./viewer-ui.js";
 import { autoPinFor, AUTO_PIN_NOTE } from "./auto-pin.js";
-import { checkAiRuling, aiRulingPanel } from "./ai-ruling-view.js"; // hackathon: advisory AI explanation (HACKATHON.md) // hackathon: verifier auto-pin (verify/AUTO_PIN.md)
+import { checkAiRuling, aiRulingPanel } from "./ai-ruling-view.js";
+import { checkCrosscheck, applyCrosscheck, crosscheckPanel } from "./score-crosscheck-view.js"; // hackathon: Muse score cross-check // hackathon: advisory AI explanation (HACKATHON.md) // hackathon: verifier auto-pin (verify/AUTO_PIN.md)
 // Verified Match checkout is paused until payments open (business KYC). Keep false: no lookups, no checkout UI.
 const VM_CHECKOUT_LIVE = false;
 const $ = (id) => document.getElementById(id);
@@ -111,6 +113,9 @@ let sidecars = [];
 let checked = false;
 let aiRulingText = null;   // a dropped ai_ruling.json (hackathon advisory panel)
 let aiRulingUrl = null;    // sibling ai_ruling.json of a same-origin ?receipt= URL
+let xcText = null;         // a dropped score_crosscheck.json (hackathon Muse cross-check)
+let xcUrl = null;          // sibling score_crosscheck.json of a same-origin ?receipt= URL
+let xcResult = null;
 
 function currentReceipt() {
   try { return JSON.parse($("json").value); } catch { return null; }
@@ -202,6 +207,8 @@ async function ingest(files) {
   const ai = read.find((x) => x !== receipt && /(^|[\\/])ai_ruling\.json$/i.test(x.name));
   aiRulingText = ai ? ai.text : null;
   aiRulingUrl = null;
+  const xcf = read.find((x) => x !== receipt && /(^|[\\/])score_crosscheck\.json$/i.test(x.name));
+  xcText = xcf ? xcf.text : null; xcUrl = null;
   paintAttached();
   if (receipt) { sigStatus = null; $("json").value = receipt.text; }
   if ($("json").value.trim()) await check();
@@ -238,12 +245,21 @@ async function check() {
     let auto = null;
     if (!pin) { auto = await autoPinFor(currentReceipt()); pin = auto.pin; }
     paintAutoPin(auto && auto.pin ? auto : null);
-    const { receipt, v } = await runVerify(ui, text, pin, { sidecars });
+    xcResult = null;
+    const adjust = async (r, v0) => {
+      let t = xcText;
+      if (t == null && xcUrl) { try { const res = await fetch(xcUrl); t = res.ok ? await res.text() : null; } catch { t = null; } }
+      let doc = null; if (t != null) { try { doc = JSON.parse(t); } catch { doc = null; } }
+      xcResult = doc ? await checkCrosscheck(doc, r) : null;
+      return applyCrosscheck(v0, xcResult);
+    };
+    const { receipt, v } = await runVerify(ui, text, pin, { sidecars, adjust });
     sigStatus = v ? v.status : null;
     checked = !!v;
     if (v) {
       $("logSlot").replaceChildren(logPanel(currentReceipt));
       observe($("logSlot").children);
+      $("xcSlot").replaceChildren(crosscheckPanel(xcResult)); observe($("xcSlot").children);
       paintAiRuling(receipt, v.status);
       const res = receipt.result || {};
       const basis = v.verification_basis === "official-post-hoc-review"
@@ -257,7 +273,7 @@ async function check() {
         `final: away ${res.away_score} @ home ${res.home_score} (Q${res.quarter}), winner ${res.winner}\n` + basis + deleg + "\n" + JSON.stringify(v, null, 2);
     } else {
       $("logSlot").replaceChildren();
-      $("aiSlot").replaceChildren();
+      $("aiSlot").replaceChildren(); $("xcSlot").replaceChildren();
       $("out").textContent = "The verifier did not run.";
     }
   } finally {
@@ -279,7 +295,7 @@ $("sample").onclick = async () => {
   try {
     const res = await fetch("./sample-receipt.json");
     if (!res.ok) throw new Error("Demo receipt failed to load");
-    sigStatus = null; aiRulingText = null; aiRulingUrl = null;
+    sigStatus = null; aiRulingText = null; aiRulingUrl = null; xcText = null; xcUrl = null;
     $("json").value = await res.text();
     await check();
   } catch (err) {
@@ -288,7 +304,7 @@ $("sample").onclick = async () => {
 };
 const stale = () => {
   sigStatus = null;
-  if (checked) { checked = false; setIdle(ui, "The receipt or pinned key changed. Press Verify to check it again."); $("logSlot").replaceChildren(); $("aiSlot").replaceChildren(); }
+  if (checked) { checked = false; setIdle(ui, "The receipt or pinned key changed. Press Verify to check it again."); $("logSlot").replaceChildren(); $("aiSlot").replaceChildren(); $("xcSlot").replaceChildren(); }
   watchReceipt();
 };
 $("json").addEventListener("input", stale);
@@ -307,6 +323,7 @@ function sameOriginReceipt(raw) {
 const preloaded = sameOriginReceipt(q.get("receipt"));
 if (preloaded) {
   aiRulingUrl = new URL("ai_ruling.json", preloaded).href;
+  xcUrl = new URL("score_crosscheck.json", preloaded).href;
   fetch(preloaded).then((res) => {
     if (!res.ok) throw new Error("receipt");
     return res.text();

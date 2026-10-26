@@ -303,3 +303,7 @@ details pre,.raw-out pre{background:#070b13;border:1px solid var(--line);padding
 .ai-panel .ai-text p{margin:0 0 8px;font-size:15px;line-height:1.55;color:var(--ink);overflow-wrap:anywhere}
 .ai-panel .ai-text p:last-child{margin-bottom:0}
 @media (max-width:640px){.ai-panel .ai-text p{font-size:14px}}
+/* Hackathon: Muse Spark score cross-check panel (verify/score-crosscheck-view.js). Pass/partial tones only. */
+#xcSlot:empty{display:none}
+.xc-panel{grid-column:1/-1}
+.xc-panel .xc-line{margin:10px 0 0;font-size:15px;line-height:1.5;color:var(--ink);overflow-wrap:anywhere}
