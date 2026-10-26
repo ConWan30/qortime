@@ -90,7 +90,7 @@
  <div class="pin">
   <div class="scene-copy">
    <p class="num">02 / challenge</p>
-   <h2 class="split">Prove a human is on the sticks.</h2>
+   <h2 class="split">Referee challenges, answered mid-match.</h2>
    <p>Three referee challenges per match: game start, the second half, and the fourth quarter. The player pauses and enters the pattern. On QorCap rule v2 that pause has to show up within 2.5&nbsp;seconds. A relay under 2.5&nbsp;seconds is not reliably caught.</p><p class="note">QorCap logs the controller since v0.3.0. Since v0.3.11 a challenge only opens when Madden lets you pause: after the kickoff and a play call, never during a kickoff. Receipts with no rule id still use the older 600&nbsp;ms ceiling.</p>
   </div>
   <div class="scene-art">
@@ -163,7 +163,7 @@ receipt_hash</pre>
    <div class="tiers">
     <div class="tier"><b class="v ok">VERIFIED</b><span>Every signature, checkpoint, and challenge holds against a referee key on QorTime’s trusted list.</span></div>
     <div class="tier"><b class="v pa">PARTIAL</b><span>Signatures check out against a trusted QorTime referee, but something is missing (a challenge, motion, …). An untrusted key is not PARTIAL.</span></div>
-    <div class="tier"><b class="v sa">SELF_ATTESTED</b><span>Cryptography holds, but the referee key is not on QorTime’s built-in trusted list (local Start Match key, home-made key, or revoked). Never shown as VERIFIED.</span></div>
+    <div class="tier"><b class="v sa">SELF-SIGNED</b><span>Cryptography holds, but the referee key is not on QorTime’s built-in trusted list (local Start Match key, home-made key, or revoked). Never shown as VERIFIED.</span></div>
     <div class="tier"><b class="v fa">FAIL</b><span>A signature, the chain, or a challenge does not hold.</span></div>
    </div>
   </div>

@@ -62,7 +62,7 @@ body.ready .d1{transition-delay:80ms}body.ready .d2{transition-delay:160ms}body.
 .top{position:sticky;top:0;z-index:30;display:grid;grid-template-columns:minmax(140px,1fr) auto minmax(140px,1fr);align-items:center;gap:12px;
  padding:max(8px,env(safe-area-inset-top)) clamp(10px,2vw,22px) 10px;background:rgba(4,8,15,.94);border-bottom:1px solid var(--line)}
 .brand-row{display:flex;align-items:center;gap:10px;min-width:0}
-.brand{display:inline-flex;align-items:center;min-height:44px;font-weight:750;letter-spacing:.22em;font-size:12px;text-decoration:none;color:var(--ink);white-space:nowrap}.brand span{color:var(--aqua)}
+.brand{display:inline-flex;align-items:center;min-height:44px;font-weight:750;letter-spacing:.22em;font-size:12px;text-decoration:none;color:var(--ink);white-space:nowrap}.brand span{color:var(--aqua)}.brand .mark{flex:none;margin-right:10px;width:24px;height:24px}
 .mid{font:11px var(--mono);color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ticker{position:relative;display:grid;grid-template-columns:1fr auto 1fr;align-items:stretch;min-width:min(440px,70vw);
  background:linear-gradient(#101a2e,#070d18);border:1px solid rgba(140,180,220,.28);border-radius:12px;overflow:hidden}
@@ -272,6 +272,7 @@ h1.finalsum.gold{color:var(--gold)}
  .ctl{position:sticky;bottom:0;z-index:15;background:rgba(4,8,15,.94);margin:8px -10px 0;padding:6px 10px calc(8px + env(safe-area-inset-bottom))}
  .mode .lng{display:none}.legend span:last-child{display:none}
  .burn{width:58%}.burn .meta{display:none}
+ .ov{max-width:calc(42% - 12px)}.mode{font-size:9px;letter-spacing:.06em;text-align:right} /* clip label no longer slides under the locked-score card */
 }
 @media (pointer:coarse){body::before{display:none}}
 .sig{display:grid}
@@ -293,9 +294,9 @@ body.ready .meter i{transform:scaleX(var(--f,0));transition:transform .7s var(--
  .chainClip:not(.booted) .link{opacity:1;transform:none}
  .meter i{transform:scaleX(var(--f,0))}
 }
-</style><link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PGNpcmNsZSBjeD0iMzIiIGN5PSIzMiIgcj0iMjciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzJlZjJmZiIgc3Ryb2tlLXdpZHRoPSI1Ii8+PGcgc3Ryb2tlPSIjMmVmMmZmIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCI+PHBhdGggZD0iTTMyIDl2NU01NSAzMmgtNU0zMiA1NXYtNU05IDMyaDUiLz48L2c+PHBhdGggZD0iTTMyIDMyVjE5IiBzdHJva2U9IiNmZmYiIHN0cm9rZS13aWR0aD0iNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PHBhdGggZD0iTTMyIDMybDE3IDE3IiBzdHJva2U9IiNmZjJlODgiIHN0cm9rZS13aWR0aD0iNiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PGNpcmNsZSBjeD0iMzIiIGN5PSIzMiIgcj0iNSIgZmlsbD0iI2ZmMmU4OCIvPjwvc3ZnPgo="><link rel="canonical" href="https://qortime.com/matches/170123/"><meta name="description" content="local-20261023-170123. Final 10–0. Receipt VERIFIED. Referee-verified."><meta property="og:title" content="QorTime · local-20261023-170123"><meta property="og:description" content="local-20261023-170123. Final 10–0. Receipt VERIFIED. Referee-verified."><meta property="og:url" content="https://qortime.com/matches/170123/"><meta property="og:image" content="https://qortime.com/matches/170123/og.png"><meta property="og:type" content="website"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="QorTime · local-20261023-170123"><meta name="twitter:description" content="local-20261023-170123. Final 10–0. Receipt VERIFIED. Referee-verified."><meta name="twitter:image" content="https://qortime.com/matches/170123/og.png"></head><body>
+</style><link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PGNpcmNsZSBjeD0iMzIiIGN5PSIzMiIgcj0iMjciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzJlZjJmZiIgc3Ryb2tlLXdpZHRoPSI1Ii8+PGcgc3Ryb2tlPSIjMmVmMmZmIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCI+PHBhdGggZD0iTTMyIDl2NU01NSAzMmgtNU0zMiA1NXYtNU05IDMyaDUiLz48L2c+PHBhdGggZD0iTTMyIDMyVjE5IiBzdHJva2U9IiNmZmYiIHN0cm9rZS13aWR0aD0iNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PHBhdGggZD0iTTMyIDMybDE3IDE3IiBzdHJva2U9IiM0ZjdjZmYiIHN0cm9rZS13aWR0aD0iNiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PGNpcmNsZSBjeD0iMzIiIGN5PSIzMiIgcj0iNSIgZmlsbD0iIzRmN2NmZiIvPjwvc3ZnPgo="><link rel="canonical" href="https://qortime.com/matches/170123/"><meta name="description" content="local-20261023-170123. Final 10–0. Receipt VERIFIED. Referee-verified."><meta property="og:title" content="QorTime · local-20261023-170123"><meta property="og:description" content="local-20261023-170123. Final 10–0. Receipt VERIFIED. Referee-verified."><meta property="og:url" content="https://qortime.com/matches/170123/"><meta property="og:image" content="https://qortime.com/matches/170123/og.png"><meta property="og:type" content="website"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="QorTime · local-20261023-170123"><meta name="twitter:description" content="local-20261023-170123. Final 10–0. Receipt VERIFIED. Referee-verified."><meta name="twitter:image" content="https://qortime.com/matches/170123/og.png"></head><body>
 <header class="top enter d0">
- <div class="brand-row"><a class="brand" href="../">QOR<span>TIME</span></a><div class="mid" id="mid"></div></div>
+ <div class="brand-row"><a class="brand" href="../" aria-label="QorTime home"><svg class="mark" viewBox="0 0 64 64" width="24" height="24" aria-hidden="true" focusable="false"><circle cx="32" cy="32" r="27" fill="none" stroke="#2ef2ff" stroke-width="5"/><g stroke="#2ef2ff" stroke-width="3" stroke-linecap="round"><path d="M32 9v5M55 32h-5M32 55v-5M9 32h5"/></g><path d="M32 32V19" stroke="#fff" stroke-width="5" stroke-linecap="round"/><path d="M32 32l17 17" stroke="#4f7cff" stroke-width="6" stroke-linecap="round"/><circle cx="32" cy="32" r="5" fill="#4f7cff"/></svg>QOR<span>TIME</span></a><div class="mid" id="mid"></div></div>
  <div class="ticker" id="ticker" aria-live="polite">
   <div class="side away" id="sideA"><span class="nm">AWAY</span><span class="dg" id="tA"></span><i class="sweep" aria-hidden="true"></i></div>
   <div class="ctr"><span class="q" id="tQ">Q–</span><span class="clk" id="tC">–:––</span><span class="tstate" id="tState"></span></div>
@@ -986,7 +987,7 @@ function paintFinal(){const R=D.result||{},fin=R.final,h=$("#finalSum"),w=$("#fi
  const confirmed=!!(fin&&R.final_confirmed);if(h)h.classList.toggle("gold",VERIFIED&&confirmed);
  let sentence;
  if(confirmed){if(h)h.textContent=`Final ${fin.away}–${fin.home}`;
-  if(w)w.textContent=(VERIFIED?"Referee-verified.":"Confirmed in the recording, not referee-signed.")+(fin.basis?` ${human(fin.basis)}`:"");
+  if(w)w.textContent=(VERIFIED?"Referee-verified.":"Confirmed in the recording, not referee-signed.")+(fin.basis?` ${fin.basis==="end_menu"?"Final read from the end-of-game menu.":human(fin.basis)}`:"");
   sentence=`final ${fin.away}–${fin.home}${VERIFIED?" · referee-verified":" · confirmed in the recording, not referee-signed"}`}
  else{if(h)h.textContent="No confirmed final.";
   if(w)w.textContent=miss?human(miss):"bundle.final is missing, so this page does not state a final score.";
