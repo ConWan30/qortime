@@ -250,5 +250,12 @@ ok(panelOf(livePanels, "input").device === "DualSense Edge (USB)", "match 170123
 const liveCtrl = panelOf(livePanels, "capture").facts.find((row) => row[0] === "controller");
 ok(liveCtrl && liveCtrl[1] === "DualSense Edge (USB)" && !String(liveCtrl[1]).includes("HID#") && !String(liveCtrl[1]).includes("\\"),
    "match 170123 capture panel does not show the instance id");
+// Hackathon (Meta AI Developer Hackathon, Oct 26 - Nov 4 2026): verifier auto-pin checks, run from here so CI picks them up.
+{
+  const { spawnSync } = await import("node:child_process");
+  const { fileURLToPath } = await import("node:url");
+  const run = spawnSync(process.execPath, [fileURLToPath(new URL("./auto-pin.test.mjs", import.meta.url))], { encoding: "utf8" });
+  process.stdout.write(run.stdout || ""); process.stderr.write(run.stderr || "");
+  ok(run.status === 0, "verify/auto-pin.test.mjs passes");
+}
 process.exit(fails ? 1 : 0);
-

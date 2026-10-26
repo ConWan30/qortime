@@ -36,7 +36,7 @@
  </div>
  <label class="lbl" for="json">Receipt JSON. Paste it, choose receipt.json, or drop a bundle's files here. Other files (device_attest.v0.json, score_timeline.json, pairing.json, …) are listed as evidence files.</label>
  <textarea id="json" spellcheck="false" placeholder='{"schema":"qor-receipt/v0", ...}'></textarea>
- <label class="lbl" for="pub">Pinned referee public key (hex). Optional. Leave blank and the result is at most self-signed.</label>
+ <label class="lbl" for="pub">Pinned referee public key (hex). Optional. Leave blank and the key is pinned automatically only if it is on QorTime's built-in trusted list; otherwise the result is at most self-signed.</label>
  <input type="text" id="pub" placeholder="64 hex chars" autocomplete="off" spellcheck="false">
  <div class="attached" id="attached" aria-label="Attached evidence files"></div>
  <div class="go-row"><button type="button" class="btn primary" id="go">Verify</button><small>The verdict comes only from verify.js. Nothing on this page changes it.</small></div>
@@ -89,6 +89,7 @@
 import { apiBase, badgeMatchesReceipt, isValidReceiptId, receiptIdFrom } from "./verified-match.js";
 import { sha256Hex } from "./verify.js";
 import { runVerify, setIdle, logPanel, observe, describeSidecar } from "./viewer-ui.js";
+import { autoPinFor, AUTO_PIN_NOTE } from "./auto-pin.js"; // hackathon: verifier auto-pin (verify/AUTO_PIN.md)
 // Verified Match checkout is paused until payments open (business KYC). Keep false: no lookups, no checkout UI.
 const VM_CHECKOUT_LIVE = false;
 const $ = (id) => document.getElementById(id);
@@ -199,11 +200,23 @@ async function ingest(files) {
   if ($("json").value.trim()) await check();
 }
 
+function paintAutoPin(auto) {
+  let n = $("autoPinNote");
+  if (!auto) { if (n) n.remove(); return; }
+  if (!n) { n = document.createElement("p"); n.id = "autoPinNote"; n.className = "pnote"; $("pub").parentNode.insertBefore(n, $("pub").nextSibling); }
+  n.textContent = `${AUTO_PIN_NOTE} (${auto.source === "delegation" ? "online key with a valid delegation from a trusted root" : "trusted key"}). It only fills the pin; the verdict still comes from verify.js.`;
+}
+
 async function check() {
   $("go").disabled = true; $("go").setAttribute("aria-busy", "true");
   const text = $("json").value;
   try {
-    const { receipt, v } = await runVerify(ui, text, $("pub").value.trim() || null, { sidecars });
+    // Hackathon auto-pin: only when the pin box is empty, and only for a key on the built-in trusted list.
+    let pin = $("pub").value.trim() || null;
+    let auto = null;
+    if (!pin) { auto = await autoPinFor(currentReceipt()); pin = auto.pin; }
+    paintAutoPin(auto && auto.pin ? auto : null);
+    const { receipt, v } = await runVerify(ui, text, pin, { sidecars });
     sigStatus = v ? v.status : null;
     checked = !!v;
     if (v) {
