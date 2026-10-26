@@ -1,0 +1,31 @@
+{
+ "schema": "qortime.ai_ruling.v0",
+ "label": "ADVISORY. AI-written explanation of the QorTime referee's results. It does not decide or change the verdict.",
+ "built_during": "Meta AI Developer Hackathon, Oct 26 - Nov 4 2026",
+ "affects_verdict": false,
+ "receipt_sha256": "69480a406d1621409cf03dc98eadcb9020c384a368d9fb0fcab63b61c9f12bb0",
+ "verdict_echo": {
+  "status": "VERIFIED",
+  "errors": [],
+  "partial": []
+ },
+ "model": "muse-spark-1.3",
+ "explanation": "STATUS: VERIFIED\n\nThis Madden27 single match on PS5 was recorded by the capture client and checked by referee qortime-online-s2.\n\nPassed: bundle structure, capture chain, challenges, final re-read, input integrity, motion and video bytes. The end-of-game menu re-read matches the claimed final: away wins 10 to 0 in quarter 4, final confirmed. No errors and nothing missing.\n\nVideo was spot-checked: 166 of 525 segments checked. Controller input advisory is advisory only, not proof of a human player.\n\nNot proven: who was holding the controller, that the laptop countersignatures were made live, that footage was not edited before hashing, and content of segments not received.",
+ "guardrail": {
+  "passed": true,
+  "rules": [
+   "status_stated_exactly",
+   "no_attested",
+   "no_hardware_claim",
+   "no_coaching",
+   "no_identity_claim",
+   "max_chars"
+  ]
+ },
+ "facts_sha256": "67158a85f416ccb01497ad9ddce964c10998a214ffdc372bd5043f5c401c0343",
+ "usage": {
+  "prompt_tokens": 692,
+  "completion_tokens": 594,
+  "reasoning_tokens": 438
+ }
+}

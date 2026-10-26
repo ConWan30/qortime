@@ -50,6 +50,11 @@ Two checkpoints are too far apart, and two show clock skew. The last scorebug re
 
 Browser verifier (no account, nothing uploaded): <https://qortime.com/verify/>
 
+## Meta AI Developer Hackathon (Oct 26 – Nov 4 2026)
+QorTime is in the Startup track. Pre-existing work vs hackathon work is listed in [`HACKATHON.md`](HACKATHON.md).
+Hackathon code lives in new, labeled paths (for example `qor_receipt/ai_ruling/`, an advisory Muse Spark explainer
+that never changes a verdict).
+
 ## How it works
 
 ```mermaid

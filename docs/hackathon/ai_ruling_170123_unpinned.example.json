@@ -1,0 +1,33 @@
+{
+ "schema": "qortime.ai_ruling.v0",
+ "label": "ADVISORY. AI-written explanation of the QorTime referee's results. It does not decide or change the verdict.",
+ "built_during": "Meta AI Developer Hackathon, Oct 26 - Nov 4 2026",
+ "affects_verdict": false,
+ "receipt_sha256": "69480a406d1621409cf03dc98eadcb9020c384a368d9fb0fcab63b61c9f12bb0",
+ "verdict_echo": {
+  "status": "PARTIAL",
+  "errors": [],
+  "partial": [
+   "referee_key_not_pinned"
+  ]
+ },
+ "model": "muse-spark-1.3",
+ "explanation": "STATUS: PARTIAL\n\nThis Madden27 PS5 single match claim is away 10, home 0, final in quarter 4, read from the end menu.\n\nWhat passed: bundle structure, capture chain, challenges, final re-read, input integrity, motion and video bytes. The referee re-read of the end menu matches the claimed final. Controller data is advisory only, not proof of a human player.\n\nWhat is missing: referee key not pinned, even though the referee is trusted.\n\nWhat is NOT proven: who was holding the controller, that the laptop signatures were made live, that footage was not edited before hashing, and content of unchecked video. Only 166 of 525 segments were checked in spot-check mode.",
+ "guardrail": {
+  "passed": true,
+  "rules": [
+   "status_stated_exactly",
+   "no_attested",
+   "no_hardware_claim",
+   "no_coaching",
+   "no_identity_claim",
+   "max_chars"
+  ]
+ },
+ "facts_sha256": "ef4e8e7595de48dc19392241f3d221f4d4f530ba8acd674023f9302567058563",
+ "usage": {
+  "prompt_tokens": 699,
+  "completion_tokens": 349,
+  "reasoning_tokens": 193
+ }
+}
