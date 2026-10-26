@@ -70,3 +70,17 @@ the operator box (never in git).
 advisory signature, the advisory key allowlist, the receipt binding and the echoed status (must equal what
 `verify.js` just computed) all check out. Otherwise nothing is shown. Sources: a dropped `ai_ruling.json`, or the
 `ai_ruling.json` next to a same-origin `?receipt=` URL. Live example: match 170123.
+
+## SAM 3.1 scorebug check (`sam_scorebug.py`, lower-only, NOT wired in)
+Asks Meta SAM 3.1 for a "scoreboard" on frames that should be live play and checks the box sits where the game's
+scorebug profile says (madden27_standard: full-width bottom strip). Output: `sam_scorebug.json`
+(`qortime.sam_scorebug.v0`, `affects_verdict: "lower_only"`, `max_cap: "PARTIAL"`).
+- `cap` is only ever `"PARTIAL"` or `null`; `apply_cap` can only turn VERIFIED into PARTIAL. It never raises a
+  status and never FAILs a match. API errors or a missing key mark frames `unchecked`, which never count against
+  anyone. A cap needs >= 2 bad frames and a strict majority of checked frames.
+- Highlight clips carry QorCap's burned-in "SCOREBUG LOCK" label top-left; `mask_burn_in` blanks it first,
+  otherwise SAM boxes that label instead of the game's scorebug.
+- **Measured (Oct 26, public 170123 clip frames, 1280x720, label masked): SAM found the real scorebug on 4 of 6
+  legit frames** (both `hl02` frames missed it with "scoreboard"; "score banner" and "scorebug" were no better).
+  That miss rate is too high for a status signal, so this is **not** connected to `verify_receipt`, `verify.js` or
+  any page.
