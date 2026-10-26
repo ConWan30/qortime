@@ -353,6 +353,12 @@ a verdict.
   enforced by a worst-case reservation before any call: explanation $0.011 + at most 12 reads × $0.0025),
   `QORTIME_AI_WEEKLY_USD_CAP` (default 5, rolling 7 days, ledger `advisory/spend.jsonl`), `QORTIME_AI_TIMEOUT_S`
   (default 240; nothing is written after the deadline).
+- **Retry:** `status.json` says `reason: ok` only when nothing is left to retry. If Muse was unreachable or errored for
+  a part that is still missing, it says `reason: muse_failed`, lists `failed_parts`, and `retryable: true` while attempts
+  remain. The worker retries after 2 min and then 10 min (`attempts` ≤ 3 in total), redoing only the missing file, with
+  the per-match cap covering all attempts together (`cost_micro_usd` is cumulative) and the weekly cap still checked.
+  Pending retries live in memory (max 16, scorebug frames included); a restart drops them, which leaves "Muse unchecked".
+  `POST /v1/advisory/reprocess` with `publish:true` can also retry the explanation while attempts remain.
 - **Secrets (Railway variables only, never in git or logs):** `META_API_KEY`, `QORTIME_AI_ADVISORY_SEED` (AI advisory key,
   key_id `2d5de84a3dcdeaec`; refused if it is ever a referee key). `QORTIME_AI_ADMIN_TOKEN` enables
   `POST /v1/advisory/reprocess {receipt, publish}`: explanation only for an already-final receipt, `publish:false` is a

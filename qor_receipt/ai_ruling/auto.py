@@ -54,6 +54,10 @@ MAX_READS = 12
 LOCK_OFFSETS_MS = (1_000, 2_500)
 MAX_LOCKS = 4
 FINAL_FRAMES = 3
+MAX_ATTEMPTS = 3                      # total, first try included
+RETRY_BACKOFF_S = (120, 600)          # wait before attempt 2 and attempt 3
+MAX_PENDING_RETRIES = 16              # retries held in memory (frames included); more = dropped, no file
+RETRYABLE = ("muse_failed", "timeout")
 _SHA_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -259,23 +263,61 @@ def locks_from_bundle(b, rd, have: set[int], receipt: dict[str, Any], *, wmm: in
 
 
 # ------------------------------------------------------------------ one job
+def _transient(reason: str | None) -> bool:
+    """Muse was unreachable / errored (worth retrying), as opposed to a guardrail refusal or a missing input."""
+    r = str(reason or "")
+    return r.startswith(("api_error", "error:", "muse_unavailable", "network"))
+
+
+def _xc_transient(xc: dict[str, Any]) -> bool:
+    """No lock could be checked and at least one read failed because Muse was unavailable."""
+    if int(xc.get("checked") or 0) > 0:
+        return False
+    for row in xc.get("locks") or []:
+        if _transient(row.get("reason")):
+            return True
+        if any(_transient(r.get("reason")) for r in row.get("reads") or []):
+            return True
+    return False
+
+
 def run_job(receipt: dict[str, Any], verify_result: dict[str, Any], locks: list[dict[str, Any]], *, signer, store: Store,
             ledger: Ledger, caps: Caps, explain_fn: Callable | None = None, crosscheck_fn: Callable | None = None,
-            deadline: float | None = None, publish: bool = True, kind: str = "auto") -> dict[str, Any]:
-    """Explain + cross-check one final receipt. Returns a status dict. Never raises. Inputs are deep-copied."""
+            deadline: float | None = None, publish: bool = True, kind: str = "auto",
+            prev: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Explain + cross-check one final receipt. Returns a status dict. Never raises. Inputs are deep-copied.
+
+    status.json ``reason``: ``ok`` (nothing left to retry), ``muse_failed`` (Muse unreachable/errored for a part that
+    is still missing; ``retryable`` says whether another attempt is allowed), or a cap/timeout/config reason.
+    A retry (``prev`` = the previous status) only redoes the part whose file is still missing, and the per-match cap
+    covers ALL attempts together (``cost_micro_usd`` is cumulative).
+    """
     from qor_receipt.ai_ruling.signing import sign_ruling
 
     receipt = copy.deepcopy(receipt)
     verify_result = copy.deepcopy(verify_result)
     sha = receipt_hash(receipt)
-    st: dict[str, Any] = {"receipt_jcs_sha256": sha, "kind": kind, "files": [], "label": "HACKATHON advisory only",
-                          "verdict_echo": verify_result.get("status")}
-
+    prev = prev or {}
+    have_files = [f for f in (prev.get("files") or []) if f in NAMES and store.read(sha, f) is not None] if publish else []
+    attempt = int(prev.get("attempts") or 0) + 1
+    spent_before = int(prev.get("cost_micro_usd") or 0)
+    st: dict[str, Any] = {"receipt_jcs_sha256": sha, "kind": kind, "files": list(have_files),
+                          "label": "HACKATHON advisory only", "verdict_echo": verify_result.get("status"),
+                          "attempts": attempt, "max_attempts": MAX_ATTEMPTS}
+    for k in ("explain", "crosscheck"):
+        if k in prev:
+            st[k] = prev[k]
     cost = [0]
+    need_ai = "ai_ruling.json" not in have_files
+    need_xc = "score_crosscheck.json" not in have_files and bool(locks)
+    failed: list[str] = []
 
     def finish(reason: str) -> dict[str, Any]:
         st["reason"] = reason
-        st["cost_micro_usd"] = cost[0]
+        st["cost_micro_usd"] = spent_before + cost[0]
+        st["retryable"] = reason in RETRYABLE and attempt < MAX_ATTEMPTS
+        if failed:
+            st["failed_parts"] = failed
         st["done_ms"] = int(time.time() * 1000)
         if publish:
             try:
@@ -291,9 +333,15 @@ def run_job(receipt: dict[str, Any], verify_result: dict[str, Any], locks: list[
         return finish("disabled")
     if signer is None:
         return finish("advisory_key_missing")
-    reserve = min(caps.match_micro, EXPLAIN_EST_MICRO + caps.max_reads() * READ_EST_MICRO)
-    if reserve < EXPLAIN_EST_MICRO:
-        return finish("match_cap_too_low")
+    if not need_ai and not need_xc:
+        return finish("ok")
+    left = caps.match_micro - spent_before
+    reads_left = max(0, min(MAX_READS, (left - (EXPLAIN_EST_MICRO if need_ai else 0)) // READ_EST_MICRO))
+    if need_ai and left < EXPLAIN_EST_MICRO:
+        return finish("match_cap_too_low" if not spent_before else "match_cap")
+    if not need_ai and reads_left <= 0:
+        return finish("match_cap")
+    reserve = (EXPLAIN_EST_MICRO if need_ai else 0) + (reads_left * READ_EST_MICRO if need_xc else 0)
     if not ledger.reserve(reserve, caps.weekly_micro):
         return finish("weekly_cap")
     try:
@@ -301,35 +349,40 @@ def run_job(receipt: dict[str, Any], verify_result: dict[str, Any], locks: list[
             from qor_receipt.ai_ruling.explainer import explain as explain_fn
         if crosscheck_fn is None:
             from qor_receipt.ai_ruling.score_crosscheck import crosscheck as crosscheck_fn
-        er = explain_fn(receipt, verify_result)
-        usage = (getattr(er, "sidecar", None) or {}).get("usage") or {}
-        cost[0] += _usage_micro(usage) if er.ok else 0
-        st["explain"] = "ok" if er.ok else f"none:{er.reason}"
-        if er.ok and not late():
-            doc = sign_ruling(er.sidecar, signer)
-            if publish:
-                store.write(sha, "ai_ruling.json", doc)
-                st["files"].append("ai_ruling.json")
-            else:
-                st["preview_ai_ruling"] = doc
-        if late():
-            return finish("timeout")
-        mr = caps.max_reads()
-        if locks and mr > 0:
-            xc = crosscheck_fn(receipt, locks, max_reads=mr)
+        if need_ai:
+            er = explain_fn(receipt, verify_result)
+            usage = (getattr(er, "sidecar", None) or {}).get("usage") or {}
+            cost[0] += _usage_micro(usage) if er.ok else 0
+            st["explain"] = "ok" if er.ok else f"none:{er.reason}"
+            if er.ok and not late():
+                doc = sign_ruling(er.sidecar, signer)
+                if publish:
+                    store.write(sha, "ai_ruling.json", doc)
+                    st["files"].append("ai_ruling.json")
+                else:
+                    st["preview_ai_ruling"] = doc
+            elif not er.ok and _transient(er.reason):
+                failed.append("ai_ruling")
+            if late():
+                return finish("timeout")
+        if need_xc and reads_left > 0:
+            xc = crosscheck_fn(receipt, locks, max_reads=reads_left)
             cost[0] += int(xc.get("cost_micro_usd") or 0)
             st["crosscheck"] = {"checked": xc.get("checked"), "agree": xc.get("agree"), "disagree": xc.get("disagree"),
                                 "reads": xc.get("reads")}
-            if int(xc.get("checked") or 0) > 0 and not late() and publish:
+            if late():
+                return finish("timeout")
+            if int(xc.get("checked") or 0) > 0 and publish:
                 store.write(sha, "score_crosscheck.json", sign_ruling(xc, signer))
                 st["files"].append("score_crosscheck.json")
-            elif late():
-                return finish("timeout")
-        else:
-            st["crosscheck"] = {"checked": 0, "reason": "no_frames" if not locks else "no_read_budget"}
-        return finish("ok")
+            elif _xc_transient(xc):
+                failed.append("score_crosscheck")
+        elif not locks and "crosscheck" not in st:
+            st["crosscheck"] = {"checked": 0, "reason": "no_frames"}
+        return finish("muse_failed" if failed else "ok")
     except Exception as e:  # noqa: BLE001  never take anything down
-        return finish(f"error:{type(e).__name__}")
+        failed.append(f"error:{type(e).__name__}")
+        return finish("muse_failed")
     finally:
         ledger.settle(reserve, cost[0], sha, kind)
 
@@ -362,10 +415,16 @@ def signer_from_env(env: dict[str, str] | None = None):
 # ------------------------------------------------------------------ background worker wired into the referee
 class AutoAdvisor:
     """One daemon worker, small bounded queue. ``hook(sub)`` is called by Referee.add_player_signature after the
-    receipt is final; it returns True only when it took ownership of deleting the submission's segments."""
+    receipt is final; it returns True only when it took ownership of deleting the submission's segments.
+
+    Retry: a job whose status is retryable (Muse unreachable/errored, or timeout) is re-queued after
+    ``RETRY_BACKOFF_S`` (2 min, then 10 min), at most ``MAX_ATTEMPTS`` attempts in total, always inside the per-match
+    and weekly caps. The retry keeps the already-extracted scorebug frames in memory (segments are deleted after the
+    first attempt); a restart drops pending retries, which just leaves "Muse unchecked"."""
 
     def __init__(self, referee, state_dir: str | Path, *, env: dict[str, str] | None = None, signer=None,
-                 explain_fn=None, crosscheck_fn=None, locks_fn=None, maxsize: int = 4) -> None:
+                 explain_fn=None, crosscheck_fn=None, locks_fn=None, maxsize: int = 4,
+                 backoff_s=RETRY_BACKOFF_S, timer=None) -> None:
         self.ref = referee
         self.env = os.environ if env is None else env
         self.caps = Caps(self.env)
@@ -378,10 +437,15 @@ class AutoAdvisor:
         self.q: queue.Queue = queue.Queue(maxsize=maxsize)
         self.last: dict[str, Any] | None = None
         self._t: threading.Thread | None = None
+        self.backoff_s = tuple(backoff_s)
+        self._timer = timer or _start_timer
+        self._retry_lock = threading.Lock()
+        self.pending_retries = 0
 
     def public(self) -> dict[str, Any]:
         return {**self.caps.public(), "advisory_key_id": getattr(self.signer, "key_id", None),
-                "queue": self.q.qsize(), "week_spent_usd": self.ledger.week_spent() / 1e6,
+                "queue": self.q.qsize(), "pending_retries": self.pending_retries, "max_attempts": MAX_ATTEMPTS,
+                "retry_backoff_s": list(self.backoff_s), "week_spent_usd": self.ledger.week_spent() / 1e6,
                 "label": "HACKATHON: advisory only, never changes a verdict"}
 
     def hook(self, sub) -> bool:
@@ -413,40 +477,78 @@ class AutoAdvisor:
                 self.q.task_done()
 
     def process(self, job: dict[str, Any]) -> dict[str, Any]:
-        sub = job["sub"]
         deadline = time.monotonic() + self.caps.timeout_s
-        locks: list[dict[str, Any]] = []
-        try:
-            sha = receipt_hash(job["receipt"])
-            prev = self.store.status(sha)
-            if prev and prev.get("reason") == "ok":
-                self.last = prev
-                return prev  # idempotent: already done for this exact receipt, no new spend
+        sha = receipt_hash(job["receipt"])
+        prev = self.store.status(sha)
+        if prev and (prev.get("reason") == "ok" or not prev.get("retryable")) and "locks" not in job:
+            self.last = prev
+            self._cleanup(job)
+            return prev  # idempotent: done (or out of attempts) for this exact receipt, no new spend
+        if "locks" not in job:
+            locks: list[dict[str, Any]] = []
             try:
+                sub = job["sub"]
                 b = sub.bundle
                 have = set(int(k) for k in (sub.received or {}).keys())
                 locks = self.locks_fn(b, self.ref._read_seg(sub), have, job["receipt"], wmm=self.ref._wall_minus_mono(b),
                                       tail_ms=self.ref.tail_ms, deadline=deadline)
             except Exception:  # noqa: BLE001
                 locks = []
-        finally:
+            finally:
+                self._cleanup(job)
+            job = {"receipt": job["receipt"], "verify": job["verify"], "locks": locks}
+        self.last = run_job(job["receipt"], job["verify"], job["locks"], signer=self.signer, store=self.store,
+                            ledger=self.ledger, caps=self.caps, explain_fn=self.explain_fn,
+                            crosscheck_fn=self.crosscheck_fn, deadline=deadline, prev=prev if "locks" in job else None)
+        if self.last.get("retryable"):
+            self._schedule_retry(job, int(self.last.get("attempts") or 1))
+        return self.last
+
+    def _cleanup(self, job: dict[str, Any]) -> None:
+        sub = job.get("sub")
+        if sub is not None:
             try:
                 self.ref.cleanup_segments(sub)
             except Exception:  # noqa: BLE001
                 pass
-        self.last = run_job(job["receipt"], job["verify"], locks, signer=self.signer, store=self.store, ledger=self.ledger,
-                            caps=self.caps, explain_fn=self.explain_fn, crosscheck_fn=self.crosscheck_fn,
-                            deadline=deadline)
-        return self.last
+
+    def _schedule_retry(self, job: dict[str, Any], attempts_done: int) -> bool:
+        if attempts_done >= MAX_ATTEMPTS:
+            return False
+        delay = self.backoff_s[min(attempts_done - 1, len(self.backoff_s) - 1)]
+        with self._retry_lock:
+            if self.pending_retries >= MAX_PENDING_RETRIES:
+                return False
+            self.pending_retries += 1
+
+        def fire():
+            with self._retry_lock:
+                self.pending_retries -= 1
+            try:
+                self.q.put_nowait(job)
+                self._ensure_thread()
+            except Exception:  # noqa: BLE001  full queue = this retry is dropped (Muse unchecked)
+                pass
+        self._timer(delay, fire)
+        return True
 
     def dry_run(self, receipt: dict[str, Any], verify_result: dict[str, Any], *, publish: bool) -> dict[str, Any]:
         """Explanation only (no video on this path). publish=False writes nothing (ledger still records spend).
-        Idempotent: a receipt that already has an ok status is returned as-is with no new call."""
+        Idempotent: a receipt that already has its ai_ruling.json is returned as-is with no new call. A failed one
+        can be retried here while attempts remain (same per-match cap across attempts)."""
         sha = receipt_hash(receipt)
         prev = self.store.status(sha)
-        if prev and prev.get("reason") == "ok" and "ai_ruling.json" in (prev.get("files") or []):
+        if prev and "ai_ruling.json" in (prev.get("files") or []):
             return {**prev, "idempotent": True}
+        if prev and publish and int(prev.get("attempts") or 0) >= MAX_ATTEMPTS:
+            return {**prev, "idempotent": True, "note": "max attempts reached"}
         deadline = time.monotonic() + self.caps.timeout_s
         return run_job(receipt, verify_result, [], signer=self.signer, store=self.store, ledger=self.ledger, caps=self.caps,
                        explain_fn=self.explain_fn, crosscheck_fn=self.crosscheck_fn, deadline=deadline, publish=publish,
-                       kind="dry-run" if not publish else "reprocess")
+                       kind="dry-run" if not publish else "reprocess", prev=prev if publish else None)
+
+
+def _start_timer(delay_s: float, fn: Callable[[], None]) -> None:
+    t = threading.Timer(delay_s, fn)
+    t.daemon = True
+    t.start()

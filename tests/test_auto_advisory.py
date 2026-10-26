@@ -118,7 +118,8 @@ def test_missing_key_or_errors_or_timeout_publish_nothing(tmp_path):
     st, store, *_ = job(tmp_path / "a", signer=None)
     assert st["reason"] == "advisory_key_missing"
     st, store, *_ = job(tmp_path / "b", explain=FakeExplain(boom=True))
-    assert st["reason"].startswith("error:") and store.read(A.receipt_hash(RECEIPT), "ai_ruling.json") is None
+    assert st["reason"] == "muse_failed" and st["retryable"] and st["failed_parts"][0].startswith("error:")
+    assert store.read(A.receipt_hash(RECEIPT), "ai_ruling.json") is None
     st, store, *_ = job(tmp_path / "c", explain=FakeExplain(ok=False), xc=fake_xc(checked=0))
     assert st["files"] == [] and st["explain"].startswith("none:")
     st, store, *_ = job(tmp_path / "d", deadline=time.monotonic() - 1)
@@ -319,3 +320,127 @@ def test_diag_needs_admin_and_never_returns_the_key(tmp_path, monkeypatch):
     assert muse.list_models.__module__  # patched
     monkeypatch.undo()
     assert muse.list_models(api_key="")["error_code"] == "api_key_missing"
+
+
+class FlakyExplain(FakeExplain):
+    """Fails like an unreachable Muse (api_error) for the first ``n`` calls."""
+
+    def __init__(self, n):
+        super().__init__()
+        self.n = n
+
+    def __call__(self, receipt, v):
+        if self.calls < self.n:
+            self.calls += 1
+            r = type("R", (), {})()
+            r.ok, r.reason, r.sidecar = False, "api_error:http_404:model_not_found", None
+            return r
+        return super().__call__(receipt, v)
+
+
+def unreachable_xc(receipt, locks, *, max_reads):
+    return {"schema": XC_SCHEMA, "checked": 0, "agree": 0, "disagree": 0, "reads": 1, "cost_micro_usd": 0, "cap": None,
+            "locks": [{"id": "final", "result": "unchecked", "reads": [{"result": "unchecked", "reason": "muse_unavailable:http_404"}]}]}
+
+
+def test_failed_muse_is_marked_retryable_not_ok(tmp_path):
+    st, store, *_ = job(tmp_path, explain=FlakyExplain(9), xc=unreachable_xc)
+    assert st["reason"] == "muse_failed" and st["retryable"] is True and st["attempts"] == 1
+    assert set(st["failed_parts"]) == {"ai_ruling", "score_crosscheck"}
+    assert json.loads(store.read(A.receipt_hash(RECEIPT), "status.json"))["reason"] == "muse_failed"
+
+
+def test_guardrail_refusal_is_final_not_retried(tmp_path):
+    ex = FakeExplain(ok=False)
+    ex_reason = type("E", (), {})
+    st, *_ = job(tmp_path, explain=lambda r, v: type("R", (), {"ok": False, "reason": "guardrail", "sidecar": None})(),
+                 xc=fake_xc(checked=0))
+    assert st["reason"] == "ok" and st["retryable"] is False and ex.calls == 0 and ex_reason
+
+
+def test_retry_redoes_only_missing_part_and_cap_spans_attempts(tmp_path):
+    k = SoftwareKey()
+    caps, store, led = A.Caps(ON), A.Store(tmp_path / "advisory"), A.Ledger(tmp_path / "advisory" / "spend.jsonl")
+    ex = FlakyExplain(0)
+    st1 = A.run_job(RECEIPT, V, [{"id": "final"}], signer=k, store=store, ledger=led, caps=caps, explain_fn=ex,
+                    crosscheck_fn=unreachable_xc)
+    assert st1["files"] == ["ai_ruling.json"] and st1["reason"] == "muse_failed"
+    st2 = A.run_job(RECEIPT, V, [{"id": "final"}], signer=k, store=store, ledger=led, caps=caps, explain_fn=ex,
+                    crosscheck_fn=fake_xc(), prev=st1)
+    assert ex.calls == 1  # explanation not redone
+    assert st2["attempts"] == 2 and st2["reason"] == "ok" and st2["files"] == ["ai_ruling.json", "score_crosscheck.json"]
+    assert st2["cost_micro_usd"] == st1["cost_micro_usd"] + 3000  # cumulative
+    # per-match cap counts every attempt
+    st3 = A.run_job(RECEIPT, V, [], signer=k, store=A.Store(tmp_path / "x"), ledger=led, caps=caps, explain_fn=ex,
+                    prev={"attempts": 1, "cost_micro_usd": 45_000, "reason": "muse_failed", "retryable": True})
+    assert st3["reason"] == "match_cap" and ex.calls == 1
+
+
+def test_last_attempt_is_not_retryable(tmp_path):
+    st, *_ = job(tmp_path, explain=FlakyExplain(9), xc=unreachable_xc)
+    prev = {**st, "attempts": A.MAX_ATTEMPTS - 1}
+    st3 = A.run_job(RECEIPT, V, [{"id": "final"}], signer=SoftwareKey(), store=A.Store(tmp_path / "advisory"),
+                    ledger=A.Ledger(tmp_path / "l.jsonl"), caps=A.Caps(ON), explain_fn=FlakyExplain(9),
+                    crosscheck_fn=unreachable_xc, prev=prev)
+    assert st3["attempts"] == A.MAX_ATTEMPTS and st3["reason"] == "muse_failed" and st3["retryable"] is False
+
+
+def test_advisor_backoff_then_success_max_three_attempts(tmp_path):
+    timers = []
+
+    class FakeRef:
+        tail_ms = 1000
+
+        def __init__(self):
+            self.cleaned = 0
+
+        def cleanup_segments(self, sub):
+            self.cleaned += 1
+
+        def _read_seg(self, sub):
+            return lambda s: None
+
+        def _wall_minus_mono(self, b):
+            return 0
+
+    class Sub:
+        receipt, verify, bundle, received = RECEIPT, V, None, {}
+
+    ref = FakeRef()
+    ex = FlakyExplain(2)
+    adv = A.AutoAdvisor(ref, tmp_path, env=ON, signer=SoftwareKey(), explain_fn=ex, crosscheck_fn=fake_xc(),
+                        locks_fn=lambda *a, **k: [{"id": "final"}], timer=lambda d, fn: timers.append((d, fn)))
+    adv._ensure_thread = lambda: None  # drive the queue by hand
+    st = adv.process({"receipt": RECEIPT, "verify": V, "sub": Sub()})
+    assert st["reason"] == "muse_failed" and ref.cleaned == 1 and [d for d, _ in timers] == [120]
+    assert adv.public()["pending_retries"] == 1
+    timers[0][1]()  # backoff elapsed
+    st = adv.process(adv.q.get_nowait())
+    assert st["attempts"] == 2 and st["reason"] == "muse_failed" and [d for d, _ in timers] == [120, 600]
+    timers[1][1]()
+    st = adv.process(adv.q.get_nowait())
+    assert st["attempts"] == 3 and st["reason"] == "ok" and "ai_ruling.json" in st["files"] and len(timers) == 2
+    assert ref.cleaned == 1 and adv.pending_retries == 0
+    # a fresh hook for the same final receipt is idempotent
+    again = adv.process({"receipt": RECEIPT, "verify": V, "sub": Sub()})
+    assert again["attempts"] == 3 and ex.calls == 3
+
+
+def test_advisor_gives_up_after_three_attempts(tmp_path):
+    timers = []
+
+    class FakeRef:
+        tail_ms = 1000
+
+        def cleanup_segments(self, sub):
+            pass
+
+    adv = A.AutoAdvisor(FakeRef(), tmp_path, env=ON, signer=SoftwareKey(), explain_fn=FlakyExplain(99),
+                        crosscheck_fn=unreachable_xc, locks_fn=lambda *a, **k: [],
+                        timer=lambda d, fn: timers.append((d, fn)))
+    job = {"receipt": RECEIPT, "verify": V, "locks": []}
+    for n in range(1, 4):
+        st = adv.process(job)
+        assert st["attempts"] == n
+    assert st["retryable"] is False and len(timers) == 2
+    assert adv.store.read(A.receipt_hash(RECEIPT), "ai_ruling.json") is None  # no file = Muse unchecked
