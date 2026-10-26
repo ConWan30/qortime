@@ -263,5 +263,8 @@ ok(liveCtrl && liveCtrl[1] === "DualSense Edge (USB)" && !String(liveCtrl[1]).in
   const xc = spawnSync(process.execPath, [fileURLToPath(new URL("./score-crosscheck.test.mjs", import.meta.url))], { encoding: "utf8" });
   process.stdout.write(xc.stdout || ""); process.stderr.write(xc.stderr || "");
   ok(xc.status === 0, "verify/score-crosscheck.test.mjs passes");
+  const hd = spawnSync(process.execPath, [fileURLToPath(new URL("./hands.test.mjs", import.meta.url))], { encoding: "utf8" });
+  process.stdout.write(hd.stdout || ""); process.stderr.write(hd.stderr || "");
+  ok(hd.status === 0, "verify/hands.test.mjs passes");
 }
 process.exit(fails ? 1 : 0);
