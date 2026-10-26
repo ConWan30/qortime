@@ -58,6 +58,7 @@
  <h2 class="sec">Evidence in this receipt</h2>
  <div class="panels" id="panels"></div>
  <div class="panels" id="logSlot" style="margin-top:12px"></div>
+ <div class="panels" id="aiSlot" style="margin-top:12px"></div>
 </section>
 
 <section class="vm" id="vm">
@@ -89,7 +90,8 @@
 import { apiBase, badgeMatchesReceipt, isValidReceiptId, receiptIdFrom } from "./verified-match.js";
 import { sha256Hex } from "./verify.js";
 import { runVerify, setIdle, logPanel, observe, describeSidecar } from "./viewer-ui.js";
-import { autoPinFor, AUTO_PIN_NOTE } from "./auto-pin.js"; // hackathon: verifier auto-pin (verify/AUTO_PIN.md)
+import { autoPinFor, AUTO_PIN_NOTE } from "./auto-pin.js";
+import { checkAiRuling, aiRulingPanel } from "./ai-ruling-view.js"; // hackathon: advisory AI explanation (HACKATHON.md) // hackathon: verifier auto-pin (verify/AUTO_PIN.md)
 // Verified Match checkout is paused until payments open (business KYC). Keep false: no lookups, no checkout UI.
 const VM_CHECKOUT_LIVE = false;
 const $ = (id) => document.getElementById(id);
@@ -107,6 +109,8 @@ let pollTimer = 0;
 let sigStatus = null;
 let sidecars = [];
 let checked = false;
+let aiRulingText = null;   // a dropped ai_ruling.json (hackathon advisory panel)
+let aiRulingUrl = null;    // sibling ai_ruling.json of a same-origin ?receipt= URL
 
 function currentReceipt() {
   try { return JSON.parse($("json").value); } catch { return null; }
@@ -195,9 +199,27 @@ async function ingest(files) {
   const isReceipt = (x) => { try { const d = JSON.parse(x.text); return d && d.schema === "qor-receipt/v0"; } catch { return false; } };
   const receipt = read.find((x) => x.name === "receipt.json" && isReceipt(x)) || read.find(isReceipt);
   sidecars = read.filter((x) => x !== receipt).map((x) => describeSidecar(x.name, x.text));
+  const ai = read.find((x) => x !== receipt && /(^|[\\/])ai_ruling\.json$/i.test(x.name));
+  aiRulingText = ai ? ai.text : null;
+  aiRulingUrl = null;
   paintAttached();
   if (receipt) { sigStatus = null; $("json").value = receipt.text; }
   if ($("json").value.trim()) await check();
+}
+
+// Hackathon advisory panel: shown only when the AI advisory signature, the receipt binding and the echoed status all check out.
+async function paintAiRuling(receipt, status) {
+  $("aiSlot").replaceChildren();
+  let text = aiRulingText;
+  if (text == null && aiRulingUrl) {
+    try { const res = await fetch(aiRulingUrl); text = res.ok ? await res.text() : null; } catch { text = null; }
+  }
+  if (text == null) return;
+  let doc; try { doc = JSON.parse(text); } catch { return; }
+  const chk = await checkAiRuling(doc, receipt, status);
+  if (!chk.ok || !checked) return;
+  $("aiSlot").replaceChildren(aiRulingPanel(chk));
+  observe($("aiSlot").children);
 }
 
 function paintAutoPin(auto) {
@@ -222,6 +244,7 @@ async function check() {
     if (v) {
       $("logSlot").replaceChildren(logPanel(currentReceipt));
       observe($("logSlot").children);
+      paintAiRuling(receipt, v.status);
       const res = receipt.result || {};
       const basis = v.verification_basis === "official-post-hoc-review"
         ? `basis: official post-hoc review (${v.review?.video_method}: ${v.review?.segments_verified}/${v.review?.segments_total} video segments checked by the QorTime referee)\n` +
@@ -234,6 +257,7 @@ async function check() {
         `final: away ${res.away_score} @ home ${res.home_score} (Q${res.quarter}), winner ${res.winner}\n` + basis + deleg + "\n" + JSON.stringify(v, null, 2);
     } else {
       $("logSlot").replaceChildren();
+      $("aiSlot").replaceChildren();
       $("out").textContent = "The verifier did not run.";
     }
   } finally {
@@ -255,7 +279,7 @@ $("sample").onclick = async () => {
   try {
     const res = await fetch("./sample-receipt.json");
     if (!res.ok) throw new Error("Demo receipt failed to load");
-    sigStatus = null;
+    sigStatus = null; aiRulingText = null; aiRulingUrl = null;
     $("json").value = await res.text();
     await check();
   } catch (err) {
@@ -264,7 +288,7 @@ $("sample").onclick = async () => {
 };
 const stale = () => {
   sigStatus = null;
-  if (checked) { checked = false; setIdle(ui, "The receipt or pinned key changed. Press Verify to check it again."); $("logSlot").replaceChildren(); }
+  if (checked) { checked = false; setIdle(ui, "The receipt or pinned key changed. Press Verify to check it again."); $("logSlot").replaceChildren(); $("aiSlot").replaceChildren(); }
   watchReceipt();
 };
 $("json").addEventListener("input", stale);
@@ -282,6 +306,7 @@ function sameOriginReceipt(raw) {
 }
 const preloaded = sameOriginReceipt(q.get("receipt"));
 if (preloaded) {
+  aiRulingUrl = new URL("ai_ruling.json", preloaded).href;
   fetch(preloaded).then((res) => {
     if (!res.ok) throw new Error("receipt");
     return res.text();

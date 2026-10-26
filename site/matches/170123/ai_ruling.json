@@ -1,0 +1,43 @@
+{
+ "schema": "qortime.ai_ruling.v0",
+ "label": "ADVISORY. AI-written explanation of the QorTime referee's results. It does not decide or change the verdict.",
+ "built_during": "Meta AI Developer Hackathon, Oct 26 - Nov 4 2026",
+ "affects_verdict": false,
+ "receipt_sha256": "69480a406d1621409cf03dc98eadcb9020c384a368d9fb0fcab63b61c9f12bb0",
+ "receipt_jcs_sha256": "a74ec73d41a66aad00f21e6922d7d2cebba2d887fede49b77a6097ee768b4bef",
+ "verdict_echo": {
+  "status": "VERIFIED",
+  "errors": [],
+  "partial": []
+ },
+ "model": "muse-spark-1.3",
+ "explanation": "STATUS VERIFIED\n\nThis was a Madden27 single match on PS5, claimed as away win 10 to 0 in quarter 4 from the end menu read, with final confirmed.\n\nWhat passed: bundle structure, capture chain, challenges, final re-read, input integrity, motion and video bytes. The referee re-read of the end menu matches the claimed final. Referee qortime-online-s2 with trusted key qortime-v1 serial 2. No errors and nothing missing. 166 of 525 video segments were checked by spot-check.\n\nController input looks human-like but is advisory only, not proof of a human player.\n\nNot proven: who was holding the controller, that laptop countersignatures were made live, that footage was not made up before hashing, and content of segments not received.",
+ "guardrail": {
+  "passed": true,
+  "rules": [
+   "status_stated_exactly",
+   "no_banned_trust_words",
+   "no_hardware_claim",
+   "no_coaching",
+   "no_identity_claim",
+   "max_chars"
+  ]
+ },
+ "facts_sha256": "67158a85f416ccb01497ad9ddce964c10998a214ffdc372bd5043f5c401c0343",
+ "usage": {
+  "prompt_tokens": 692,
+  "completion_tokens": 623,
+  "reasoning_tokens": 449
+ },
+ "advisory_key": {
+  "pubkey": "a304fc22b5a7c426cbe24e33b9e7602fec39fc1d8dc5958e4cb5faa4ac38bd43",
+  "key_id": "2d5de84a3dcdeaec",
+  "key_kind": "qortime-ai-advisory",
+  "role": "advisory only; not a referee key; cannot make or change a verdict"
+ },
+ "advisory_signature": {
+  "alg": "Ed25519",
+  "key_id": "2d5de84a3dcdeaec",
+  "sig": "2cacff299f0393bdc84e49656110c3a06ea6cd0afbd0b40f2c5334077f8a3c84b362b180cf145852838a6bcc6f4f2b5cab3686aa2a30be4174d139e27154770b"
+ }
+}

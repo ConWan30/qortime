@@ -22,6 +22,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", help=f"sidecar path (default: {FILENAME} next to the receipt)")
     ap.add_argument("--model", default=DEFAULT_MODEL)
     ap.add_argument("--no-write", action="store_true")
+    ap.add_argument("--sign-key", help="AI ADVISORY key file (never a referee key); signs ai_ruling.json as advisory_signature")
     a = ap.parse_args(argv)
     raw = Path(a.receipt).read_bytes()
     receipt = json.loads(raw)
@@ -36,9 +37,14 @@ def main(argv: list[str] | None = None) -> int:
         print(f"AI explanation: none ({res.reason}{': ' + ','.join(res.problems) if res.problems else ''}). Verdict unchanged.")
         return 0
     print("\nAI explanation (advisory, does not change the verdict):\n" + res.explanation)
+    doc = res.sidecar
+    if a.sign_key:
+        from qor_receipt.ai_ruling.signing import sign_ruling
+        from qor_receipt.keys import FileKey
+        doc = sign_ruling(doc, FileKey(Path(a.sign_key)))
     if not a.no_write:
         out = Path(a.out) if a.out else Path(a.receipt).with_name(FILENAME)
-        out.write_text(json.dumps(res.sidecar, indent=1) + "\n", encoding="utf-8")
+        out.write_text(json.dumps(doc, indent=1) + "\n", encoding="utf-8")
         print(f"\nwrote {out}")
     return 0
 

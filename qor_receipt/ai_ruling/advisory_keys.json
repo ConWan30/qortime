@@ -1,0 +1,15 @@
+{
+  "schema": "qortime-ai-advisory-keys/v1",
+  "built_during": "Meta AI Developer Hackathon, Oct 26 - Nov 4 2026",
+  "role": "ADVISORY ONLY. These keys sign AI explanations (ai_ruling.json). They are NOT referee keys, are never on trusted_referees.json, and cannot make or change a verdict.",
+  "keys": [
+    {
+      "id": "qortime-ai-advisory-1",
+      "pubkey": "a304fc22b5a7c426cbe24e33b9e7602fec39fc1d8dc5958e4cb5faa4ac38bd43",
+      "key_id": "2d5de84a3dcdeaec",
+      "key_kind": "qortime-ai-advisory",
+      "status": "active",
+      "since": "2026-10-26"
+    }
+  ]
+}
