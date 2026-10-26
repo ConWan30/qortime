@@ -186,7 +186,7 @@ def create_app(referee: Referee | None = None, guard: SubmitGuard | None = None,
         advisor = AutoAdvisor(ref, _state_dir())
     if advisor.caps.enabled and advisor.signer is not None:
         ref.advisory_hook = advisor.hook
-    admin_token = os.getenv("QORTIME_AI_ADMIN_TOKEN") or ""
+    admin_token = (os.getenv("QORTIME_AI_ADMIN_TOKEN") or "").strip()
     if h2h is None:
         h2h = H.Store(os.path.join(_state_dir(), "h2h"))
     h2h_cap = Window()
