@@ -67,8 +67,9 @@ class MuseClient:
         if self.reasoning_effort:
             body["reasoning_effort"] = self.reasoning_effort
         status, data = self._transport(f"{self.base_url}/chat/completions", self._key, body, self.timeout_s)
-        if status != 200 or not isinstance(data, dict):
-            raise MuseError(f"http_{status}")
+        if status != 200 or not isinstance(data, dict) or "_error_code" in data:
+            code = (data or {}).get("_error_code") if isinstance(data, dict) else None
+            raise MuseError(f"http_{status}" + (f":{code}" if code else ""))
         try:
             choice = data["choices"][0]
             text = choice["message"].get("content") or ""
@@ -92,6 +93,17 @@ def _urllib_transport(url: str, key: str, body: dict, timeout_s: float) -> tuple
         with urllib.request.urlopen(req, timeout=timeout_s) as r:
             return r.status, json.loads(r.read())
     except urllib.error.HTTPError as e:
-        return e.code, None
+        return e.code, _error_code(e)
     except Exception as e:  # noqa: BLE001  any network failure = no answer
         raise MuseError(f"network:{type(e).__name__}") from None
+
+
+def _error_code(e) -> dict | None:
+    """Only the API's short error code (e.g. ``invalid_api_key``), sanitised. Never the body, never the key."""
+    try:
+        err = json.loads(e.read(4096) or b"{}").get("error") or {}
+        code = str(err.get("code") or err.get("type") or "")
+    except Exception:  # noqa: BLE001
+        return None
+    code = "".join(ch for ch in code.lower() if ch.isalnum() or ch == "_")[:40]
+    return {"_error_code": code} if code else None
