@@ -148,7 +148,10 @@ def _usd_micro(usage: dict) -> int:
 
 def crosscheck(receipt: dict[str, Any], locks: Iterable[dict[str, Any]], *, reader: MuseScoreReader | None = None,
                max_reads: int = MAX_READS, crop: Callable[[bytes], bytes] = crop_scorebug) -> dict[str, Any]:
-    """locks = [{"id", "expected": {"away", "home"}, "frames": [jpeg bytes, ...]}]. Returns the sidecar. Never raises."""
+    """locks = [{"id", "expected": {"away", "home"}, "frames": [jpeg bytes, ...], "tolerate"?: [{"away", "home"}]}].
+
+    ``tolerate`` lists neighbouring lock scores: a confident read equal to one of them is ``unsure``, never a
+    disagreement (frame timing is approximate). Returns the sidecar. Never raises."""
     reader = reader or MuseScoreReader()
     rows: list[dict[str, Any]] = []
     reads = 0
@@ -160,6 +163,7 @@ def crosscheck(receipt: dict[str, Any], locks: Iterable[dict[str, Any]], *, read
             row.update(result="unchecked", reason="no_expected_score"); rows.append(row); continue
         if not reader.has_key:
             row.update(result="unchecked", reason="muse_unavailable:api_key_missing"); rows.append(row); continue
+        tolerate = {(t.get("away"), t.get("home")) for t in lk.get("tolerate") or [] if isinstance(t, dict)}
         for img in lk.get("frames") or []:
             if reads >= max_reads:
                 row["reads"].append({"result": "skipped", "reason": "max_reads"}); continue
@@ -172,6 +176,11 @@ def crosscheck(receipt: dict[str, Any], locks: Iterable[dict[str, Any]], *, read
                 cost += _usd_micro(r.usage or {})
                 if not r.confident:
                     row["reads"].append({"result": "unsure", "crop_sha256": hashlib.sha256(c).hexdigest()})
+                elif (r.away, r.home) != (exp["away"], exp["home"]) and (r.away, r.home) in tolerate:
+                    # Frame timing is approximate: a read equal to a neighbouring lock's score is not evidence of
+                    # a wrong lock, so it never counts as a disagreement.
+                    row["reads"].append({"result": "unsure", "reason": "neighbour_lock_score",
+                                         "crop_sha256": hashlib.sha256(c).hexdigest()})
                 else:
                     agree = (r.away, r.home) == (exp["away"], exp["home"])
                     row["reads"].append({"result": "agree" if agree else "disagree", "read": {"away": r.away, "home": r.home},

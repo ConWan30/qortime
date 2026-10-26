@@ -130,7 +130,27 @@ class H2HAccept(BaseModel):
 _DEFAULT_CORS = "https://qortime.com,https://www.qortime.com,https://conwan30.github.io"
 
 
-def create_app(referee: Referee | None = None, guard: SubmitGuard | None = None, h2h: H.Store | None = None) -> FastAPI:
+class AdvisoryReprocess(BaseModel):
+    receipt: dict[str, Any]
+    publish: bool = False
+
+
+def _trusted_verify(receipt: dict[str, Any]) -> dict[str, Any]:
+    """The verdict the public verifier page shows: pin the receipt's own referee key only when it is allowlisted or
+    carries a valid root delegation (the page's auto-pin rule); otherwise verify unpinned."""
+    from qor_receipt.receipt import verify_receipt
+
+    pub = ((receipt or {}).get("referee") or {}).get("pubkey")
+    if isinstance(pub, str) and pub:
+        v = verify_receipt(receipt, referee_pub=pub)
+        ent = lookup(pub)
+        if v.get("delegation") or (ent and ent.get("status") == "active"):
+            return v
+    return verify_receipt(receipt)
+
+
+def create_app(referee: Referee | None = None, guard: SubmitGuard | None = None, h2h: H.Store | None = None,
+               advisor: Any = None) -> FastAPI:
     app = FastAPI(title="QorTime official referee", version=VERSION)
     origins = [o.strip() for o in os.getenv("QORTIME_CORS_ORIGINS", _DEFAULT_CORS).split(",") if o.strip()]
     app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["GET", "POST"],
@@ -158,6 +178,15 @@ def create_app(referee: Referee | None = None, guard: SubmitGuard | None = None,
             guard = SubmitGuard(secret=sec.encode() if sec else None, state_dir=state)
     ref = referee
     guard = guard or SubmitGuard()
+    # HACKATHON (Meta AI Developer Hackathon): post-verdict Muse advisory files. Off unless QORTIME_AI_ADVISORY_ENABLED=1
+    # and the advisory seed is set; it can never change a verdict (see qor_receipt/ai_ruling/auto.py).
+    if advisor is None:
+        from qor_receipt.ai_ruling.auto import AutoAdvisor
+
+        advisor = AutoAdvisor(ref, _state_dir())
+    if advisor.caps.enabled and advisor.signer is not None:
+        ref.advisory_hook = advisor.hook
+    admin_token = (os.getenv("QORTIME_AI_ADMIN_TOKEN") or "").strip()
     if h2h is None:
         h2h = H.Store(os.path.join(_state_dir(), "h2h"))
     h2h_cap = Window()
@@ -377,6 +406,33 @@ def create_app(referee: Referee | None = None, guard: SubmitGuard | None = None,
             raise HTTPException(401, str(e)) from None
         except ValueError as e:
             raise HTTPException(409, str(e)) from None
+
+    # ---- HACKATHON advisory files (public, read-only; signed with the AI advisory key, bound to the receipt hash)
+    @app.get("/v1/advisory")
+    def advisory_info():
+        return advisor.public()
+
+    @app.get("/v1/advisory/{sha}/{name}")
+    def advisory_file(sha: str, name: str):
+        if name not in ("ai_ruling.json", "score_crosscheck.json", "status.json"):
+            raise HTTPException(404, "no such advisory file")
+        try:
+            raw = advisor.store.read(sha, name)
+        except Exception:  # noqa: BLE001
+            raw = None
+        if raw is None:
+            raise HTTPException(404, "no advisory file for this receipt (Muse unchecked, no penalty)")
+        return Response(raw, media_type="application/json", headers={"Cache-Control": "public, max-age=60"})
+
+    @app.post("/v1/advisory/reprocess")
+    def advisory_reprocess(req: AdvisoryReprocess, authorization: str | None = Header(default=None)):
+        """Operator-only. Explanation for an already-final receipt (no video on this path). publish=false is a dry run
+        that writes no file. It never touches a submission, the transparency log or any verdict."""
+        bearer = (authorization or "").removeprefix("Bearer ").strip()
+        if not admin_token or not hmac.compare_digest(bearer, admin_token):
+            raise HTTPException(401, "admin token required")
+        v = _trusted_verify(req.receipt)
+        return advisor.dry_run(req.receipt, v, publish=req.publish)
 
     return app
 

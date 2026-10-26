@@ -94,6 +94,7 @@ import { sha256Hex } from "./verify.js";
 import { runVerify, setIdle, logPanel, observe, describeSidecar } from "./viewer-ui.js";
 import { autoPinFor, AUTO_PIN_NOTE } from "./auto-pin.js";
 import { checkAiRuling, aiRulingPanel } from "./ai-ruling-view.js";
+import { fetchAdvisoryText } from "./advisory-fetch.js"; // hackathon: automatic advisory files from the referee
 import { checkHands, applyHands, handsPanel } from "./hands-view.js"; // hackathon: Show Your Hands
 import { checkCrosscheck, applyCrosscheck, crosscheckPanel } from "./score-crosscheck-view.js"; // hackathon: Muse score cross-check // hackathon: advisory AI explanation (HACKATHON.md) // hackathon: verifier auto-pin (verify/AUTO_PIN.md)
 // Verified Match checkout is paused until payments open (business KYC). Keep false: no lookups, no checkout UI.
@@ -225,9 +226,7 @@ async function ingest(files) {
 async function paintAiRuling(receipt, status) {
   $("aiSlot").replaceChildren();
   let text = aiRulingText;
-  if (text == null && aiRulingUrl) {
-    try { const res = await fetch(aiRulingUrl); text = res.ok ? await res.text() : null; } catch { text = null; }
-  }
+  if (text == null) text = await fetchAdvisoryText(aiRulingUrl, receipt, "ai_ruling.json"); // sibling, then referee copy
   if (text == null) return;
   let doc; try { doc = JSON.parse(text); } catch { return; }
   const chk = await checkAiRuling(doc, receipt, status);
@@ -255,7 +254,7 @@ async function check() {
     xcResult = null; handsResult = null;
     const adjust = async (r, v0) => {
       let t = xcText;
-      if (t == null && xcUrl) { try { const res = await fetch(xcUrl); t = res.ok ? await res.text() : null; } catch { t = null; } }
+      if (t == null) t = await fetchAdvisoryText(xcUrl, r, "score_crosscheck.json"); // sibling, then referee copy
       let doc = null; if (t != null) { try { doc = JSON.parse(t); } catch { doc = null; } }
       xcResult = doc ? await checkCrosscheck(doc, r) : null;
       const v1 = applyCrosscheck(v0, xcResult);

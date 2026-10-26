@@ -330,3 +330,30 @@ controls the name shown. Challenges created before this check (no PSN IDs) settl
 Money words (bet, wager, $, stake, payout...) are rejected in rules. CORS: `QORTIME_CORS_ORIGINS`
 (default `https://conwan30.github.io`). Rate limit: `QORTIME_RATE_H2H_HOUR` (default 300/hour per client).
 Settlement never signs anything; it reads receipts and fails closed.
+
+## HACKATHON: automatic Muse advisory files (Meta AI Developer Hackathon, Oct 26 - Nov 4 2026)
+
+Code: `qor_receipt/ai_ruling/auto.py` (tests: `tests/test_auto_advisory.py`). Advisory only; it can never make or change
+a verdict.
+
+- **When:** inside `Referee.add_player_signature`, after the receipt is complete and `verify` is computed, the optional
+  `advisory_hook` queues a job (one daemon worker, queue of 4; full queue = skipped). The hook gets deep copies, the HTTP
+  response is already built, and any exception in the hook is swallowed. If the job was queued it deletes the
+  submission's segments when done (otherwise the referee deletes them as before).
+- **What:** Muse Spark explanation → `ai_ruling.json`; Muse Spark re-read of the scorebug → `score_crosscheck.json`, using
+  only frames from segments the referee itself holds: the +1.0 s / +2.5 s frames after each laptop score lock that falls
+  in a stored segment (latest 4) and a `final` row (receipt final score vs the recorded tail after the last lock). A read
+  equal to a neighbouring lock's score is "unsure", never a disagreement. The cross-check file is written only when at
+  least one row was checked. Both files are signed with the AI advisory key and bound to SHA-256(JCS(receipt)).
+- **Where:** `GET /v1/advisory/{receipt_jcs_sha256}/{ai_ruling.json|score_crosscheck.json|status.json}` (public,
+  read-only), stored under `$QORTIME_STATE_DIR/advisory/`. `GET /v1/advisory` shows caps, key id and weekly spend. The
+  verifier (`verify/advisory-fetch.js`) uses a sibling file first and, for official-review receipts only, falls back to
+  the referee copy; the files still have to pass the advisory-key and receipt-hash checks and stay lower-only.
+- **Caps:** `QORTIME_AI_ADVISORY_ENABLED=1` (kill switch; anything else = off), `QORTIME_AI_MATCH_USD_CAP` (default 0.05,
+  enforced by a worst-case reservation before any call: explanation $0.011 + at most 12 reads × $0.0025),
+  `QORTIME_AI_WEEKLY_USD_CAP` (default 5, rolling 7 days, ledger `advisory/spend.jsonl`), `QORTIME_AI_TIMEOUT_S`
+  (default 240; nothing is written after the deadline).
+- **Secrets (Railway variables only, never in git or logs):** `META_API_KEY`, `QORTIME_AI_ADVISORY_SEED` (AI advisory key,
+  key_id `2d5de84a3dcdeaec`; refused if it is ever a referee key). `QORTIME_AI_ADMIN_TOKEN` enables
+  `POST /v1/advisory/reprocess {receipt, publish}`: explanation only for an already-final receipt, `publish:false` is a
+  dry run that writes nothing, idempotent per receipt hash. It never touches a submission, the log or a verdict.
