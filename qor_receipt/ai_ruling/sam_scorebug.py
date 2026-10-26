@@ -1,19 +1,13 @@
-"""SAM 3.1 scorebug presence check. LOWER-ONLY, ADVISORY. Built during the Meta AI Developer Hackathon, Oct 26 - Nov 4 2026.
+"""SAM 3.1 scorebug LOCATOR (info only, never affects a status). Built during the Meta AI Developer Hackathon, Oct 26 - Nov 4 2026.
 
-What it asks: on frames that should be live gameplay (e.g. highlight-clip posters around a scored play), does Meta
-SAM 3.1 find a "scoreboard" where the game's scorebug profile says it should be? A missing or misplaced scorebug on
-most of those frames is a reason for caution (stats overlay, menu, edited or substituted footage).
+Asks Meta SAM 3.1 for a "scoreboard" box on a frame and reports whether it sits where the game's scorebug profile
+says. Used for demo visuals (drawing the box/mask over the scorebug) and as a crop sanity check. It is NOT a status
+signal: measured on public 170123 clip frames (1280x720, QorCap burn-in label masked) SAM found the real scorebug on
+only 4 of 6 legit frames, and on the small posters it boxed QorCap's own burned-in label. The status-affecting
+second reader is Muse Spark (``score_crosscheck.py``).
 
-Hard rules (tests: tests/test_sam_scorebug.py):
-* The only possible outputs are ``cap = "PARTIAL"`` or ``cap = None``. It never raises a status, never produces FAIL,
-  and ``apply_cap`` leaves FAIL / SELF_ATTESTED / PARTIAL unchanged; it can only turn VERIFIED into PARTIAL.
-* Fail SAFE for players: API errors, missing key or unreadable frames mark that frame ``unchecked``. Unchecked
-  frames never count against the match, so an outage cannot grief anyone's status.
-* Conservative: a cap needs at least ``MIN_BAD`` bad frames AND a strict majority of the checked frames bad.
-* Not wired into ``verify_receipt`` / ``verify.js``. Output is a sidecar (``sam_scorebug.json``,
-  ``affects_verdict: "lower_only"``); the receipt (``receipt.v0.json``) is never edited.
-* Request shape (PREREQS section 11): POST /v1/responses, model sam-3.1, input_text "scoreboard" + input_image,
-  non-streaming; boxes parsed from ``<|box;x1=..;y1=..;x2=..;y2=..;w=..;h=..|>``. $2.50 per 1,000 images.
+Request shape (PREREQS section 11): POST /v1/responses, model sam-3.1, input_text "scoreboard" + input_image,
+non-streaming; boxes parsed from ``<|box;x1=..;y1=..;x2=..;y2=..;w=..;h=..|>``. $2.50 per 1,000 images.
 """
 from __future__ import annotations
 
@@ -24,7 +18,7 @@ import re
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
-from typing import Any, Callable, Iterable
+from typing import Any, Callable
 
 from qor_receipt.ai_ruling.muse import BASE_URL, api_key_from_env
 from qor_receipt.jcs import canonicalize
@@ -35,11 +29,7 @@ MODEL = "sam-3.1"
 PROMPT = "scoreboard"
 USD_PER_IMAGE_MICRO = 2500           # $0.0025 per image, in micro-dollars (integers only)
 MAX_IMAGES = 12                      # hard per-run cap on paid calls
-MIN_BAD = 2
-VERIFIED, PARTIAL, SELF_ATTESTED, FAIL = "VERIFIED", "PARTIAL", "SELF_ATTESTED", "FAIL"
-_ORDER = {FAIL: 0, SELF_ATTESTED: 1, PARTIAL: 2, VERIFIED: 3}
-LABEL = ("ADVISORY, LOWER-ONLY. Meta SAM 3.1 looked for the scorebug on live-play frames. It can only lower VERIFIED "
-         "to PARTIAL, never raise a status and never FAIL a match on its own.")
+LABEL = "INFO ONLY. Meta SAM 3.1 located the scorebug on these frames. It never affects a status."
 
 # Expected scorebug region per profile, in permille of the frame: the box centre must be inside
 # [x_min, y_min, x_max, y_max] and the box at least min_width wide. madden27_standard = full-width bottom strip,
@@ -101,21 +91,11 @@ def classify(boxes: list[dict[str, int]], profile: str) -> str:
     return "scorebug_out_of_region"
 
 
-def decide_cap(results: Iterable[str]) -> tuple[str | None, list[str]]:
-    rs = [r for r in results if r != "unchecked"]
-    bad = [r for r in rs if r in ("no_scorebug", "scorebug_out_of_region")]
-    if len(bad) >= MIN_BAD and len(bad) * 2 > len(rs):
-        return PARTIAL, [f"scorebug missing or misplaced on {len(bad)} of {len(rs)} checked live frames"]
-    return None, []
-
-
-def apply_cap(status: str, cap: str | None) -> str:
-    """min(status, cap) where cap can only be PARTIAL or None. Never raises a status; never returns FAIL by itself."""
-    if cap is None or status not in _ORDER:
-        return status
-    if cap != PARTIAL:
-        raise ValueError("the SAM scorebug check can only cap at PARTIAL")
-    return PARTIAL if status == VERIFIED else status
+def summarize(results) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for r in results:
+        out[r] = out.get(r, 0) + 1
+    return out
 
 
 def _urllib_transport(url: str, key: str, body: dict, timeout_s: float) -> tuple[int, Any]:
@@ -192,9 +172,8 @@ def check(receipt: dict[str, Any], frames: list[tuple[str, bytes]], *, client: S
             except Exception as e:  # noqa: BLE001  advisory: never take anything down
                 row.update(result="unchecked", reason=f"error:{type(e).__name__}")
         rows.append(row)
-    cap, reasons = decide_cap(r["result"] for r in rows)
     return {"schema": SCHEMA, "label": LABEL, "built_during": "Meta AI Developer Hackathon, Oct 26 - Nov 4 2026",
-            "affects_verdict": "lower_only", "max_cap": PARTIAL, "model": MODEL, "prompt": PROMPT, "profile": prof,
+            "affects_verdict": False, "model": MODEL, "prompt": PROMPT, "profile": prof,
             "receipt_jcs_sha256": hashlib.sha256(canonicalize(receipt)).hexdigest(),
-            "frames": rows, "cap": cap, "reasons": reasons,
+            "frames": rows, "summary": summarize(r["result"] for r in rows),
             "cost_micro_usd": calls * USD_PER_IMAGE_MICRO, "calls": calls}

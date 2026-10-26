@@ -20,13 +20,12 @@ const isHex = (s, n) => typeof s === "string" && new RegExp(`^[0-9a-fA-F]{${n}}$
 const without = (o, k) => Object.fromEntries(Object.entries(o).filter(([x]) => x !== k));
 const kidOf = async (pub) => hex(new Uint8Array(await crypto.subtle.digest("SHA-256", unhex(pub)))).slice(0, 16);
 
-/** Returns { ok, problems, text, model }. Never throws. */
-export async function checkAiRuling(doc, receipt, status, { keys = AI_ADVISORY_KEYS } = {}) {
+/** Generic checks for any sidecar signed with the AI advisory key (also used by score-crosscheck-view.js). Never throws. */
+export async function advisorySignatureProblems(doc, receipt, schema, { keys = AI_ADVISORY_KEYS } = {}) {
   const p = [];
   try {
-    if (!doc || typeof doc !== "object" || Array.isArray(doc)) return { ok: false, problems: ["not_an_object"] };
-    if (doc.schema !== AI_SCHEMA) p.push("schema");
-    if (doc.affects_verdict !== false) p.push("affects_verdict_not_false");
+    if (!doc || typeof doc !== "object" || Array.isArray(doc)) return ["not_an_object"];
+    if (doc.schema !== schema) p.push("schema");
     if (["signature", "signatures", "referee", "referee_ai"].some((k) => k in doc)) p.push("forbidden_field");
     const ak = doc.advisory_key || {}, sg = doc.advisory_signature || {};
     const pub = String(ak.pubkey || "").toLowerCase();
@@ -40,11 +39,19 @@ export async function checkAiRuling(doc, receipt, status, { keys = AI_ADVISORY_K
     }
     if (!sigOk) p.push("bad_advisory_signature");
     if (!receipt || doc.receipt_jcs_sha256 !== (await sha256Hex(receipt))) p.push("receipt_mismatch");
-    if (!doc.verdict_echo || doc.verdict_echo.status !== status) p.push("verdict_echo_stale");
-    if (typeof doc.explanation !== "string" || !doc.explanation.trim()) p.push("no_explanation");
   } catch (e) {
     p.push(`error:${e && e.name ? e.name : "error"}`);
   }
+  return p;
+}
+
+/** Returns { ok, problems, text, model }. Never throws. */
+export async function checkAiRuling(doc, receipt, status, { keys = AI_ADVISORY_KEYS } = {}) {
+  const p = await advisorySignatureProblems(doc, receipt, AI_SCHEMA, { keys });
+  if (p.length === 1 && p[0] === "not_an_object") return { ok: false, problems: p };
+  if (doc.affects_verdict !== false) p.unshift("affects_verdict_not_false");
+  if (!doc.verdict_echo || doc.verdict_echo.status !== status) p.push("verdict_echo_stale");
+  if (typeof doc.explanation !== "string" || !doc.explanation.trim()) p.push("no_explanation");
   return p.length ? { ok: false, problems: p } : { ok: true, problems: [], text: doc.explanation.trim(), model: String(doc.model || "Muse Spark") };
 }
 

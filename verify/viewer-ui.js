@@ -1,5 +1,6 @@
 // Verifier page rendering and motion. Builds DOM from receipt-view.js; animates transform and opacity only.
 import { verifyReceipt, receiptBodyHash, verifyInclusion, verifyLogHead, MAX_LATENCY_MS, RULE2_MAX_LATENCY_MS } from "./verify.js";
+import { acceptLowerOnly } from "./lower-only.js";
 import { buildPanels, buildSteps, describeSidecar, explainCode, goldAllowed, verdictLabel } from "./receipt-view.js";
 
 export const RM = matchMedia("(prefers-reduced-motion: reduce)");
@@ -375,6 +376,11 @@ export async function runVerify(ui, text, pin, extras) {
   try { v = await verifyReceipt(r, pin || null); } catch (e) {
     setError(ui, "CAN'T CHECK", `The verifier stopped: ${e && e.name ? e.name : "error"}.`);
     return { receipt: r, v: null };
+  }
+  // Optional display-layer adjustment (lower-only signals such as the Muse score cross-check). It may only lower the
+  // status: anything that tries to raise it, or throws, is ignored and the verifier's own result is shown.
+  if (extras && typeof extras.adjust === "function") {
+    try { v = acceptLowerOnly(v, await extras.adjust(r, v)); } catch { /* keep v */ }
   }
   const wait = RM.matches ? 0 : Math.max(0, 320 - (performance.now() - started));
   if (wait) await new Promise((res) => setTimeout(res, wait));

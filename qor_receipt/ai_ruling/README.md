@@ -71,16 +71,40 @@ advisory signature, the advisory key allowlist, the receipt binding and the echo
 `verify.js` just computed) all check out. Otherwise nothing is shown. Sources: a dropped `ai_ruling.json`, or the
 `ai_ruling.json` next to a same-origin `?receipt=` URL. Live example: match 170123.
 
-## SAM 3.1 scorebug check (`sam_scorebug.py`, lower-only, NOT wired in)
-Asks Meta SAM 3.1 for a "scoreboard" on frames that should be live play and checks the box sits where the game's
-scorebug profile says (madden27_standard: full-width bottom strip). Output: `sam_scorebug.json`
-(`qortime.sam_scorebug.v0`, `affects_verdict: "lower_only"`, `max_cap: "PARTIAL"`).
-- `cap` is only ever `"PARTIAL"` or `null`; `apply_cap` can only turn VERIFIED into PARTIAL. It never raises a
-  status and never FAILs a match. API errors or a missing key mark frames `unchecked`, which never count against
-  anyone. A cap needs >= 2 bad frames and a strict majority of checked frames.
+## Muse Spark score cross-check (`score_crosscheck.py`, default second score reader, lower-only)
+Every locked score gets a second, independent read: Meta Muse Spark 1.3 reads a crop of the scorebug strip
+(bottom 80 px of a 1280x720 frame, x 300-980, upscaled 2x) from frames just after the lock, using the same prompt and
+JSON schema that scored 111/111 with 0 confident-but-wrong in the box benchmark. Plain code then compares Muse's
+numbers with the locked score. Muse never sees the claimed score and never decides anything.
+- Per lock: `agree` if any confident read matches; `disagree` only if confident reads mismatch and none agrees;
+  otherwise `unchecked`. Unconfident reads (`unsure`) never count.
+- Agreement keeps the status. Any disagreement sets `cap: "PARTIAL"`; `apply_cap` can only turn VERIFIED into
+  PARTIAL. It never raises a status and never FAILs a match.
+- **Muse unavailable** (no key, network/API error, truncated answer): every lock is `unchecked`, the summary says
+  "Muse unchecked (local reader only, no penalty)" and the status is exactly what the verifier computed.
+- Cost: tracked per match (`cost_micro_usd`, `reads`). `max_reads` (default 12) bounds it; 170123 cost $0.0092
+  for 4 reads; the worst case at 12 reads is about $0.03, well under the $0.50/match target.
+- Output `score_crosscheck.json` (`qortime.score_crosscheck.v0`, `affects_verdict: "lower_only"`,
+  `max_cap: "PARTIAL"`), signed with the AI advisory key and bound by `receipt_jcs_sha256`, like `ai_ruling.json`.
+- Verifier page: `verify/score-crosscheck-view.js` checks signature, allowlist, binding and cap consistency. A valid
+  sidecar is applied through `verify/lower-only.js`, which only accepts "same status" or "VERIFIED to PARTIAL". An
+  invalid or missing sidecar shows "Muse unchecked" and changes nothing. `verify.js` and `verify_receipt` are not
+  modified and do not import it.
+- **Measured (Oct 26, non-held-out frames only; 021003/125430/084523/193534 and labelled games excluded):**
+  benchmark crops 73/73 visible scores agree, 0 confident-but-wrong, 18/18 no-scorebug frames (8 stats-overlay
+  traps) unconfident. Module run on public 170123 lock frames + 14 eval frames: 15/15 checked locks agree,
+  **0 false drops**, 21 of 26 reads confident, $0.039. A wrong claimed score is caught by any confident read
+  (tests simulate it). Some 170123 frames right after a lock are unconfident and stay `unchecked` (no penalty).
+
+CLI: `python -m qor_receipt.ai_ruling.score_crosscheck RECEIPT --clips DIR --sign-key KEY --out score_crosscheck.json`
+(key from `META_MODEL_API_KEY`).
+
+## SAM 3.1 scorebug locator (`sam_scorebug.py`, info only, NOT wired in)
+Asks Meta SAM 3.1 for a "scoreboard" box on a frame and reports whether it sits where the game's scorebug profile
+says (madden27_standard: full-width bottom strip). Output `qortime.sam_scorebug.v0` with `affects_verdict: false`
+and no cap. Use: demo visuals and a crop sanity check.
 - Highlight clips carry QorCap's burned-in "SCOREBUG LOCK" label top-left; `mask_burn_in` blanks it first,
   otherwise SAM boxes that label instead of the game's scorebug.
 - **Measured (Oct 26, public 170123 clip frames, 1280x720, label masked): SAM found the real scorebug on 4 of 6
   legit frames** (both `hl02` frames missed it with "scoreboard"; "score banner" and "scorebug" were no better).
-  That miss rate is too high for a status signal, so this is **not** connected to `verify_receipt`, `verify.js` or
-  any page.
+  That is too unreliable for a status signal, so SAM is not used for any status; Muse Spark is the cross-check.

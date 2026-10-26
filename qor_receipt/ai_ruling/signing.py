@@ -52,19 +52,14 @@ def sign_ruling(doc: dict[str, Any], key: KeyProvider) -> dict[str, Any]:
     return out
 
 
-def check_ruling(doc: Any, receipt: dict[str, Any], *, status: str | None = None,
-                 keys: dict[str, Any] | None = None) -> list[str]:
-    """Problems with a signed ai_ruling for this receipt. Empty list = OK to show (as advisory text). Never raises."""
-    from qor_receipt.ai_ruling.explainer import SCHEMA
-
+def check_signed(doc: Any, receipt: dict[str, Any], *, schema: str, keys: dict[str, Any] | None = None) -> list[str]:
+    """Generic checks for any advisory sidecar signed with the AI advisory key. Never raises."""
     p: list[str] = []
     try:
         if not isinstance(doc, dict):
             return ["not_an_object"]
-        if doc.get("schema") != SCHEMA:
+        if doc.get("schema") != schema:
             p.append("schema")
-        if doc.get("affects_verdict") is not False:
-            p.append("affects_verdict_not_false")
         if any(k in doc for k in FORBIDDEN_TOP):
             p.append("forbidden_field")
         ak, sg = doc.get("advisory_key") or {}, doc.get(SIG_FIELD) or {}
@@ -80,10 +75,23 @@ def check_ruling(doc: Any, receipt: dict[str, Any], *, status: str | None = None
             p.append("bad_advisory_signature")
         if doc.get("receipt_jcs_sha256") != receipt_jcs_sha256(receipt):
             p.append("receipt_mismatch")
-        if status is not None and (doc.get("verdict_echo") or {}).get("status") != status:
-            p.append("verdict_echo_stale")
-        if not isinstance(doc.get("explanation"), str) or not doc["explanation"].strip():
-            p.append("no_explanation")
-    except (KeyError, TypeError, ValueError) as e:
+    except (KeyError, TypeError, ValueError, AttributeError) as e:
         p.append(f"malformed:{type(e).__name__}")
+    return p
+
+
+def check_ruling(doc: Any, receipt: dict[str, Any], *, status: str | None = None,
+                 keys: dict[str, Any] | None = None) -> list[str]:
+    """Problems with a signed ai_ruling for this receipt. Empty list = OK to show (as advisory text). Never raises."""
+    from qor_receipt.ai_ruling.explainer import SCHEMA
+
+    p = check_signed(doc, receipt, schema=SCHEMA, keys=keys)
+    if p == ["not_an_object"]:
+        return p
+    if doc.get("affects_verdict") is not False:
+        p.insert(0, "affects_verdict_not_false")
+    if status is not None and (doc.get("verdict_echo") or {}).get("status") != status:
+        p.append("verdict_echo_stale")
+    if not isinstance(doc.get("explanation"), str) or not doc["explanation"].strip():
+        p.append("no_explanation")
     return p

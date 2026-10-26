@@ -1,8 +1,7 @@
-"""SAM 3.1 scorebug check: lower-only, advisory (Meta AI Developer Hackathon, Oct 26 - Nov 4 2026). API mocked."""
+"""SAM 3.1 scorebug locator: info only, never affects a status (Meta AI Developer Hackathon, Oct 26 - Nov 4 2026). API mocked."""
 from __future__ import annotations
 
 import copy
-import itertools
 import json
 from pathlib import Path
 
@@ -16,7 +15,6 @@ RECEIPT = json.loads((ROOT / "site" / "matches" / "170123" / "receipt.json").rea
 PUB = RECEIPT["referee"]["pubkey"]
 STRIP = "<0f>0<|box;x1=0;y1=676;x2=1279;y2=719;w=1280;h=720|><|mask;x=0;y=0;data=1,~|>"
 TOPLEFT = "<0f>0<|box;x1=20;y1=10;x2=680;y2=130;w=1280;h=720|><|mask;x=0;y=0;data=1,~|>"
-STATUSES = ["VERIFIED", "PARTIAL", "SELF_ATTESTED", "FAIL"]
 
 
 def reply(text):
@@ -41,46 +39,11 @@ def run(items, n=None, **kw):
     return S.check(RECEIPT, frames, client=S.SamClient(api_key="k", transport=t), **kw), t
 
 
-# ---- cap can only ever be PARTIAL, and only lowers VERIFIED ------------------------------------------------------
-@pytest.mark.parametrize("status,cap", itertools.product(STATUSES, [None, "PARTIAL"]))
-def test_apply_cap_is_lower_only(status, cap):
-    out = S.apply_cap(status, cap)
-    order = {"FAIL": 0, "SELF_ATTESTED": 1, "PARTIAL": 2, "VERIFIED": 3}
-    assert order[out] <= order[status], "never raises"
-    assert out != "FAIL" or status == "FAIL", "never FAILs on its own"
-    assert out == ("PARTIAL" if (status == "VERIFIED" and cap) else status)
-
-
-@pytest.mark.parametrize("bad_cap", ["FAIL", "SELF_ATTESTED", "VERIFIED"])
-def test_cap_below_or_above_partial_is_refused(bad_cap):
-    with pytest.raises(ValueError):
-        S.apply_cap("VERIFIED", bad_cap)
-
-
-def test_decide_cap_values_are_only_partial_or_none():
-    seen = set()
-    for combo in itertools.product(["scorebug_in_region", "no_scorebug", "scorebug_out_of_region", "unchecked"], repeat=4):
-        seen.add(S.decide_cap(combo)[0])
-    assert seen == {None, "PARTIAL"}
-
-
-# ---- decision rule ----------------------------------------------------------------------------------------------
-def test_all_frames_show_scorebug_no_cap():
-    sc, t = run([reply(STRIP)] * 3)
-    assert sc["cap"] is None and [f["result"] for f in sc["frames"]] == ["scorebug_in_region"] * 3
-    assert sc["affects_verdict"] == "lower_only" and sc["max_cap"] == "PARTIAL" and sc["calls"] == 3
-
-
-def test_majority_missing_caps_partial():
-    sc, _ = run([reply(""), reply(TOPLEFT), reply(STRIP)])
-    assert sc["cap"] == "PARTIAL" and sc["reasons"]
-    assert S.apply_cap(verify_receipt(RECEIPT, referee_pub=PUB)["status"], sc["cap"]) == "PARTIAL"
-
-
-def test_single_miss_or_tie_does_not_cap():
-    assert run([reply(""), reply(STRIP), reply(STRIP)])[0]["cap"] is None
-    assert run([reply(""), reply(STRIP)])[0]["cap"] is None          # 1 bad < MIN_BAD
-    assert run([reply(""), reply(""), reply(STRIP), reply(STRIP)])[0]["cap"] is None   # tie is not a majority
+def test_all_frames_show_scorebug_info_only():
+    sc, _ = run([reply(STRIP)] * 3)
+    assert [f["result"] for f in sc["frames"]] == ["scorebug_in_region"] * 3
+    assert sc["affects_verdict"] is False and "cap" not in sc and sc["summary"] == {"scorebug_in_region": 3}
+    assert not hasattr(S, "apply_cap") and not hasattr(S, "decide_cap")
 
 
 def test_burn_in_label_only_is_out_of_region():
@@ -89,9 +52,9 @@ def test_burn_in_label_only_is_out_of_region():
 
 
 # ---- fail safe: errors never count against the player ------------------------------------------------------------
-def test_api_errors_are_unchecked_and_never_cap():
+def test_api_errors_are_unchecked():
     sc, _ = run([(500, None), S.SamError("network:URLError"), RuntimeError("x"), (200, {"output": "bad"})])
-    assert sc["cap"] is None and all(f["result"] == "unchecked" for f in sc["frames"])
+    assert all(f["result"] == "unchecked" for f in sc["frames"])
 
 
 def test_missing_key_makes_no_call(monkeypatch):
@@ -99,14 +62,14 @@ def test_missing_key_makes_no_call(monkeypatch):
     monkeypatch.delenv("MODEL_API_KEY", raising=False)
     t = Seq([reply("")] * 3)
     sc = S.check(RECEIPT, [("a", b"x"), ("b", b"y")], client=S.SamClient(transport=t))
-    assert t.calls == [] and sc["cap"] is None and sc["calls"] == 0
+    assert t.calls == [] and sc["calls"] == 0
 
 
 def test_unknown_profile_is_unchecked():
     r = copy.deepcopy(RECEIPT); r["match"]["scorebug_profile"] = "some_other_game"
     t = Seq([reply("")] * 3)
     sc = S.check(r, [("a", b"x"), ("b", b"y"), ("c", b"z")], client=S.SamClient(api_key="k", transport=t))
-    assert t.calls == [] and sc["cap"] is None
+    assert t.calls == [] and sc["summary"] == {"unchecked": 3}
 
 
 def test_max_images_bounds_spend():
