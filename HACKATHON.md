@@ -17,7 +17,7 @@ The capture client is a separate public repo: [`ConWan30/qorcap`](https://github
 ([`HACKATHON.md`](https://github.com/ConWan30/qorcap/blob/main/HACKATHON.md)). Meta models are used in **this**
 repo (and the submission demo pipeline), not inside QorCap.
 
-## Pre-existing (before Mon Oct 26 2026, 12:00 PM CT)
+## Pre-existing (before Mon Oct 26 2026, 11:00 AM CT / 12:00 PM ET)
 Everything in this repo at commit [`0e87ec3`](https://github.com/ConWan30/qortime/commit/0e87ec3) and earlier, including:
 - the receipt format (`schema/receipt.v0.json`, frozen), signing and verification (`qor_receipt/receipt.py`,
   `verify/verify.js`), referee delegation and revocation, the transparency log;
@@ -45,7 +45,7 @@ Measured during the hackathon (box benchmark, not in this repo): Muse Spark 1.3 
 used to evaluate the pre-existing reader got 111/111 scores exact and 0 confident-but-wrong answers (the pre-existing
 Glimpse reader: 110/111, 6 confident-but-wrong, including 5 on stats-overlay traps).
 
-## Pull requests merged on/after kickoff (Mon Oct 26 2026, 12:00 PM CT)
+## Pull requests merged on/after kickoff (Mon Oct 26 2026, 11:00 AM CT / 12:00 PM ET)
 
 Boundary commit: [`0e87ec3`](https://github.com/ConWan30/qortime/commit/0e87ec3). Every PR below merged after that boundary.
 
