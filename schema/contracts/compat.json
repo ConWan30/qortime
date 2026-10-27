@@ -59,7 +59,7 @@
     "max_window_ms": 120000,
     "pattern": "OPTIONS then 4 face/d-pad buttons from sha256(nonce)",
     "menu_leave_buttons": ["CROSS", "CIRCLE"],
-    "menu_safe_issue": "The referee redraws a fresh nonce until CROSS and CIRCLE are only in the last slot or absent. pattern_for is unchanged, so every existing receipt still verifies.",
+    "menu_safe_issue": "The referee redraws a fresh nonce until CROSS and CIRCLE are absent from every body slot after OPTIONS. pattern_for is unchanged, so every existing receipt still verifies.",
     "response": "first OPTIONS press inside [issued_ms, deadline_ms] followed by exactly the pattern",
     "pause_latency_ms": [0, 600],
     "rule_versions": {
@@ -169,6 +169,6 @@
   "submit_auth": {"scheme": "install-key-v1", "header": "X-Qor-Submit", "challenge": "/v1/submit/challenge",
                   "request_type": "qortime-submit/v1", "pow_prefix": "qortime-pow/v1|", "min_client": "0.3.10",
                   "legacy_status": 426, "install_key": "the bundle's device (recorder) key"},
-  "referee_image": {"qorcap_sidecar_sha": "1680734b3ffbff3ee0d15c39fbbf702ab931ea91",
+  "referee_image": {"qorcap_sidecar_sha": "cd42d667046103b4b7752e29f08ef56ca13cface",
                     "scorebug_profiles": ["madden27_standard", "madden27_monday_night", "madden27_sunday_night", "madden27_thursday_night"]}
 }
