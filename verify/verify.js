@@ -7,9 +7,9 @@ export const SCHEMA = "qor-receipt/v0";
 export const SELF_ATTESTED = "SELF_ATTESTED";
 const PHASES = ["kickoff", "halftime", "end"];
 const ALPHABET = ["CROSS", "CIRCLE", "SQUARE", "TRIANGLE", "UP", "DOWN", "LEFT", "RIGHT"];
-// Motion floor is 300 for every motion rule, including motion-rule/v3. This verifier does not
-// recompute the correlation. It compares the stored integer, so a rule-v1 or rule-v2 receipt
-// still verifies exactly as it did when it was signed.
+// Motion floor is 300 for every motion rule, including motion-rule/v3 and motion-rule/v4. This
+// verifier does not recompute the correlation. It compares the stored integer, so older receipts
+// still verify as signed.
 export const MAX_GAP_MS = 10000, MAX_SKEW_MS = 3000, MOTION_MIN = 300;
 const DEFAULT_LEN = 4;
 const MAX_WINDOW_MS = 120000; // v0.3.11: challenge windows are 90 s; longer is not a timed challenge

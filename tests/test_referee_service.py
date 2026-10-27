@@ -72,8 +72,15 @@ def test_spot_check_review_countersigns_and_verifies(tmp_path):
     e = Env(tmp_path, tail_ms=8_000, k=4)
     sub = e.submit()
     assert sub.state == "awaiting_segments", sub.errors
-    assert len(sub.random_sample) == 4 and sub.commit
-    assert len(sub.required) < len(e.fx["segments"])  # spot-check: not everything
+    assert sub.commit
+    media_n = sum(1 for m in sub.bundle.segments if int(m.get("offset", 0) or 0) > 0)
+    # Motion rule v4 takes all media when the fixture has ≤48 fragments; random_sample is then empty.
+    if media_n > 48:
+        assert len(sub.random_sample) == 4
+        assert len(sub.required) < len(e.fx["segments"])
+    else:
+        assert len(sub.motion_sample) == media_n
+        assert sub.random_sample == []
     e.upload_all(sub)
     out = e.ref.review(sub)
     assert out["state"] == "awaiting_player_signature", json.dumps(out["review"]["checks"], indent=1)
@@ -151,15 +158,28 @@ def test_missing_segments_refused(tmp_path):
 def test_spot_check_rejects_unrequested_segment(tmp_path):
     e = Env(tmp_path, tail_ms=8_000, k=2)
     sub = e.submit()
-    extra = next(s for s in range(len(e.fx["segments"])) if s not in sub.required)
+    extras = [s for s in range(len(e.fx["segments"])) if s not in sub.required]
+    if not extras:
+        # Short fixture: motion v4's ≤48 budget covers every media fragment.
+        assert len(sub.required) == len(e.fx["segments"])
+        return
+    extra = extras[0]
     with pytest.raises(ValueError):
         e.ref.put_segment(sub, extra, [e.fx["segments"][extra]])
 
 
 def test_random_sample_differs_per_submission(tmp_path):
     e = Env(tmp_path, tail_ms=4_000, k=3)
-    samples = {tuple(e.submit().random_sample) for _ in range(6)}
-    assert len(samples) > 1
+    subs = [e.submit() for _ in range(6)]
+    # Motion draws are content-head deterministic across submissions.
+    motion_keys = {tuple(tuple(d) for d in s.motion_draws) for s in subs}
+    assert len(motion_keys) == 1
+    samples = {tuple(s.random_sample) for s in subs}
+    media_n = sum(1 for m in subs[0].bundle.segments if int(m.get("offset", 0) or 0) > 0)
+    if media_n > 48:
+        assert len(samples) > 1
+    else:
+        assert samples == {()}
 
 
 def test_final_mismatch_refused(tmp_path):
