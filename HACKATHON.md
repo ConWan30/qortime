@@ -67,6 +67,7 @@ Boundary commit: [`0e87ec3`](https://github.com/ConWan30/qortime/commit/0e87ec3)
 | [#104](https://github.com/ConWan30/qortime/pull/104) | Ban CIRCLE/CROSS from challenge body; pin end-menu reader fix (qorcap #116) |
 | [#105](https://github.com/ConWan30/qortime/pull/105) | Record QorCap 0.3.38 as the current recorder version |
 | [#106](https://github.com/ConWan30/qortime/pull/106) | Motion rule v4: deterministic content-head sampling + median of 3×48 |
+| [#107](https://github.com/ConWan30/qortime/pull/107) | This list; removed public match page 021003 (on-screen names in its signed receipt); README Meta-models + demo-video sections |
 
 ## Footage policy
 Short published **highlight clips** from verified (and labelled FAIL) matches are public under `site/matches/*/clips/`.
