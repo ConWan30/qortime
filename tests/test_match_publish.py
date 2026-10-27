@@ -220,25 +220,6 @@ def test_published_original_receipts_keep_their_real_verdicts():
     assert '"status": "FAIL"' in page
     assert "These clips burn SCOREBUG LOCK" in page
 
-    current = (root / "site/matches/021003/receipt.json").read_bytes()
-    earlier = (root / "site/matches/021003/receipt-pre-psn-20261018.json").read_bytes()
-    assert hashlib.sha256(current).hexdigest().startswith("182d3a02")
-    assert hashlib.sha256(earlier).hexdigest().startswith("2ea2645d")
-    attested_body = json.loads(current)
-    attested = verify_receipt(attested_body)
-    assert attested["status"] == "SELF_ATTESTED" and attested["errors"] == []
-    # Offline re-sign after the side correction. The official referee 422s because these
-    # checkpoint signatures are not the live countersigned.jsonl. That rejection is correct.
-    assert attested_body["referee"]["key_kind"] == "local-self-attested-offline"
-    assert any("side corrected after recording" in n for n in attested_body["result"]["notes"])
-    assert attested["status"] != "VERIFIED"
-    page2 = (root / "site/matches/021003/index.html").read_text()
-    assert "HTTP 422" in page2 and "receipt-pre-psn-20261018.json" in page2
-    assert "not submitted" not in page2.lower()
-    assert '"status": "SELF_ATTESTED"' in page2
-    assert '"status": "VERIFIED"' not in page2
-
-
 def test_default_slug():
     assert P.default_slug("local-20261017-021003") == "021003"
     assert P.default_slug("Weird ID/../x") == "weird-id-x"
@@ -323,9 +304,10 @@ def test_published_match_170123_verifies_and_stays_public():
     assert summary["receipt_result"] == {"away": 10, "home": 0, "method": "end_menu_read"}
     assert summary["clips"] == 3
     index = (root / "site/matches/index.html").read_text(encoding="utf-8")
-    assert index.find('href="170123/"') < index.find('href="021003/"') < index.find('href="125430/"')
+    assert index.find('href="170123/"') < index.find('href="125430/"')
+    assert 'href="021003/"' not in index
     assert 'class="lockg"' in index and "n = 1" in index
-    assert "SELF-SIGNED" in index and ">FAIL<" in index
+    assert ">FAIL<" in index
     assert "No page here is referee-verified" not in index
 
 

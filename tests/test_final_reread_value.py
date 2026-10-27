@@ -20,16 +20,6 @@ PLAYER = SoftwareKey.from_seed_hex("d1" * 32)
 
 # Verdicts of receipts that already exist, taken before this change. A logic edit that moves one fails here.
 PINNED = {
-    "site/matches/021003/receipt.json": (
-        "SELF_ATTESTED", "single-attested", [],
-        ["referee_key_not_pinned", "referee_not_on_allowlist", "referee_local_self_attested",
-         "away:challenge_missing:kickoff", "away:challenge_missing:halftime", "away:challenge_missing:end",
-         "away:motion_signal_missing"]),
-    "site/matches/021003/receipt-pre-psn-20261018.json": (
-        "SELF_ATTESTED", "single-attested", [],
-        ["referee_key_not_pinned", "referee_not_on_allowlist", "referee_local_self_attested",
-         "home:challenge_unanswered:kickoff", "home:challenge_missing:halftime", "home:challenge_missing:end",
-         "home:motion_signal_missing"]),
     "site/matches/125430/receipt.json": (
         "FAIL", "single-attested",
         ["home:cp[0]:gap_too_long", "home:cp[591]:gap_too_long", "home:cp[591]:clock_skew", "home:cp[592]:clock_skew"],

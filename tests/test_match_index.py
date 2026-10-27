@@ -178,7 +178,7 @@ def test_viewer_sticky_ticker_and_manual_hash_check():
     assert "Self-signed · not referee-signed" in TEMPLATE and "Self-attested" not in TEMPLATE
     assert 'ok===true&&VERIFIED?"✓"' in TEMPLATE
     root = Path(__file__).resolve().parents[1]
-    for rel in ("site/matches/125430/index.html", "site/matches/021003/index.html"):
+    for rel in ("site/matches/125430/index.html",):
         page = (root / rel).read_text()
         assert "overflow-x:hidden;overflow-x:clip" in page
         assert "new IntersectionObserver" not in page
