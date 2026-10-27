@@ -1,7 +1,12 @@
 # Meta AI Developer Hackathon: pre-existing work vs hackathon work
 
-QorTime is entered in the **Startup** track of the Meta AI Developer Hackathon (Oct 26 – Nov 4 2026). The rules let
-startups build on an existing codebase if the new work is clearly identified. This file is that list.
+> **The hackathon submission repo is [`ConWan30/qortime-ai`](https://github.com/ConWan30/qortime-ai)**: event work only,
+> extracted on Oct 27 2026 after the organizers asked for a fresh standalone repo. Its `PROVENANCE.md` maps every file
+> back to the in-window PRs below. **This repo is pre-existing context and is not the submission.**
+
+QorTime is entered in the **Indie Developer** track of the Meta AI Developer Hackathon (Oct 26 – Nov 4 2026). It is a solo
+build and QorTime is not incorporated. This file lists what in this repo existed before the event and what was added
+during it.
 
 Built by Contravious Battle, solo founder (QorTime). Contact: [README › Creator & contact](README.md#creator--contact).
 
@@ -62,7 +67,7 @@ Boundary commit: [`0e87ec3`](https://github.com/ConWan30/qortime/commit/0e87ec3)
 | PR | One line |
 |---|---|
 | [#89](https://github.com/ConWan30/qortime/pull/89) | Verifier auto-pin for trusted referees |
-| [#91](https://github.com/ConWan30/qortime/pull/91) | Handoff: Meta hackathon track is Startup |
+| [#91](https://github.com/ConWan30/qortime/pull/91) | Handoff: Meta hackathon track is Startup (later changed: the entry is on the Indie Developer track) |
 | [#100](https://github.com/ConWan30/qortime/pull/100) | Site: mobile UI/UX audit fixes |
 | [#102](https://github.com/ConWan30/qortime/pull/102) | Site: one QorTime logo lockup on every page |
 | [#103](https://github.com/ConWan30/qortime/pull/103) | Site: consistent page nav, tap targets, readable dim text |
