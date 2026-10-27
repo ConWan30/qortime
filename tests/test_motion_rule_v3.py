@@ -30,7 +30,6 @@ from qor_receipt.review.motion import (
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).parent))
-import review_fixture as F  # noqa: E402
 
 
 def _series(seed: int, n: int = 200) -> list[int]:

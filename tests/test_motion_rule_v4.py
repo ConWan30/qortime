@@ -16,7 +16,6 @@ from qor_receipt.review.motion import (
     median_permille,
     motion_content_seed,
     motion_sample_draws,
-    motion_sample_seqs,
     score_motion_v4,
 )
 

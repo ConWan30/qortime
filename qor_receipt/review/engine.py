@@ -46,6 +46,7 @@ from qor_receipt.review.device_attest import DEVICE_ATTEST_SCHEMA, device_key_fo
 from qor_receipt.review.motion import (
     MOTION_BASIS_V4,
     MOTION_HZ,
+    MOTION_MEDIAN_DRAWS,
     MOTION_RULE,
     MOTION_SAMPLE_MAX_SEGMENTS,
     MOTION_SIZE,
@@ -618,8 +619,6 @@ class Referee:
         Draws are seeded only from content heads; they are not redrawn and do not depend on
         submission id or the spot-check RNG.
         """
-        from qor_receipt.review.motion import MOTION_BASIS_V4, MOTION_MEDIAN_DRAWS
-
         b = sub.bundle
         if not M.ffmpeg_bin() or not b.inputs:
             return None, {"rule": MOTION_RULE, "note": "not computed (no ffmpeg or no controller log)"}
