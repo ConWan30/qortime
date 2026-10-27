@@ -196,7 +196,7 @@ body.page{background:radial-gradient(880px 520px at 92% -8%,rgba(79,124,255,.16)
 .step h2{font:900 clamp(28px,3vw,40px)/.95 var(--disp);text-transform:uppercase;margin-bottom:8px}
 .step.gold{border-color:rgba(228,197,109,.45)}
 .step.gold .n{color:#e4c56d}
-.fine{font-size:14px;max-width:68ch}
+.fine{font-size:14px;max-width:68ch}.fine>a:only-child{display:inline-flex;align-items:center;min-height:44px}
 .foot-links{display:flex;flex-wrap:wrap;gap:8px 16px}
 .foot-links a{color:#8a93ad}
 .foot-links a:hover{color:var(--ink)}

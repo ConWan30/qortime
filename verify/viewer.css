@@ -18,7 +18,7 @@ code,kbd,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 .top{display:flex;flex-wrap:wrap;align-items:center;gap:6px 18px;max-width:1040px;margin:0 auto;padding:18px}
 .brand{display:inline-flex;align-items:center;min-height:44px;font:900 22px/1 "Big Shoulders Display",Impact,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--ink);text-decoration:none}.brand span{color:var(--pass)}.brand .mark{flex:none;margin-right:10px}
 .top nav{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:14px}
-.top nav a{display:inline-flex;align-items:center;min-height:44px;color:var(--mute);text-decoration:none;padding:10px 0}
+.top nav a{display:inline-flex;align-items:center;justify-content:center;min-height:44px;min-width:44px;color:var(--mute);text-decoration:none;padding:0}
 .top nav a:hover{color:var(--ink)}
 .hero h1{margin:8px 0 6px;font:900 clamp(38px,7vw,64px)/.95 "Big Shoulders Display",Impact,sans-serif;letter-spacing:.04em;text-transform:uppercase}
 .hero p{margin:0 0 18px;color:var(--mute);max-width:720px}
