@@ -3,6 +3,8 @@
 QorTime is entered in the **Startup** track of the Meta AI Developer Hackathon (Oct 26 – Nov 4 2026). The rules let
 startups build on an existing codebase if the new work is clearly identified. This file is that list.
 
+Built by Contravious Battle, solo founder (QorTime). Contact: [README › Creator & contact](README.md#creator--contact).
+
 QorTime is **anti-cheat and verified gaming skill**: a capture client (QorCap) on the player's PC makes signed match
 receipts, and the QorTime referee/verifier checks them. It is not a coaching product.
 

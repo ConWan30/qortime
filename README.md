@@ -137,6 +137,15 @@ docs/PHASE2.md               not built yet
 - **Verified Match leaves test mode only after KYC.** Not before.
 - **Device key, claimed only.** QorCap v0.3.29 and later can add an opt-in TPM device key. The referee shows that as TPM claimed (unverified). That is the strongest device status it gives. A checked TPM quote is still roadmap, along with receipt inclusion proofs, a sealed capture device, and C2PA on clips. [docs/PHASE2.md](docs/PHASE2.md).
 
+## Creator & contact
+
+Built by **Contravious Battle**, solo founder, QorTime.
+
+- Email: [kamazi.shotta@icloud.com](mailto:kamazi.shotta@icloud.com) (personal) · [qoresence@mail.grokbot.com](mailto:qoresence@mail.grokbot.com) (project inbox)
+- LinkedIn: [linkedin.com/in/contravious-battle-b8a25a445](https://www.linkedin.com/in/contravious-battle-b8a25a445)
+- X: [@ConWanZo](https://x.com/ConWanZo) (personal) · [@QorTimeHQ](https://x.com/QorTimeHQ) (project)
+- GitHub: [ConWan30](https://github.com/ConWan30)
+
 ## License and credits
 
 [MIT](LICENSE). Copyright (c) 2026 Contravious Battle (ConWan30).
