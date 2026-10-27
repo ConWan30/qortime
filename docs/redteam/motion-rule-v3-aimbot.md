@@ -4,7 +4,7 @@ Test-only harness under `tests/redteam/`. It scores controller logs by calling `
 
 The network guard a test can install around a run is a tripwire. It refuses network modules and a few process calls (socket, subprocess.Popen, os.system, os.spawn, ctypes) for the rest of that process.
 
-Harness `redteam-aimbot/v2` for package `qor-receipt==0.1.0`. Harness sha256 `077493b84b2a13ac17446e303d95ffc19936d0599fb5e2aa948d4173289b3846` over 16 files.
+Harness `redteam-aimbot/v2` for package `qor-receipt==0.1.0`. Harness sha256 `4cd0567c686fd4fa487d72567711964c6535c31443103bb8616c4c595cdb0945` over 16 files.
 
 The harness sha256 moved because `tests/redteam/scorers.py` and `tests/redteam/aimbot_harness.py` changed. It is still the package version plus the sorted in-repo Python files reachable from the harness. It does not include scorer settings.
 
@@ -81,9 +81,9 @@ The 150 ms event window is valid only on synthetic data with a shared clock. On 
 
 | scorer | version | package | estimator | file set | sha256 | headline catch rate | headline false-alarm rate | abstained |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| motion-rule-v3 | motion-rule/v3 | 0.1.0 | — | 15 files | 5b75dd262d19553b218d08a91d0364722f6190da51b8b05170de92410e95a161 | 1/6 (0.17) | 0/1 (0.00) | 0/7 |
-| pan-agreement | pan-agreement/v0 | 0.1.0 | example-no-claim/v0 | 15 files | cd4e185b9b671b0dc7c345c2d8ca5f979ca334e9eda53bb05438f2c83ad3d1b7 | n/a (0/6 decided) | n/a (0/1 decided) | 7/7 |
-| event-press-agreement | event-press-agreement/v0 | 0.1.0 | example-no-claim-events/v0 | 15 files | 143f15a8f91c1fd3014ed9814f5e6eef9515fdc99376c4281a30508071048e43 | n/a (0/6 decided) | n/a (0/1 decided) | 7/7 |
+| motion-rule-v3 | motion-rule/v3 | 0.1.0 | — | 15 files | 43fea3e0ef09d290c84380b4ea6750d3b1fb5689eebb1fb981a02266bb89ff44 | 1/6 (0.17) | 0/1 (0.00) | 0/7 |
+| pan-agreement | pan-agreement/v0 | 0.1.0 | example-no-claim/v0 | 15 files | c48f2d5796768042e55b11f3aa3cfb067513c9d3c60b572aced8c077ea1ed5a0 | n/a (0/6 decided) | n/a (0/1 decided) | 7/7 |
+| event-press-agreement | event-press-agreement/v0 | 0.1.0 | example-no-claim-events/v0 | 15 files | 1b89e266bb94c53c2821360136a8edd7f5b2711dedea565a1673962d7149ed1c | n/a (0/6 decided) | n/a (0/1 decided) | 7/7 |
 
 | variant | cohort | motion-rule-v3 | pan-agreement | event-press-agreement |
 | --- | --- | --- | --- | --- |
@@ -140,7 +140,7 @@ report = evaluate(scorers=[PanAgreementScorer(MyPanEstimator()), EventPressAgree
       "tests/redteam/scorers.py"
     ],
     "package_version": "0.1.0",
-    "sha256": "077493b84b2a13ac17446e303d95ffc19936d0599fb5e2aa948d4173289b3846",
+    "sha256": "4cd0567c686fd4fa487d72567711964c6535c31443103bb8616c4c595cdb0945",
     "version": "redteam-aimbot/v2"
   },
   "headline_stick_aimbots": {
@@ -184,7 +184,7 @@ report = evaluate(scorers=[PanAgreementScorer(MyPanEstimator()), EventPressAgree
       "log_tamper_true_positives": 1,
       "name": "motion-rule-v3",
       "package_version": "0.1.0",
-      "sha256": "5b75dd262d19553b218d08a91d0364722f6190da51b8b05170de92410e95a161",
+      "sha256": "43fea3e0ef09d290c84380b4ea6750d3b1fb5689eebb1fb981a02266bb89ff44",
       "version": "motion-rule/v3"
     },
     {
@@ -218,7 +218,7 @@ report = evaluate(scorers=[PanAgreementScorer(MyPanEstimator()), EventPressAgree
       "log_tamper_true_positives": 0,
       "name": "pan-agreement",
       "package_version": "0.1.0",
-      "sha256": "cd4e185b9b671b0dc7c345c2d8ca5f979ca334e9eda53bb05438f2c83ad3d1b7",
+      "sha256": "c48f2d5796768042e55b11f3aa3cfb067513c9d3c60b572aced8c077ea1ed5a0",
       "version": "pan-agreement/v0"
     },
     {
@@ -252,7 +252,7 @@ report = evaluate(scorers=[PanAgreementScorer(MyPanEstimator()), EventPressAgree
       "log_tamper_true_positives": 0,
       "name": "event-press-agreement",
       "package_version": "0.1.0",
-      "sha256": "143f15a8f91c1fd3014ed9814f5e6eef9515fdc99376c4281a30508071048e43",
+      "sha256": "1b89e266bb94c53c2821360136a8edd7f5b2711dedea565a1673962d7149ed1c",
       "version": "event-press-agreement/v0"
     }
   ],
