@@ -27,16 +27,6 @@ Not affiliated with EA, the NFL, or Sony. Madden NFL is a trademark of its owner
 
 [![QorTime homepage: one app, one recording, one receipt](docs/readme/shots/site-desktop.webp)](https://qortime.com/)
 
-**[Match 021003](https://qortime.com/matches/021003/)** — motion playback of burst stills, touchdown reads, and controller advisory. Status on the page: **SELF-SIGNED · NOT REFEREE-SIGNED**. The official referee rejected the submission with HTTP 422 because receipt checkpoint 0 differs from `countersigned.jsonl`. Away 22 – home 41 is what this receipt and the end-of-game menu read. It is not a referee-verified result. The player UI itself says the burst is not continuous video. The raw verifier status for this case is `SELF_ATTESTED`.
-
-[![Match 021003 viewer, self-signed, not referee-signed, final 22 to 41](docs/readme/shots/match-021003-desktop.webp)](https://qortime.com/matches/021003/)
-
-[![Phone-width view of match 021003, still marked self-signed](docs/readme/shots/match-021003-mobile.webp)](https://qortime.com/matches/021003/)
-
-Playback of the 6–0 Q1 touchdown burst (12 stills). The header stays **SELF-SIGNED** the whole time.
-
-[![Burst playback of the 021003 touchdown read, self-signed, not continuous video](docs/readme/shots/match-021003-playback.gif)](https://qortime.com/matches/021003/)
-
 **[Match 125430](https://qortime.com/matches/125430/)** — clips tied to the signed receipt. The page checks the proof in the browser and shows **RECEIPT FAIL · NOT A VERIFIED RESULT**. Published verifier errors:
 
 - `home:cp[0]:gap_too_long`
@@ -53,7 +43,19 @@ Browser verifier (no account, nothing uploaded): <https://qortime.com/verify/>
 ## Meta AI Developer Hackathon (Oct 26 – Nov 4 2026)
 QorTime is in the Startup track. Pre-existing work vs hackathon work is listed in [`HACKATHON.md`](HACKATHON.md).
 Hackathon code lives in new, labeled paths (for example `qor_receipt/ai_ruling/`, an advisory Muse Spark explainer
-that never changes a verdict).
+that never changes a verdict). The capture client lives in [`ConWan30/qorcap`](https://github.com/ConWan30/qorcap); see its [`HACKATHON.md`](https://github.com/ConWan30/qorcap/blob/main/HACKATHON.md).
+
+### How Meta models are used
+| Model | Role in this product / demo |
+|---|---|
+| **Muse Spark 1.3** | Signed plain-English receipt explanation; default second score reader (lower-only on disagreement); Show Your Hands play-start filter (remove-only) |
+| **SAM 3.1** | Scorebug locator for viewers (info only; never a status signal) |
+| **Muse Voice Transcribe 1.0** | Demo-video captions (keyword-fixed ASR in the submission demo pipeline) |
+
+Full separation table, measured numbers, and in-window PR list: [`HACKATHON.md`](HACKATHON.md).
+
+### Demo video
+**(link coming)** — three-minute-class demo of the hackathon-built Meta advisory layer on a real VERIFIED match. Hosted URL will be pasted into the Cerebral Valley submission form.
 
 ## How it works
 
@@ -130,7 +132,7 @@ docs/PHASE2.md               not built yet
 
 ## Roadmap
 
-- **One countersigned match.** The official referee's published `VERIFIED` receipt is [match 170123](https://qortime.com/matches/170123/) (n = 1). 021003 came back HTTP 422. 125430 fails the checkpoint gap and clock-skew checks above.
+- **One countersigned match.** The official referee's published `VERIFIED` receipt is [match 170123](https://qortime.com/matches/170123/) (n = 1). 125430 fails the checkpoint gap and clock-skew checks above. Match 021003 is not published on the public site.
 - **Challenge timing that fits a real pause.** Rule v1 asks the pause menu to land within 600 ms, and its dark-menu caps stay full luma <= 16 and lower half <= 8. On captured Madden footage the drawn menu is later than 600 ms, so an honest press cannot pass v1. Rule v2 is opt-in: 0..2500 ms, ±300 ms, and the measured USB/HDMI caps (full <= 26, lower <= 16). Detail: [docs/REFEREE_SERVICE.md](docs/REFEREE_SERVICE.md).
 - **Verified Match leaves test mode only after KYC.** Not before.
 - **Device key, claimed only.** QorCap v0.3.29 and later can add an opt-in TPM device key. The referee shows that as TPM claimed (unverified). That is the strongest device status it gives. A checked TPM quote is still roadmap, along with receipt inclusion proofs, a sealed capture device, and C2PA on clips. [docs/PHASE2.md](docs/PHASE2.md).
@@ -164,7 +166,7 @@ Receipt format, JCS with a Python/JS parity vector, ed25519 sign and verify in P
 
 The Windows capture agent records DualSense HID, requires 3-read scorebug agreement, and runs nonce challenges. In the live test recorded in this repo, of 233 sampled frames 143 were read correctly, 90 were refused, and 0 were read wrong.
 
-The official referee service is deployed. Its root key is offline. The online key is a 90-day delegate. [Match 170123](https://qortime.com/matches/170123/) carries that countersignature (delegation serial 2). 021003 and 125430 do not.
+The official referee service is deployed. Its root key is offline. The online key is a 90-day delegate. [Match 170123](https://qortime.com/matches/170123/) carries that countersignature (delegation serial 2). [Match 125430](https://qortime.com/matches/125430/) does not.
 
 ### AI referee
 
