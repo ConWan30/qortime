@@ -87,34 +87,95 @@
     "gate_log": "challenge_gates.jsonl: one line per opened window with the gate basis and scorebug state"
   },
   "motion_rules": {
-    "floor_permille": 300,
-    "min_bins": 20,
-    "max_lag_bins": 3,
-    "bin_ms": 1000,
-    "current": 3,
-    "sample_max_segments": 24,
-    "sample_hz": 10,
-    "sample_size": [640, 360],
-    "clock": "fragment_pts",
-    "sample": "stratified random: the media span is split into at most 24 equal mono_ms strata and the referee RNG picks one segment per non-empty stratum, drawn only after the submission commit. The drawn seqs are plan.json motion and review.checks.motion.detail.sample_segments",
-    "decode_budget": "at most 24 media fragments (about 48 s when a fragment is ~2 s), 10 Hz, 640x360; the 240 s tail is the final re-read and is not added to this sample",
-    "signal": "controller report rate (logged input rows per second); a second with no reports stays zero and is not dropped",
-    "exclusions": ["scorebug_absent", "end_menu", "final_screen", "challenge_pause"],
-    "not_exclusions": ["client labels", "timeline.jsonl", "bundle.json fields", "idle controller seconds"],
-    "scorebug_absent": "layout_unknown only, and only after this sample has one ok scorebug read; a second is absent when at least half of its classified frames are layout_unknown; frame_too_small, frame_invalid, and frame_aspect are not absence",
-    "challenge_pause": "the measured pause span from the challenge re-run, not the issue window and not every dark frame in the match",
-    "history": "Reviews before motion rule 3 correlated report rate with frame-difference energy over every decoded segment, including the 240 s tail, on the segment close clock, with no live-play exclusions. Those receipts store that integer. The verifier still only compares the stored integer with 300.",
-    "rule_versions": {
-      "3": {
-        "id": 3,
-        "basis": "motion-rule/v3: controller report rate vs frame-difference energy per second on a stratified random spread of at most 24 media segments drawn after commit, timed with the fragment PTS clock (segment close stamps only when a fragment has no tfdt); bins dropped only for referee-measured scorebug absence, end menu, final screen, or challenge pause",
-        "where": "signals.motion_basis and review.checks.motion.detail. Not result.rule. Challenge result.rule stays 1 or 2.",
-        "detail_keys": ["rule", "bins", "decoded_bins", "motion_permille", "basis", "sample_segments", "sample_max_segments", "clock", "clock_fallbacks", "screen_readers", "excluded"],
-        "excluded_keys": ["scorebug_absent", "end_menu", "final_screen", "challenge_pause", "total"],
-        "receipt_schema": "no new receipt.v0.json fields; excluded-bin counts and the sample live in the review check detail and in this registry"
-      }
+  "floor_permille": 300,
+  "min_bins": 20,
+  "max_lag_bins": 3,
+  "bin_ms": 1000,
+  "current": 4,
+  "sample_max_segments": 48,
+  "median_draws": 3,
+  "sample_hz": 10,
+  "sample_size": [
+    640,
+    360
+  ],
+  "clock": "fragment_pts",
+  "sample": "motion-rule/v4: media span split into at most 48 equal mono_ms strata; three deterministic draws seeded only from chain_head / checkpoint head / inputs chain head / mode (never submission id) each pick one segment per non-empty stratum; review uses the median permille. plan.json stores motion (union) and motion_draws; review.checks.motion.detail mirrors that",
+  "decode_budget": "union of 3 deterministic draws of at most 48 media fragments each (about 96 s when a fragment is ~2 s and draws overlap; worst case ~288 s if disjoint), 10 Hz, 640x360; the 240 s tail is the final re-read and is not added to this sample",
+  "signal": "controller report rate (logged input rows per second); a second with no reports stays zero and is not dropped",
+  "exclusions": [
+    "scorebug_absent",
+    "end_menu",
+    "final_screen",
+    "challenge_pause"
+  ],
+  "not_exclusions": [
+    "client labels",
+    "timeline.jsonl",
+    "bundle.json fields",
+    "idle controller seconds"
+  ],
+  "scorebug_absent": "layout_unknown only, and only after this sample has one ok scorebug read; a second is absent when at least half of its classified frames are layout_unknown; frame_too_small, frame_invalid, and frame_aspect are not absence",
+  "challenge_pause": "the measured pause span from the challenge re-run, not the issue window and not every dark frame in the match",
+  "history": "Reviews before motion rule 3 correlated report rate with frame-difference energy over every decoded segment, including the 240 s tail, on the segment close clock, with no live-play exclusions. Rule 3 used a SystemRandom stratified sample of at most 24 segments after commit (submission-dependent). Rule 4 keeps the floor at 300 and the same exclusions, but seeds sampling from content heads only and takes the median of 3 draws of at most 48 segments. Those receipts store that integer. The verifier still only compares the stored integer with 300.",
+  "rule_versions": {
+    "3": {
+      "id": 3,
+      "basis": "motion-rule/v3: controller report rate vs frame-difference energy per second on a stratified random spread of at most 24 media segments drawn after commit, timed with the fragment PTS clock (segment close stamps only when a fragment has no tfdt); bins dropped only for referee-measured scorebug absence, end menu, final screen, or challenge pause",
+      "where": "signals.motion_basis and review.checks.motion.detail. Not result.rule. Challenge result.rule stays 1 or 2.",
+      "detail_keys": [
+        "rule",
+        "bins",
+        "decoded_bins",
+        "motion_permille",
+        "basis",
+        "sample_segments",
+        "sample_max_segments",
+        "clock",
+        "clock_fallbacks",
+        "screen_readers",
+        "excluded"
+      ],
+      "excluded_keys": [
+        "scorebug_absent",
+        "end_menu",
+        "final_screen",
+        "challenge_pause",
+        "total"
+      ],
+      "receipt_schema": "no new receipt.v0.json fields; excluded-bin counts and the sample live in the review check detail and in this registry"
+    },
+    "4": {
+      "id": 4,
+      "basis": "motion-rule/v4: controller report rate vs frame-difference energy per second; median of 3 deterministic stratified draws of at most 48 media segments each, seeded only from chain_head / checkpoint head / inputs chain head / mode (never submission id), timed with the fragment PTS clock (segment close stamps only when a fragment has no tfdt); bins dropped only for referee-measured scorebug absence, end menu, final screen, or challenge pause",
+      "where": "signals.motion_basis and review.checks.motion.detail. Not result.rule. Challenge result.rule stays 1 or 2.",
+      "detail_keys": [
+        "rule",
+        "bins",
+        "decoded_bins",
+        "motion_permille",
+        "basis",
+        "sample_segments",
+        "sample_draws",
+        "draw_permilles",
+        "median_draws",
+        "sample_max_segments",
+        "clock",
+        "clock_fallbacks",
+        "screen_readers",
+        "excluded"
+      ],
+      "excluded_keys": [
+        "scorebug_absent",
+        "end_menu",
+        "final_screen",
+        "challenge_pause",
+        "total"
+      ],
+      "receipt_schema": "no new receipt.v0.json fields; excluded-bin counts and the sample live in the review check detail and in this registry"
     }
-  },
+  }
+},
   "verdicts": ["VERIFIED", "PARTIAL", "SELF_ATTESTED", "FAIL"],
   "cli_exit_codes": {
     "qortime verify": {"VERIFIED": 0, "SELF_ATTESTED": 0, "PARTIAL": 1, "FAIL": 2},

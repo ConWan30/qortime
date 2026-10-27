@@ -18,8 +18,8 @@ from qor_receipt.review.clock import frame_mono_ms, motion_mono_ms
 from qor_receipt.review.motion import (
     MOTION_BASIS_V3,
     MOTION_MIN_BINS,
-    MOTION_RULE,
-    MOTION_SAMPLE_MAX_SEGMENTS,
+    MOTION_RULE_V3,
+    MOTION_SAMPLE_MAX_SEGMENTS_V3,
     correlate_keyed,
     exclusion_bins,
     motion_sample_seqs,
@@ -42,15 +42,15 @@ def _dict(values: list[int], shift: int = 0) -> dict[int, int]:
     return {i + shift: v for i, v in enumerate(values)}
 
 
-def test_motion_rule_is_three_and_is_not_a_challenge_rule():
-    assert MOTION_RULE == 3
+def test_motion_rule_v3_constants_remain_for_old_receipts():
+    assert MOTION_RULE_V3 == 3
     assert challenge_rule_of({"challenge_rule": 3}) == 1
     assert challenge_rule_of({"challenge_rule": 2}) == 2
     receipt = json.loads((ROOT / "schema" / "receipt.v0.json").read_text(encoding="utf-8"))
     rule_enum = receipt["properties"]["challenges"]["items"]["properties"]["result"]["oneOf"][1]["properties"]["rule"]["enum"]
     assert rule_enum == [1, 2]
     assert "motion-rule/v3" in MOTION_BASIS_V3
-    assert MOTION_SAMPLE_MAX_SEGMENTS == 24
+    assert MOTION_SAMPLE_MAX_SEGMENTS_V3 == 24
 
 
 def test_historical_list_correlation_is_unchanged():
@@ -150,7 +150,7 @@ def test_sample_is_one_per_stratum_and_ignores_client_flags():
     from qor_receipt.review.motion import _media_segments, _time_strata
 
     segs = _long_manifest()
-    chosen = motion_sample_seqs(segs, random.Random(0))
+    chosen = motion_sample_seqs(segs, random.Random(0), max_segments=MOTION_SAMPLE_MAX_SEGMENTS_V3)
     assert len(chosen) == 24
     assert 0 not in chosen
     assert chosen == sorted(set(chosen))
@@ -158,55 +158,18 @@ def test_sample_is_one_per_stratum_and_ignores_client_flags():
     for bucket in strata:
         hit = [int(m["seq"]) for m in bucket if int(m["seq"]) in set(chosen)]
         assert len(hit) == (1 if bucket else 0)
-    short = motion_sample_seqs(segs[:10], random.Random(0))
+    short = motion_sample_seqs(segs[:10], random.Random(0), max_segments=MOTION_SAMPLE_MAX_SEGMENTS_V3)
     assert short == list(range(1, 10))
 
 
-def test_motion_sample_depends_on_rng_and_is_drawn_after_commit(tmp_path):
-    """Two seeds differ, one seed repeats, and the engine draws only after sub.commit."""
+def test_v3_helper_sample_still_depends_on_explicit_rng():
+    """The v3 stratified helper remains available for historical analysis; seed controls the draw."""
     segs = _long_manifest()
-    a = motion_sample_seqs(segs, random.Random(1))
-    b = motion_sample_seqs(segs, random.Random(2))
-    again = motion_sample_seqs(segs, random.Random(1))
+    a = motion_sample_seqs(segs, random.Random(1), max_segments=MOTION_SAMPLE_MAX_SEGMENTS_V3)
+    b = motion_sample_seqs(segs, random.Random(2), max_segments=MOTION_SAMPLE_MAX_SEGMENTS_V3)
+    again = motion_sample_seqs(segs, random.Random(1), max_segments=MOTION_SAMPLE_MAX_SEGMENTS_V3)
     assert a == again and a != b
     assert len(a) == 24 and len(b) == 24
-    if not F.have_ffmpeg():
-        return
-    from test_referee_service import Env
-
-    from qor_receipt.review.engine import SPOT, Referee
-
-    e = Env(tmp_path, tail_ms=8_000, k=4)
-
-    class GateRng(random.Random):
-        def __init__(self, seed):
-            super().__init__(seed)
-            self.ref = None
-            self.commits = []
-
-        def choice(self, seq):
-            sub = next(iter(self.ref.subs.values()))
-            assert isinstance(sub.commit, str) and len(sub.commit) == 64
-            self.commits.append(sub.commit)
-            return random.Random.choice(self, seq)
-
-    def draw(seed):
-        rng = GateRng(seed)
-        ref = Referee(e.key, workdir=tmp_path / f"work-{seed}-{id(rng)}", now=lambda: e.clock["t"], rng=rng,
-                      core_factory=F.fake_factory(), tail_ms=8_000, random_segments=4)
-        rng.ref = ref
-        sub = ref.create(e.fx["files"], SPOT)
-        assert sub.state == "awaiting_segments", sub.errors
-        assert rng.commits and rng.commits[0] == sub.commit
-        plan = json.loads((sub.dir / "plan.json").read_text(encoding="utf-8"))
-        assert plan["commit"] == sub.commit
-        assert plan["motion"] == sub.motion_sample
-        assert plan["motion"] == motion_sample_seqs(sub.bundle.segments, random.Random(seed))
-        return sub.motion_sample
-
-    first = draw(1)
-    assert draw(1) == first
-    assert draw(2) != first
 
 
 def test_motion_clock_matches_frame_clock_at_30_fps_only():
@@ -254,61 +217,17 @@ def test_pause_scan_records_the_held_span_only():
     assert 5 not in pause_span_bins([(start, end)])
 
 
-@pytest.mark.skipif(not F.have_ffmpeg(), reason="ffmpeg needed for the synthetic fMP4 bundle")
-def test_review_uses_motion_rule_v3_and_client_labels_do_not_widen(tmp_path):
-    from test_referee_service import Env
-
-    from qor_receipt import receipt as R
-
-    e = Env(tmp_path, tail_ms=8_000, k=4)
-    snap = e.ref.rng.getstate()
-    sub = e.submit()
-    assert len(sub.required) < len(e.fx["segments"])
-    plan = json.loads((sub.dir / "plan.json").read_text(encoding="utf-8"))
-    assert plan["motion"] == sub.motion_sample
-    assert len(plan["motion"]) <= 24
-    assert min(plan["motion"]) < min(plan["tail"])
-    e.upload_all(sub)
-    out = e.ref.review(sub)
-    assert out["state"] == "awaiting_player_signature", json.dumps(out.get("review", out), indent=1)[:2000]
-    detail = out["review"]["checks"]["motion"]["detail"]
+def test_score_motion_helper_still_accepts_explicit_v3_rule():
+    """Historical detail shape: callers can still ask score_motion for rule 3."""
+    base = _series(1)
+    motion = _dict(base)
+    energy = _dict(base)
+    mp, detail = score_motion(
+        energy, motion, sample_segments=list(range(1, 25)),
+        rule=MOTION_RULE_V3, basis=MOTION_BASIS_V3,
+        sample_max_segments=MOTION_SAMPLE_MAX_SEGMENTS_V3,
+    )
+    assert mp is not None and mp >= 300
     assert detail["rule"] == 3
     assert detail["basis"] == MOTION_BASIS_V3
-    assert out["receipt"]["signals"]["motion_basis"] == MOTION_BASIS_V3
-    assert detail["motion_permille"] >= R.MOTION_MIN_PERMILLE
-    assert detail["bins"] >= 20
-    assert detail["sample_segments"] == plan["motion"] == sub.motion_sample
     assert detail["sample_max_segments"] == 24
-    assert len(detail["sample_segments"]) <= 24
-    assert detail["clock"] == "fragment_pts"
-    assert detail["clock_fallbacks"] == 0
-    assert detail["screen_readers"] is False
-    assert detail["excluded"]["scorebug_absent"] == 0
-    assert detail["excluded"]["end_menu"] == 0
-    assert detail["excluded"]["final_screen"] == 0
-    pause_ms = [(5_000, 7_000), (17_000, 19_000), (29_000, 31_000)]
-    sampled_pause = [s for s in plan["motion"]
-                     if any(s * 2000 > lo and (s - 1) * 2000 < hi for lo, hi in pause_ms)]
-    if sampled_pause:
-        assert detail["excluded"]["challenge_pause"] >= 1
-    assert "stratified random spread" in out["receipt"]["review"]["scope"]
-    assert "drawn after commit" in out["receipt"]["review"]["scope"]
-
-    e.ref.rng.setstate(snap)
-    files = dict(e.fx["files"])
-    rows = [{"t_ms": F.W0 + sec * 1000, "until_ms": F.W0 + (sec + 1) * 1000, "obs": "scorebug_absent", "n": 10}
-            for sec in range(F.SECS)]
-    files["timeline.jsonl"] = ("\n".join(json.dumps(row) for row in rows) + "\n").encode()
-    meta = json.loads(files["bundle.json"])
-    meta["motion_exclude_ms"] = [[0, F.SECS * 1000]]
-    files["bundle.json"] = json.dumps(meta).encode()
-    sub2 = e.ref.create(files, "spot-check")
-    assert sub2.state == "awaiting_segments", sub2.errors
-    for seq in sub2.required:
-        e.ref.put_segment(sub2, seq, [e.fx["segments"][seq]])
-    out2 = e.ref.review(sub2)
-    detail2 = out2["review"]["checks"]["motion"]["detail"]
-    assert detail2["motion_permille"] == detail["motion_permille"]
-    assert detail2["excluded"] == detail["excluded"]
-    assert detail2["bins"] == detail["bins"]
-    assert detail2["motion_permille"] >= R.MOTION_MIN_PERMILLE

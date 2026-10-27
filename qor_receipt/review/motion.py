@@ -1,21 +1,19 @@
-"""Motion rule v3: correlate controller report rate with frame-difference energy on live-play seconds.
+"""Motion rule v3/v4: correlate controller report rate with frame-difference energy on live-play seconds.
 
-The sample is a stratified random spread of at most ``MOTION_SAMPLE_MAX_SEGMENTS`` media
-fragments, one per equal time stratum, drawn from the referee's RNG after the submission is
-committed. The 240 s tail stays the final re-read and is not this sample.
+v3 (historical): stratified random spread of at most 24 media fragments from the referee's
+``SystemRandom`` after commit. Old receipts store that integer and ``motion-rule/v3`` basis;
+the verifier still only compares the stored integer with 300.
 
-Bins are dropped only for signals the referee measured on the frames it decoded:
-
-- scorebug absent (``layout_unknown``) after this same sample has produced one ok scorebug read
-- end menu or final screen, from the pinned sidecar readers when those readers are loaded
-- challenge pause spans the referee already measured while re-running challenges
-
-Client labels are not an input. A second with no controller reports stays in the series as zero.
-The floor, the 0..3 bin lag, and the 20-bin minimum are the same numbers as before. This module
-does not change ``motion_correlation_permille``, which still lags parallel lists by index.
+v4 (current): same correlation and exclusions, but (1) the sampling RNG is derived only from
+bundle content heads (chain / checkpoint / inputs / mode) — never the submission id — so the
+same bytes always draw the same sample, and (2) up to 48 segments per draw with the median of
+K=3 independent deterministic stratum draws. Floor stays 300. Client labels are not an input.
 """
 from __future__ import annotations
 
+import hashlib
+import random
+import statistics
 from typing import Any, Iterable
 
 # Same set the live agent treats as "no scorebug strip" (runner.NOT_VISIBLE). A strip that is
@@ -24,8 +22,11 @@ SCOREBUG_ABSENT_REASONS = frozenset({"layout_unknown"})
 # The reader refused the frame geometry. That is not a measurement of the picture.
 _GEOMETRY_REASONS = frozenset({"frame_too_small", "frame_invalid", "frame_aspect"})
 
-MOTION_RULE = 3
-MOTION_SAMPLE_MAX_SEGMENTS = 24
+MOTION_RULE_V3 = 3
+MOTION_RULE = 4
+MOTION_SAMPLE_MAX_SEGMENTS_V3 = 24
+MOTION_SAMPLE_MAX_SEGMENTS = 48
+MOTION_MEDIAN_DRAWS = 3
 MOTION_MIN_BINS = 20
 MOTION_MAX_LAG = 3
 MOTION_BIN_MS = 1_000
@@ -38,6 +39,14 @@ MOTION_BASIS_V3 = (
     "clock (segment close stamps only when a fragment has no tfdt); bins dropped only for "
     "referee-measured scorebug absence, end menu, final screen, or challenge pause"
 )
+MOTION_BASIS_V4 = (
+    "motion-rule/v4: controller report rate vs frame-difference energy per second; median of 3 "
+    "deterministic stratified draws of at most 48 media segments each, seeded only from chain_head / "
+    "checkpoint head / inputs chain head / mode (never submission id), timed with the fragment PTS "
+    "clock (segment close stamps only when a fragment has no tfdt); bins dropped only for "
+    "referee-measured scorebug absence, end menu, final screen, or challenge pause"
+)
+MOTION_BASIS = MOTION_BASIS_V4
 
 
 def _media_segments(segments: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -77,8 +86,7 @@ def motion_sample_seqs(segments: Iterable[dict[str, Any]], rng: Any,
     At most ``max_segments`` fragments. A match with no more media than that is scored in full,
     and ``rng`` is not used. A longer match is split into ``max_segments`` equal ``mono_ms``
     strata; each non-empty stratum contributes ``rng.choice``. The choice uses only ``seq``,
-    ``offset``, and ``mono_ms``. A client label cannot add or remove a segment. Callers draw
-    this after the submission commit, from the referee's RNG.
+    ``offset``, and ``mono_ms``. A client label cannot add or remove a segment.
     """
     media = _media_segments(segments)
     if max_segments <= 0 or not media:
@@ -91,6 +99,48 @@ def motion_sample_seqs(segments: Iterable[dict[str, Any]], rng: Any,
             continue
         chosen.append(int(rng.choice(bucket)["seq"]))
     return sorted(set(chosen))
+
+
+def motion_content_seed(*, chain_head: str, checkpoint_head: str, input_head: str, mode: str) -> int:
+    """64-bit seed from bundle content heads only. Submission id must never enter this material."""
+    material = "|".join([
+        "motion-rule/v4",
+        str(chain_head),
+        str(checkpoint_head),
+        str(input_head),
+        str(mode),
+    ]).encode("utf-8")
+    return int.from_bytes(hashlib.sha256(material).digest()[:8], "big")
+
+
+def motion_draw_rng(content_seed: int, draw_index: int) -> random.Random:
+    """Independent deterministic RNG for draw ``draw_index`` (0..K-1)."""
+    material = f"motion-rule/v4/draw|{content_seed}|{int(draw_index)}".encode("utf-8")
+    seed = int.from_bytes(hashlib.sha256(material).digest()[:8], "big")
+    return random.Random(seed)
+
+
+def motion_sample_draws(
+    segments: Iterable[dict[str, Any]],
+    *,
+    chain_head: str,
+    checkpoint_head: str,
+    input_head: str,
+    mode: str,
+    max_segments: int = MOTION_SAMPLE_MAX_SEGMENTS,
+    draws: int = MOTION_MEDIAN_DRAWS,
+) -> list[list[int]]:
+    """K deterministic stratified samples. Same content heads + mode → same draws every time."""
+    base = motion_content_seed(
+        chain_head=chain_head,
+        checkpoint_head=checkpoint_head,
+        input_head=input_head,
+        mode=mode,
+    )
+    out: list[list[int]] = []
+    for i in range(int(draws)):
+        out.append(motion_sample_seqs(segments, motion_draw_rng(base, i), max_segments=max_segments))
+    return out
 
 
 def _pearson_permille(xs: list[int], ys: list[int]) -> int | None:
@@ -208,8 +258,12 @@ def score_motion(energy: dict[int, int], motion: dict[int, int], *,
                  pause_spans_mono: Iterable[tuple[int, int]] = (),
                  sample_segments: list[int],
                  clock_fallbacks: int = 0,
-                 screen_readers: bool = False) -> tuple[int | None, dict[str, Any]]:
-    """Permille and the review-check detail for one motion-rule v3 sample.
+                 screen_readers: bool = False,
+                 rule: int = MOTION_RULE,
+                 basis: str | None = None,
+                 sample_max_segments: int | None = None,
+                 extra_detail: dict[str, Any] | None = None) -> tuple[int | None, dict[str, Any]]:
+    """Permille and the review-check detail for one motion-rule sample.
 
     ``motion`` is every decoded video second before exclusions. Counts in ``excluded`` are those
     seconds, not spans that fell outside the sample.
@@ -222,19 +276,109 @@ def score_motion(energy: dict[int, int], motion: dict[int, int], *,
     kept = {k: v for k, v in motion.items() if k not in parts["all"]}
     mp = correlate_keyed(energy, kept)
     detail: dict[str, Any] = {
-        "rule": MOTION_RULE,
-        "basis": MOTION_BASIS_V3,
+        "rule": int(rule),
+        "basis": basis if basis is not None else (MOTION_BASIS_V4 if rule == MOTION_RULE else MOTION_BASIS_V3),
         "bins": len(kept),
         "decoded_bins": len(motion),
         "sample_segments": list(sample_segments),
-        "sample_max_segments": MOTION_SAMPLE_MAX_SEGMENTS,
+        "sample_max_segments": int(
+            sample_max_segments if sample_max_segments is not None
+            else (MOTION_SAMPLE_MAX_SEGMENTS if rule == MOTION_RULE else MOTION_SAMPLE_MAX_SEGMENTS_V3)
+        ),
         "clock": "fragment_pts",
         "clock_fallbacks": int(clock_fallbacks),
         "screen_readers": bool(screen_readers),
         "excluded": dropped,
     }
+    if extra_detail:
+        detail.update(extra_detail)
     if mp is None:
         detail["note"] = "too few decoded seconds for a motion correlation"
     else:
         detail["motion_permille"] = mp
     return mp, detail
+
+
+def bins_owned_by(bin_segs: dict[int, set[int]], sample: Iterable[int]) -> set[int]:
+    """Seconds whose decoded frames came from at least one segment in ``sample``."""
+    want = set(int(s) for s in sample)
+    return {k for k, segs in bin_segs.items() if segs & want}
+
+
+def median_permille(values: list[int | None]) -> int | None:
+    """Median of scored draws. None only when every draw failed to score."""
+    scored = [int(v) for v in values if v is not None]
+    if not scored:
+        return None
+    return int(statistics.median(scored))
+
+
+def score_motion_v4(
+    energy: dict[int, int],
+    motion: dict[int, int],
+    bin_segs: dict[int, set[int]],
+    draws: list[list[int]],
+    *,
+    scorebug_reasons: Iterable[tuple[int, str]] = (),
+    end_menu: Iterable[tuple[int, bool]] = (),
+    final_screen: Iterable[tuple[int, bool]] = (),
+    pause_spans_mono: Iterable[tuple[int, int]] = (),
+    clock_fallbacks: int = 0,
+    screen_readers: bool = False,
+) -> tuple[int | None, dict[str, Any]]:
+    """Score each deterministic draw on its own bins; return the median permille and v4 detail."""
+    draw_scores: list[int | None] = []
+    draw_details: list[dict[str, Any]] = []
+    for sample in draws:
+        keep = bins_owned_by(bin_segs, sample)
+        sub_motion = {k: v for k, v in motion.items() if k in keep}
+        mp, det = score_motion(
+            energy,
+            sub_motion,
+            scorebug_reasons=scorebug_reasons,
+            end_menu=end_menu,
+            final_screen=final_screen,
+            pause_spans_mono=pause_spans_mono,
+            sample_segments=list(sample),
+            clock_fallbacks=clock_fallbacks,
+            screen_readers=screen_readers,
+            rule=MOTION_RULE,
+            basis=MOTION_BASIS_V4,
+            sample_max_segments=MOTION_SAMPLE_MAX_SEGMENTS,
+        )
+        draw_scores.append(mp)
+        draw_details.append(det)
+    med = median_permille(draw_scores)
+    # Prefer the middle draw's bin/exclusion counts when all scored; else first scored draw.
+    scored_dets = [d for s, d in zip(draw_scores, draw_details) if s is not None]
+    if scored_dets:
+        ranked = sorted(
+            [(s, d) for s, d in zip(draw_scores, draw_details) if s is not None],
+            key=lambda x: x[0],
+        )
+        mid = ranked[len(ranked) // 2][1]
+    else:
+        mid = draw_details[0] if draw_details else {}
+    union = sorted(set().union(*[set(s) for s in draws])) if draws else []
+    detail: dict[str, Any] = {
+        "rule": MOTION_RULE,
+        "basis": MOTION_BASIS_V4,
+        "bins": mid.get("bins", 0),
+        "decoded_bins": len(motion),
+        "sample_segments": union,
+        "sample_draws": [list(s) for s in draws],
+        "draw_permilles": draw_scores,
+        "median_draws": len(draws),
+        "sample_max_segments": MOTION_SAMPLE_MAX_SEGMENTS,
+        "clock": "fragment_pts",
+        "clock_fallbacks": int(clock_fallbacks),
+        "screen_readers": bool(screen_readers),
+        "excluded": mid.get("excluded", {
+            "scorebug_absent": 0, "end_menu": 0, "final_screen": 0, "challenge_pause": 0, "total": 0,
+        }),
+    }
+    if med is None:
+        detail["note"] = "too few decoded seconds for a motion correlation"
+    else:
+        detail["motion_permille"] = med
+    return med, detail
