@@ -53,7 +53,7 @@ Hi [Organizer] —
 
 I run **QorTime**, a small open tool that seals Madden end-of-game results: capture-card scorebug read, DualSense liveness challenges, referee-signed checkpoints, browser verify.
 
-For weekly money matchups / KOTH, the useful bit is a shareable verify link after the final whistle instead of screenshot wars in Discord.
+For weekly head-to-head matchups / KOTH, the useful bit is a shareable verify link after the final whistle instead of screenshot wars in Discord.
 
 - Verify: https://qortime.com/verify/  
 - Product: https://qortime.com/  

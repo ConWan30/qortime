@@ -187,7 +187,7 @@ The Jev final-screen detector (`qor_receipt/agent/final_screen_jev.py`) is shado
 
 ### Head-to-head links
 
-`/challenge/` is bragging rights only: no money, no entry fee, no Stripe. One QorCap receipt can settle it because both players see the same scoreboard. Only a receipt the verifier computes as `VERIFIED` can name a winner. Self-signed, failed, or missing receipts show unverified and no winner. The challenge record is not signed with the referee key.
+`/challenge/` is bragging rights only: no money, no entry fee, no Stripe. One QorCap receipt is enough because both players see the same scoreboard. Only a receipt the verifier computes as `VERIFIED` can name a winner. Self-signed, failed, or missing receipts show unverified and no winner. The challenge record is not signed with the referee key.
 
 ### Where the design can still break
 
