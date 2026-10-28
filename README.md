@@ -1,7 +1,7 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/readme/hero-dark.svg">
   <source media="(prefers-color-scheme: light)" srcset="docs/readme/hero-light.svg">
-  <img alt="QorTime. One app. One recording. One receipt. One referee-verified match is published (n = 1)." src="docs/readme/hero-dark.svg" width="1280" height="640">
+  <img alt="QorTime. One app. One recording. One receipt. Two referee-verified matches are published (n = 2)." src="docs/readme/hero-dark.svg" width="1280" height="640">
 </picture>
 
 # QorTime
@@ -15,13 +15,15 @@ QorCap, on the player's Windows PC, records an HDMI capture card, reads the scor
 [![site live](https://img.shields.io/website?url=https%3A%2F%2Fqortime.com%2F&label=site&up_message=live&down_message=down&up_color=2ef2ff&down_color=ff4d5e&labelColor=04050a)](https://qortime.com/)
 [![X @QorTimeHQ](https://img.shields.io/badge/X-@QorTimeHQ-111111?logo=x&logoColor=white)](https://x.com/QorTimeHQ)
 
-One published match is referee-verified (n = 1): [match 170123](https://qortime.com/matches/170123/), away 10 – home 0, played Oct 23, 2026 (CT). On a match page, gold digits mean the receipt status is `VERIFIED`. That page uses them. The two older pages do not.
+Two published matches are referee-verified (n = 2): [match 170123](https://qortime.com/matches/170123/), away 10 – home 0, played Oct 23, 2026 (CT), and [match 220105](https://qortime.com/matches/220105/), away 7 – home 21, played Oct 27, 2026 (CT). On a match page, gold digits mean the receipt status is `VERIFIED`. Those two pages use them. The older page does not.
 
 Not affiliated with EA, the NFL, or Sony. Madden NFL is a trademark of its owner. Game footage in the shots below is the capture already published on those pages.
 
 ## See it live
 
-**[Match 170123](https://qortime.com/matches/170123/)** — the first referee-verified match on this site (n = 1). Madden, Oct 23, 2026 (CT). The verifier, with this receipt's referee key pinned, returns **VERIFIED**. Away 10 – home 0, score source `end_menu_read`. Signed by referee `qortime-online-s2` (delegation serial 2 from root `qortime-v1`). All 7 review checks in the receipt pass: `bundle_structure`, `capture_chain`, `video_bytes` (spot-check 166/525 segments), `final_reread`, `challenges` (3, rule 2), `motion` (rule 3, 521 per mille, 63 bins), `input_integrity`. The verifier's motion floor is 300. The receipt's Not proven list stays on the page. Footage is not published; the recording stays on the player's PC. The public transparency log lists this receipt at sequence 1 (submission id `64a1a54b77948a49`, the same id in `review.submission`). Open it in the [verifier](https://qortime.com/verify/?receipt=https%3A%2F%2Fqortime.com%2Fmatches%2F170123%2Freceipt.json&referee=b283cffb9279f2f90859268c64ef21861ef7e5d9fc773bdb8061af0e80624889).
+**[Match 170123](https://qortime.com/matches/170123/)** — the first referee-verified match on this site. Madden, Oct 23, 2026 (CT). The verifier, with this receipt's referee key pinned, returns **VERIFIED**. Away 10 – home 0, score source `end_menu_read`. Signed by referee `qortime-online-s2` (delegation serial 2 from root `qortime-v1`). All 7 review checks in the receipt pass: `bundle_structure`, `capture_chain`, `video_bytes` (spot-check 166/525 segments), `final_reread`, `challenges` (3, rule 2), `motion` (rule 3, 521 per mille, 63 bins), `input_integrity`. The verifier's motion floor is 300. The receipt's Not proven list stays on the page. Footage is not published; the recording stays on the player's PC. The public transparency log lists this receipt at sequence 1 (submission id `64a1a54b77948a49`, the same id in `review.submission`). Open it in the [verifier](https://qortime.com/verify/?receipt=https%3A%2F%2Fqortime.com%2Fmatches%2F170123%2Freceipt.json&referee=b283cffb9279f2f90859268c64ef21861ef7e5d9fc773bdb8061af0e80624889).
+
+**[Match 220105](https://qortime.com/matches/220105/)** — the second referee-verified match on this site (n = 2). Madden, played Oct 27, 2026 at about 10:01 PM (CT). The verifier, with this receipt's referee key pinned, returns **VERIFIED**. Away 7 – home 21, score source `end_menu_read`. Co-signed by the online delegate key `qortime-online-s2` (delegation serial 2 from root `qortime-v1`), official referee submission `1d424dc2836f1a8c`. No Q4 scorebug read was found in the recording's tail, so the final was confirmed through the referee's end-of-game menu fallback (menu read over 486 frames, checked against the last locked read). All 7 review checks in the receipt pass: `bundle_structure`, `capture_chain`, `video_bytes` (spot-check 270/878 segments), `final_reread`, `challenges` (3, rule 2), `motion` (rule 4, 327 per mille, 86 bins), `input_integrity`. The page discloses the advisory flag `alignment_not_above_chance`: QorCap's on-device controller alignment is 435 per mille against a chance level of 477. That flag is advisory, is not one of the 7 checks, and does not change the status. The receipt's Not proven list stays on the page. Footage is not published; the recording stays on the player's PC. Open it in the [verifier](https://qortime.com/verify/?receipt=https%3A%2F%2Fqortime.com%2Fmatches%2F220105%2Freceipt.json&referee=b283cffb9279f2f90859268c64ef21861ef7e5d9fc773bdb8061af0e80624889).
 
 **[Site](https://qortime.com/)** — the public homepage. Diagrams on that page that are not a captured match are labeled illustrative.
 
@@ -79,7 +81,7 @@ QorTime proves integrity and timing of the footage, and, from QorCap v0.3, that 
 
 - **The capture and the referee are different keys.** A laptop signature cannot mint `VERIFIED`. The official countersign is a second check, on Railway, under a delegated service key. The root key is not on the server. See [docs/REFEREE_KEYS.md](docs/REFEREE_KEYS.md).
 - **Anyone can recompute it.** The static verifier runs vendored `@noble/ed25519` in the browser. `qortime verify` does the same check offline.
-- **Gold is a status, not a theme.** Match pages paint a score gold only when receipt status is `VERIFIED`. [Match 170123](https://qortime.com/matches/170123/) is the one published page with that status (n = 1).
+- **Gold is a status, not a theme.** Match pages paint a score gold only when receipt status is `VERIFIED`. [Match 170123](https://qortime.com/matches/170123/) and [match 220105](https://qortime.com/matches/220105/) are the published pages with that status (n = 2).
 - **FAIL stays on the page.** 125430 is public, failed, and still shows its clips. The viewer does not get a quieter result by editing the receipt: the proof runs on the published bytes.
 - **Inputs are advisory.** Controller and haptic summaries can sit next to a play. They are activity in sync with the video, not identity and not a signed result.
 
@@ -128,11 +130,11 @@ docs/PHASE2.md               not built yet
 - **An observer cannot fix a receipt by editing the page.** The browser check hashes the published bytes. Change a score and verification fails.
 - **Handles are not accounts.** Names a player types, and names read off the screen, are not a PlayStation login. Sony and EA do not offer a public API for this. A mismatch or a low-confidence read does not produce a winner.
 - **Verified Match is not a live charge.** The $9.99 hosted countersign is [early access](https://qortime.com/early-access/) in Stripe **test** mode until business KYC. [Test Payment Link](https://buy.stripe.com/test_3cI4gy7he9Uuarqczl00000). It is not a product you can pay for with real money.
-- **No partners and no customer counts** are claimed here. Referee-verified matches published on this site: n = 1, [match 170123](https://qortime.com/matches/170123/).
+- **No partners and no customer counts** are claimed here. Referee-verified matches published on this site: n = 2, [match 170123](https://qortime.com/matches/170123/) and [match 220105](https://qortime.com/matches/220105/).
 
 ## Roadmap
 
-- **One countersigned match.** The official referee's published `VERIFIED` receipt is [match 170123](https://qortime.com/matches/170123/) (n = 1). 125430 fails the checkpoint gap and clock-skew checks above. Match 021003 is not published on the public site.
+- **Two countersigned matches.** The official referee's published `VERIFIED` receipts are [match 170123](https://qortime.com/matches/170123/) and [match 220105](https://qortime.com/matches/220105/) (n = 2). 125430 fails the checkpoint gap and clock-skew checks above. Match 021003 is not published on the public site.
 - **Challenge timing that fits a real pause.** Rule v1 asks the pause menu to land within 600 ms, and its dark-menu caps stay full luma <= 16 and lower half <= 8. On captured Madden footage the drawn menu is later than 600 ms, so an honest press cannot pass v1. Rule v2 is opt-in: 0..2500 ms, ±300 ms, and the measured USB/HDMI caps (full <= 26, lower <= 16). Detail: [docs/REFEREE_SERVICE.md](docs/REFEREE_SERVICE.md).
 - **Verified Match leaves test mode only after KYC.** Not before.
 - **Device key, claimed only.** QorCap v0.3.29 and later can add an opt-in TPM device key. The referee shows that as TPM claimed (unverified). That is the strongest device status it gives. A checked TPM quote is still roadmap, along with receipt inclusion proofs, a sealed capture device, and C2PA on clips. [docs/PHASE2.md](docs/PHASE2.md).
