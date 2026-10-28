@@ -66,4 +66,13 @@ for (const from of S) for (const to of S) {
 }
 ok(acceptLowerOnly({ status: "PARTIAL" }, null).status === "PARTIAL", "guard ignores null");
 ok(!/innerHTML|gold/i.test(readFileSync(new URL("./score-crosscheck-view.js", import.meta.url), "utf8").replace(/gold still requires|Never gold/g, "")), "panel: no innerHTML, no gold");
+// 220105: the referee's signed cross-check, published byte for byte next to the receipt. Agreement keeps VERIFIED.
+{
+  const r2 = read("../site/matches/220105/receipt.json"), x2 = read("../site/matches/220105/score_crosscheck.json");
+  const v2 = await verifyReceipt(r2, r2.referee.pubkey);
+  const c2 = await checkCrosscheck(x2, r2);
+  ok(c2.ok && c2.cap === null && c2.agree >= 1 && c2.disagree === 0, "published 220105 cross-check is valid and agrees");
+  ok(applyCrosscheck(v2, c2).status === "VERIFIED", "220105 stays VERIFIED with its cross-check");
+  ok(!(await checkCrosscheck(x2, receipt)).ok, "220105 cross-check does not apply to the 170123 receipt");
+}
 process.exit(fails ? 1 : 0);

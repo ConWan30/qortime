@@ -17,8 +17,7 @@
   },
   "receipt_status": "VERIFIED",
   "receipt_label": "VERIFIED \u00b7 co-signed by qortime-online-s2 (delegation serial 2 from root qortime-v1)",
-  "clips": 0,
-  "events": null,
-  "touchdowns": null,
-  "note": "Footage is not published. The recording stays on the player's PC. Hand-built page: the signed receipt, the referee's checks, and the public log entry."
+  "clips": 8,
+  "events": 12,
+  "touchdowns": 4
 }
