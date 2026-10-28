@@ -137,7 +137,7 @@ docs/PHASE2.md               not built yet
 - **Two countersigned matches.** The official referee's published `VERIFIED` receipts are [match 170123](https://qortime.com/matches/170123/) and [match 220105](https://qortime.com/matches/220105/) (n = 2). 125430 fails the checkpoint gap and clock-skew checks above. Match 021003 is not published on the public site.
 - **Challenge timing that fits a real pause.** Rule v1 asks the pause menu to land within 600 ms, and its dark-menu caps stay full luma <= 16 and lower half <= 8. On captured Madden footage the drawn menu is later than 600 ms, so an honest press cannot pass v1. Rule v2 is opt-in: 0..2500 ms, ±300 ms, and the measured USB/HDMI caps (full <= 26, lower <= 16). Detail: [docs/REFEREE_SERVICE.md](docs/REFEREE_SERVICE.md).
 - **Verified Match leaves test mode only after KYC.** Not before.
-- **Device key, claimed only.** QorCap v0.3.29 and later can add an opt-in TPM device key. The referee shows that as TPM claimed (unverified). That is the strongest device status it gives. A checked TPM quote is still roadmap, along with receipt inclusion proofs, a sealed capture device, and C2PA on clips. [docs/PHASE2.md](docs/PHASE2.md).
+- **Device key, claimed only.** QorCap v0.3.29 and later can add an opt-in TPM device key. The referee shows that as TPM claimed (unverified). That is the strongest device status it gives. A checked TPM quote is still roadmap, along with receipt inclusion proofs and C2PA on clips. [docs/PHASE2.md](docs/PHASE2.md).
 
 ## Creator & contact
 

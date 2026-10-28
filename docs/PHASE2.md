@@ -16,13 +16,9 @@
 * Receipts gain `log: {index, inclusion_proof, signed_tree_head}`. Verifiers check inclusion. Platforms monitor
   for split views. This limits damage from a compromised referee key (RISKS #8).
 
-## Sealed dongle
-* A small USB device between controller and PC (or an HDMI passthrough) with its own secure element. It signs HID report
-  hashes and/or frame hashes at the source. That removes the PC from the trust path for input and video (RISKS #4, #5).
-
 ## C2PA
 * Have the agent emit a C2PA manifest for match highlight clips. The manifest binds the clip to the receipt
-  hash, so disputes can be reviewed with provenance. Longer term: capture hardware that signs C2PA natively.
+  hash, so disputes can be reviewed with provenance.
 
 ## Other
 * Persistent referee store (Postgres) and auth tokens for platforms. Webhooks to escrow platforms.
