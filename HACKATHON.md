@@ -1,7 +1,12 @@
 # Meta AI Developer Hackathon: pre-existing work vs hackathon work
 
-QorTime is entered in the **Startup** track of the Meta AI Developer Hackathon (Oct 26 – Nov 4 2026). The rules let
-startups build on an existing codebase if the new work is clearly identified. This file is that list.
+> **The hackathon submission repo is [`ConWan30/qortime-ai`](https://github.com/ConWan30/qortime-ai)**: event work only,
+> extracted on Oct 27 2026 after the organizers asked for a fresh standalone repo. Its `PROVENANCE.md` maps every file
+> back to the in-window PRs below. **This repo is pre-existing context and is not the submission.**
+
+QorTime is entered in the **Indie Developer** track of the Meta AI Developer Hackathon (Oct 26 – Nov 4 2026). It is a solo
+build and QorTime is not incorporated. This file lists what in this repo existed before the event and what was added
+during it.
 
 Built by Contravious Battle, solo founder (QorTime). Contact: [README › Creator & contact](README.md#creator--contact).
 
@@ -12,7 +17,7 @@ The capture client is a separate public repo: [`ConWan30/qorcap`](https://github
 ([`HACKATHON.md`](https://github.com/ConWan30/qorcap/blob/main/HACKATHON.md)). Meta models are used in **this**
 repo (and the submission demo pipeline), not inside QorCap.
 
-## Pre-existing (before Mon Oct 26 2026, 12:00 PM CT)
+## Pre-existing (before Mon Oct 26 2026, 11:00 AM CT / 12:00 PM ET)
 Everything in this repo at commit [`0e87ec3`](https://github.com/ConWan30/qortime/commit/0e87ec3) and earlier, including:
 - the receipt format (`schema/receipt.v0.json`, frozen), signing and verification (`qor_receipt/receipt.py`,
   `verify/verify.js`), referee delegation and revocation, the transparency log;
@@ -40,7 +45,7 @@ Measured during the hackathon (box benchmark, not in this repo): Muse Spark 1.3 
 used to evaluate the pre-existing reader got 111/111 scores exact and 0 confident-but-wrong answers (the pre-existing
 Glimpse reader: 110/111, 6 confident-but-wrong, including 5 on stats-overlay traps).
 
-## Pull requests merged on/after kickoff (Mon Oct 26 2026, 12:00 PM CT)
+## Pull requests merged on/after kickoff (Mon Oct 26 2026, 11:00 AM CT / 12:00 PM ET)
 
 Boundary commit: [`0e87ec3`](https://github.com/ConWan30/qortime/commit/0e87ec3). Every PR below merged after that boundary.
 
@@ -62,7 +67,7 @@ Boundary commit: [`0e87ec3`](https://github.com/ConWan30/qortime/commit/0e87ec3)
 | PR | One line |
 |---|---|
 | [#89](https://github.com/ConWan30/qortime/pull/89) | Verifier auto-pin for trusted referees |
-| [#91](https://github.com/ConWan30/qortime/pull/91) | Handoff: Meta hackathon track is Startup |
+| [#91](https://github.com/ConWan30/qortime/pull/91) | Handoff: Meta hackathon track is Startup (later changed: the entry is on the Indie Developer track) |
 | [#100](https://github.com/ConWan30/qortime/pull/100) | Site: mobile UI/UX audit fixes |
 | [#102](https://github.com/ConWan30/qortime/pull/102) | Site: one QorTime logo lockup on every page |
 | [#103](https://github.com/ConWan30/qortime/pull/103) | Site: consistent page nav, tap targets, readable dim text |
