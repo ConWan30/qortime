@@ -88,20 +88,29 @@
   <li class="step glass">
    <span class="n">04</span>
    <div>
+    <h2>Stick Echo · SAM 3.1</h2>
+    <p>SAM 3.1 tracks the player being controlled, and deterministic code checks that the on-screen movement follows the logged left stick, one fixed lag later, against swapped-log baselines. On private practice games that were never sent to the referee (totals only), controller and video agree on two of three games under settings fixed in advance. It is information only; a clear disagreement can at most lower VERIFIED to PARTIAL. It does not show who held the controller.</p>
+   </div>
+  </li>
+  <li class="step glass">
+   <span class="n">05</span>
+   <div>
     <h2>Red-Team the Referee · Muse Wonder</h2>
     <p>Muse Wonder wrote 26 receipt-tampering attacks once, cached so the run is offline and repeatable. They run against the unmodified pre-existing verifier on a synthetic match with freshly generated test keys, never a real key or the live referee. As an outside attacker without signing keys: 25 attacks, 0 accepted.</p>
     <p class="fine">As an insider holding the test signing keys, 12 of 25 were accepted, labelled “needs key protection”. That includes 5 inner-check gaps in the pre-existing verifier, reported and left unchanged.</p>
    </div>
   </li>
   <li class="step glass">
-   <span class="n">05</span>
+   <span class="n">06</span>
    <div>
     <h2>Also this week</h2>
     <ul class="hk-list">
      <li><b>Show Your Hands:</b> a verified-input overlay and press-to-pixel check. A Muse Spark filter can only remove candidates; it is lower only, capped at PARTIAL.</li>
      <li><b>Automatic advisory job</b> run by the referee after the verdict is final. It never delays or changes it.</li>
      <li><b>Advisory fetch and verifier auto-pin</b> of trusted referee keys, plus browser panels for the signed advisory files.</li>
-     <li><b>Demo-video captions</b> timed with Muse Voice Transcribe.</li>
+     <li><b>Commentary witness:</b> Muse Voice Transcribe and Muse Spark compare a recorded match's broadcast calls with the locked scores. Information only; tested on match 170123's three public clips.</li>
+     <li><b>Agent verify API:</b> a public, read-only API and MCP endpoint, so an AI agent can check a match page and only record it as VERIFIED when the signed receipt says so.</li>
+     <li><b>Caption timing</b> from Muse Voice Transcribe event streams.</li>
     </ul>
     <p class="fine"><a href="https://github.com/ConWan30/qortime-ai">Full list and file-by-file origin in the qortime-ai README</a></p>
    </div>
