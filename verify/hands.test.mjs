@@ -57,4 +57,13 @@ ok((await checkHands(hdoc, other)).problems.includes("receipt_mismatch"), "other
 ok(!(await checkHands(await resign(fl), receipt)).ok, "unlisted key => hidden");
 for (const bad of [null, 3, "x", [], {}]) ok(!(await checkHands(bad, receipt)).ok, `malformed ${JSON.stringify(bad)} => hidden`);
 ok(!/innerHTML/.test(readFileSync(new URL("./hands-view.js", import.meta.url), "utf8")), "panel: no innerHTML");
+// 220105: summary-only hands.json, not signed with the AI advisory key yet => no panel, status unchanged.
+{
+  const r2 = read("../site/matches/220105/receipt.json"), h2doc = read("../site/matches/220105/hands.json");
+  const v2 = await verifyReceipt(r2, r2.referee.pubkey);
+  const h2 = await checkHands(h2doc, r2);
+  ok(!h2.ok && applyHands(v2, h2).status === "VERIFIED", "unsigned 220105 hands.json stays hidden and changes nothing");
+  ok(h2doc.inputs_verified === true && h2doc.cap === null && h2doc.inputs.reports === 136734 && h2doc.inputs.chunks === 640, "220105 summary: 136,734 reports in 640 committed chunks, no cap");
+  ok(!h2doc.clips.some((c) => "track" in c) && !/HID\\|VID_|PID_|instance|Users/i.test(JSON.stringify(h2doc)), "220105 hands.json: no per-frame track, no device or user path");
+}
 process.exit(fails ? 1 : 0);

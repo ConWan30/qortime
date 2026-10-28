@@ -317,7 +317,17 @@ OFFICIAL_220105_BODY_SHA256 = "8a3a6d60e498c607fef79e013afab333b760fb7c9e58e16fa
 
 
 def test_published_match_220105_hand_built_page_stays_honest():
-    """Second referee-verified match: hand-built page, no footage. receipt.json, when present, is byte-for-byte."""
+    """Second referee-verified match: hand-built page. receipt.json is byte-for-byte.
+
+    Highlights were added later, the same way as 170123: 8 clips bound to receipt locks (re-encoded, burned panel made
+    opaque because a PSN online ID showed through it), burst stills with redacted copies, the referee's signed score
+    cross-check byte for byte, and a summary-only Show Your Hands file (not signed yet, so the verifier hides it)."""
+    from qor_receipt.ai_ruling.score_crosscheck import apply_to_result as xc_apply
+    from qor_receipt.ai_ruling.score_crosscheck import check_crosscheck
+    from qor_receipt.ai_ruling.signing import receipt_jcs_sha256
+    from qor_receipt.hands.sidecar import check_hands, sanitize
+    from qor_receipt.jcs import sha256_hex
+
     root = Path(__file__).resolve().parents[1]
     folder = root / "site/matches/220105"
     page = (folder / "index.html").read_text(encoding="utf-8")
@@ -329,28 +339,79 @@ def test_published_match_220105_hand_built_page_stays_honest():
     assert "qortime-online-s2" in page and "delegation serial 2" in page and "Recorded Oct 27, 2026" in page
     assert "alignment_not_above_chance" in page and "435" in page and "477" in page
     assert "no Q4 scorebug read in the tail" in page and "end-menu fallback" in page
-    assert "Footage is not published" in page and "AI explains, it never decides" in page and "info only" in page
+    assert "AI explains, it never decides" in page and "info only" in page
+    assert "Footage is not published" not in page
+    assert "Full footage stays on the player's PC." in page
+    assert "Some stills are redacted copies to hide account names." in page
+    assert "Highlight clips are re-encoded" in page and "not the raw recording pixels" in page
     from qor_receipt.ai_ruling.guardrail import BANNED  # same banned trust words as the AI explainer
     assert [why for rx, why in BANNED[:3] if rx.search(page)] == []  # the three trust-word rules
+    low = page.lower()
+    for word in ("attested", "hardware-verified", "proof of human play", "no adapter detected"):
+        assert word not in low
     assert "id=instance:" not in page and "HID#" not in page and "@device" not in page
-    assert "<video" not in page and ".mp4" not in page and ".jpg" not in page
     assert P.privacy_problems(page) == [] and P.privacy_problems(json.dumps(ai)) == []
-    assert not list(folder.rglob("*.mp4")) and not list(folder.rglob("*.jpg"))
+
+    raw = (folder / "receipt.json").read_bytes()
+    assert hashlib.sha256(raw).hexdigest() == OFFICIAL_220105_SHA256
+    body = json.loads(raw)
+    pinned = verify_receipt(body, referee_pub=body["referee"]["pubkey"])
+    assert pinned["status"] == "VERIFIED" and pinned["errors"] == [] and pinned["partial"] == []
+    for line in body["review"]["not_proven"]:
+        assert html.escape(line) in page
+
+    # clips: bound to the published receipt, hashes recorded the same way as 170123
+    man = json.loads((folder / "clips/manifest.json").read_text(encoding="utf-8"))
+    assert man["receipt"]["sha256"] == OFFICIAL_220105_SHA256 and man["receipt"]["file"] == "receipt.json"
+    cps = {c["hash"] for rows in body["checkpoints"].values() if isinstance(rows, list) for c in rows}
+    assert len(man["clips"]) == 8
+    for clip in man["clips"]:
+        lk = clip["lock"]
+        assert lk["in_receipt"] is True and lk["hash"] in cps
+        assert lk["frames_hash"] == sha256_hex(lk["evidence"]) and lk["frames_hash_matches_evidence"] is True
+        data = (folder / "clips" / clip["file"]).read_bytes()
+        assert hashlib.sha256(data).hexdigest() == clip["sha256"] and len(data) == clip["bytes"]
+        assert clip["qorcap_sha256"] != clip["sha256"]  # re-encoded; the original QorCap hash is kept beside it
+        assert len(data) < 12_000_000 and (folder / "clips" / f"{clip['id']}_poster.jpg").exists()
+        assert f'src="clips/{clip["file"]}"' in page and (folder / "clips" / clip["vtt"]).exists()
+        assert "content_credentials" not in clip
+    assert sorted(p.name for p in folder.rglob("*.mp4")) == sorted(c["file"] for c in man["clips"])
+    assert P.privacy_problems(json.dumps(man)) == []
+    mp4s_jpgs = list(folder.rglob("*.mp4")) + list(folder.rglob("*.jpg"))
+    assert all(p.relative_to(folder).parts[0] in ("clips", "events") for p in mp4s_jpgs)
+
+    # stills: 12 moments, 154 burst frames, 13 redacted copies marked on the page
+    stills = [p for p in (folder / "events").rglob("*.jpg") if not p.name.endswith("_t.jpg")]
+    assert len(stills) == 154 and len(list((folder / "events").iterdir())) == 12
+    redacted = [("e01_score_change", n) for n in range(9, 14)] + [("e06_score_change", n) for n in range(7, 13)] + \
+        [("e08_quarter_change", 8), ("e08_quarter_change", 9)]
+    assert page.count('data-redacted="true"') == len(redacted) == 13
+    for ev, n in redacted:
+        assert f'href="events/{ev}/frame_{n:02d}.jpg" target="_blank" rel="noopener" class="red" data-redacted="true"' in page
+    assert not list(folder.rglob("inputs.jsonl")) and not list(folder.rglob("haptics.jsonl"))
+
+    # advisory sidecars: signed cross-check (agrees), summary-only hands (hidden until signed)
+    xc = json.loads((folder / "score_crosscheck.json").read_text(encoding="utf-8"))
+    assert check_crosscheck(xc, body) == [] and xc["cap"] is None and xc["disagree"] == 0 and xc["agree"] >= 1
+    assert xc_apply(pinned, xc)["status"] == "VERIFIED"
+    hands = json.loads((folder / "hands.json").read_text(encoding="utf-8"))
+    assert hands["receipt_jcs_sha256"] == receipt_jcs_sha256(body) and hands["inputs_verified"] is True
+    assert hands["cap"] is None and hands["inputs"] == {"reports": 136734, "chunks": 640, "all_chunks_committed": True}
+    assert sanitize(hands) == hands and all("track" not in c and c["flags"] == [] for c in hands["clips"])
+    assert set(check_hands(hands, body)) <= {"key_kind", "advisory_key_not_allowlisted", "bad_advisory_signature",
+                                             "missing_signature", "no_signature"}
+    allowed = {"id", "actions", "match_anchors", "lag_ms", "resid_ms", "scorable", "flags", "press_interval_cv_permille", "why"}
+    assert all(set(c) <= allowed for c in hands["clips"])
+    assert "Show Your Hands" in page and "not signed with the AI advisory key yet" in page
+
     summary = json.loads((folder / "match.json").read_text(encoding="utf-8"))
     assert summary["receipt_status"] == "VERIFIED" and summary["final"] == {"away": 7, "home": 21}
-    assert summary["receipt_result"] == {"away": 7, "home": 21, "method": "end_menu_read"} and summary["clips"] == 0
+    assert summary["receipt_result"] == {"away": 7, "home": 21, "method": "end_menu_read"}
+    assert summary["clips"] == 8 and summary["events"] == 12 and summary["touchdowns"] == 4 and "note" not in summary
     assert (folder / "og.png").read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
-    rp = folder / "receipt.json"
-    if rp.exists():  # publishing the signed receipt is a separate decision (it carries a controller instance id)
-        raw = rp.read_bytes()
-        assert hashlib.sha256(raw).hexdigest() == OFFICIAL_220105_SHA256
-        body = json.loads(raw)
-        pinned = verify_receipt(body, referee_pub=body["referee"]["pubkey"])
-        assert pinned["status"] == "VERIFIED" and pinned["errors"] == [] and pinned["partial"] == []
-        for line in body["review"]["not_proven"]:
-            assert html.escape(line) in page
     index = (root / "site/matches/index.html").read_text(encoding="utf-8")
     assert index.find('href="220105/"') < index.find('href="170123/"') < index.find('href="125430/"')
+    assert P._card(summary) in index
 
 
 def test_index_card_without_bundle_counts_says_so():
