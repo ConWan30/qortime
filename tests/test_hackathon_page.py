@@ -1,4 +1,4 @@
-"""site/hackathon/: hackathon entry page stays unlisted, honest and free of banned claims."""
+"""site/hackathon/: hackathon entry page is indexable (demo video live), honest and free of banned claims."""
 import re
 from pathlib import Path
 
@@ -12,14 +12,14 @@ def _text():
     return PAGE.read_text(encoding="utf-8")
 
 
-def test_page_exists_and_is_noindex():
+def test_page_exists_and_is_indexable():
     html = _text()
-    assert '<meta name="robots" content="noindex">' in html
+    assert 'content="noindex"' not in html
     assert '<link rel="stylesheet" href="../style.css">' in html
 
 
-def test_page_is_unlisted():
-    assert "hackathon" not in (ROOT / "site/sitemap.xml").read_text(encoding="utf-8")
+def test_page_is_in_sitemap_but_not_in_site_nav():
+    assert "<loc>https://qortime.com/hackathon/</loc>" in (ROOT / "site/sitemap.xml").read_text(encoding="utf-8")
     for page in (ROOT / "site").rglob("*.html"):
         if page == PAGE:
             continue
@@ -33,7 +33,9 @@ def test_page_links_and_demo_slot():
                  'href="https://github.com/ConWan30/qortime-ai"'):
         assert href in html, href
     block = html.split("<!-- DEMO_VIDEO -->", 1)[1].split("<!-- /DEMO_VIDEO -->", 1)[0]
-    assert "Demo video coming soon" in block and "<iframe" not in block and "youtu" not in html.lower()
+    assert "Demo video coming soon" not in block
+    assert '<iframe src="https://www.youtube-nocookie.com/embed/vlGJ1LXxumE"' in block
+    assert 'href="https://youtu.be/vlGJ1LXxumE"' in block
     assert "AI explains, it never decides" in html and "PARTIAL" in html
 
 
