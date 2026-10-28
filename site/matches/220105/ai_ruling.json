@@ -1,0 +1,43 @@
+{
+ "schema": "qortime.ai_ruling.v0",
+ "label": "ADVISORY. AI-written explanation of the QorTime referee's results. It does not decide or change the verdict.",
+ "built_during": "Meta AI Developer Hackathon, Oct 26 - Nov 4 2026",
+ "affects_verdict": false,
+ "receipt_sha256": "c35f4fd739b25cc61a82e98afb7addb4ed7467e40a0fb8cbe68f0443fdd7579c",
+ "receipt_jcs_sha256": "95b9c9961c9dadc06c159329dac1f8cee032bc24ac6f4c631009e051051942e2",
+ "verdict_echo": {
+  "status": "VERIFIED",
+  "errors": [],
+  "partial": []
+ },
+ "model": "muse-spark-1.3",
+ "explanation": "VERIFIED\n\nThis Madden27 single match on PS5 for home 21 away 7 in Q4 was confirmed from the end menu re-read, which matches the claimed final.\n\nWhat passed: bundle structure, capture chain, challenges, final re-read, input integrity, motion, and video bytes. Referee qortime-online-s2 is trusted. No errors and nothing missing.\n\nVideo was spot-check: 270 of 878 segments checked.\n\nController input advisory did not pass as human proof, with alignment at chance level. It is advisory only.\n\nNOT proven: who was holding the controller, that laptop countersignatures were made live, that footage was not fabricated before QorCap hashed it except where anchored, or content of unchecked video segments.",
+ "guardrail": {
+  "passed": true,
+  "rules": [
+   "status_stated_exactly",
+   "no_banned_trust_words",
+   "no_hardware_claim",
+   "no_coaching",
+   "no_identity_claim",
+   "max_chars"
+  ]
+ },
+ "facts_sha256": "209d4f16d8a2a2a83e1cd4fc96e3e6745e6fd3027b764aeaab0cda1dd4cc0e85",
+ "usage": {
+  "prompt_tokens": 717,
+  "completion_tokens": 268,
+  "reasoning_tokens": 107
+ },
+ "advisory_key": {
+  "pubkey": "a304fc22b5a7c426cbe24e33b9e7602fec39fc1d8dc5958e4cb5faa4ac38bd43",
+  "key_id": "2d5de84a3dcdeaec",
+  "key_kind": "qortime-ai-advisory",
+  "role": "advisory only; not a referee key; cannot make or change a verdict"
+ },
+ "advisory_signature": {
+  "alg": "Ed25519",
+  "key_id": "2d5de84a3dcdeaec",
+  "sig": "723d4bd6eeb9e46abcbee37c4f4595f2047fa0beec7c34555cf2e741b6e68b5b87e5f798640e40f607a5b255d29d46124f24241b130ac4c41eba70e190db280c"
+ }
+}
