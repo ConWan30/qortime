@@ -1,7 +1,7 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><title>QorTime · Head-to-head challenge</title>
 <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><meta name="theme-color" content="#04080f">
-<meta name="description" content="Free head-to-head Madden challenge links settled from signed QorTime receipts. No money, no wagering. Not for betting.">
-<meta property="og:title" content="QorTime · Head-to-head challenge"><meta property="og:description" content="Free challenge link, settled from a signed QorTime receipt. Not for betting.">
+<meta name="description" content="Free head-to-head Madden challenge links, decided by signed QorTime receipts. QorTime doesn't handle money and isn't for betting.">
+<meta property="og:title" content="QorTime · Head-to-head challenge"><meta property="og:description" content="Free challenge link, decided by a signed QorTime receipt. Not for betting.">
 <meta property="og:image" content="https://qortime.com/assets/og.png">
 <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg"><link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32.png"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
 <style>
@@ -51,14 +51,14 @@ ol{margin:8px 0 0;padding-left:20px;color:#b8c7da}ol li{margin:4px 0}
 <div class="wrap">
 <nav><a class="brand" href="../"><img class="mark" src="../assets/logo.svg" alt="" width="30" height="30">QOR<span>TIME</span></a><div class="lk"><a href="../matches/">Matches</a><a href="../verify/">Verifier</a><a href="../how-it-works/">How it works</a></div></nav>
 <div id="app" aria-live="polite"></div>
-<p class="muted" style="font-size:12px;margin-top:26px">Settlement uses only receipts the QorTime verifier computes as VERIFIED (co-signed by the QorTime referee after <i>Submit for Verification</i>). A SELF_ATTESTED, failing or missing receipt shows <b>unverified</b>, never a winner. Handles are typed by players and are not verified accounts. PSN IDs are compared only with the names Madden showed on screen in the recording (on-screen evidence, not account proof); names that differ show <b>players don't match</b>, names that could not be read show <b>players unverified</b>, neither with a winner. Quarter length and other rules are agreed between players and are not checked by QorTime. Controller signals are advisory evidence, not proof.</p>
+<p class="muted" style="font-size:12px;margin-top:26px">Results use only receipts the QorTime verifier computes as VERIFIED (co-signed by the QorTime referee after <i>Submit for Verification</i>). A SELF_ATTESTED, failing or missing receipt shows <b>unverified</b>, never a winner. Handles are typed by players and are not verified accounts. PSN IDs are compared only with the names Madden showed on screen in the recording (on-screen evidence, not account proof); names that differ show <b>players don't match</b>, names that could not be read show <b>players unverified</b>, neither with a winner. Quarter length and other rules are agreed between players and are not checked by QorTime. Controller signals are advisory evidence, not proof.</p>
 </div>
 <script>
 (()=>{"use strict";
 const API=(()=>{const q=new URLSearchParams(location.search).get('api');return q&&/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(q)?q:'https://qortime-referee-production.up.railway.app'})();
 const $=s=>document.querySelector(s),app=$('#app');
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const FREE=`<div class="free glass" role="note"><b>Free · not for betting</b><span>No money, no wagering, no entry fees, no payouts, no Stripe. QorTime challenges settle bragging rights from signed receipts, nothing else.</span></div>`;
+const FREE=`<div class="free glass" role="note"><b>Free · not for betting</b><span>QorTime doesn't handle money and isn't for betting: no entry fees, no payouts, no Stripe. A challenge is bragging rights, read from signed receipts, nothing else.</span></div>`;
 const params=new URLSearchParams(location.search),cid=params.get('c');
 const keyFor=id=>'qt-h2h:'+id;const getTok=id=>{try{return JSON.parse(localStorage.getItem(keyFor(id))||'null')}catch(_){return null}};
 const setTok=(id,v)=>{try{localStorage.setItem(keyFor(id),JSON.stringify(v))}catch(_){}};
@@ -66,8 +66,8 @@ async function api(path,opt={}){const r=await fetch(API+path,opt);let j=null;try
 const fmtT=ms=>ms?new Date(ms).toLocaleString('en-US',{timeZone:'America/Chicago',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})+' CT':'';
 
 function createView(){
- app.innerHTML=`<h1>Call your shot. <em>Settle it on the record.</em></h1>
- <p class="lede">Make a head-to-head link, send it to your opponent, play. You record with QorCap; your signed receipt settles it. Your opponent only needs the link.</p>${FREE}
+ app.innerHTML=`<h1>Call your shot. <em>Put it on the record.</em></h1>
+ <p class="lede">Make a head-to-head link, send it to your opponent, play. You record with QorCap; your signed receipt decides it. Your opponent only needs the link.</p>${FREE}
  <section class="glass card" aria-label="Create a challenge"><form id="f">
   <label>Your handle<input name="creator" required maxlength="33" placeholder="@you" autocomplete="nickname"></label>
   <label>Opponent's handle<input name="opponent" required maxlength="33" placeholder="@rival"></label>
@@ -85,7 +85,7 @@ function createView(){
   <li>Play online. You record with QorCap (<b>Start Match</b>); set QorCap's side to the one you play on the scoreboard (home or away).</li>
   <li>After the game QorCap reads both PSN names off the screen (<b>Finalize</b> with <i>PSN names</i>), then run <b>Submit for Verification</b> and upload <span class="mono">receipt.official.json</span> here.</li>
   <li>The result counts only if the names Madden showed match the two PSN IDs above. Different names: <i>players don't match</i>. Names that could not be read: <i>players unverified</i>. Neither shows a winner.</li>
-  <li>One verified receipt settles it, labeled <i>recorded by</i> you. If your opponent also records and submits, matching receipts read <i>confirmed by both players</i>; different ones read <i>disputed</i>, with no winner.</li></ol></section>`;
+  <li>One verified receipt decides it, labeled <i>recorded by</i> you. If your opponent also records and submits, matching receipts read <i>confirmed by both players</i>; different ones read <i>disputed</i>, with no winner.</li></ol></section>`;
  $('#f').addEventListener('submit',async ev=>{ev.preventDefault();const fd=new FormData(ev.target);$('#go').disabled=true;$('#err').textContent='';
   const rules={quarter_min:+fd.get('quarter_min')};if(fd.get('difficulty'))rules.difficulty=fd.get('difficulty');if(fd.get('notes'))rules.notes=fd.get('notes');
   try{const r=await api('/v1/h2h',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({game:fd.get('game'),creator:fd.get('creator'),opponent:fd.get('opponent'),creator_psn:fd.get('creator_psn'),opponent_psn:fd.get('opponent_psn'),rules})});

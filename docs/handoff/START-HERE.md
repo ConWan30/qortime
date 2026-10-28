@@ -15,7 +15,7 @@ Written 2026-10-14 (America/Chicago).
 - **Never print secrets** (tokens, passwords, keys) in chat, logs, commits or docs.
 
 ## Product vision (one paragraph)
-Money matches and ladder games in Madden run on trust. **QorTime** turns a game into a **signed end-of-game receipt**: the final score and evidence, signed with Ed25519, hash-chained, and checkable by anyone on a public verify page with no account. **QorCap** is the Windows capture-card recorder that produces the tamper-evident video evidence (segment hash chain plus checkpoints) and runs QorTime's score reader. The goal is "VERIFIED" receipts co-signed by a hosted referee. Later: paid Verified Match receipts, tournament licenses, and an AI Referee that writes an explanatory ruling which never overrides the math.
+Head-to-head and ladder games in Madden run on trust. **QorTime** turns a game into a **signed end-of-game receipt**: the final score and evidence, signed with Ed25519, hash-chained, and checkable by anyone on a public verify page with no account. **QorCap** is the Windows capture-card recorder that produces the tamper-evident video evidence (segment hash chain plus checkpoints) and runs QorTime's score reader. The goal is "VERIFIED" receipts co-signed by a hosted referee. Later: paid Verified Match receipts, tournament licenses, and an AI Referee that writes an explanatory ruling which never overrides the math.
 
 ## Current state at a glance (2026-10-14)
 | Area | State |

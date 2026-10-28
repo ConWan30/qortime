@@ -22,7 +22,7 @@
 ### 1. Locked — money-match platform
 | | |
 |---|---|
-| **Why** | Live Madden 1v1 money matches; escrow; both players submit **final-score screenshots**; human disputes ~24h. QorTime replaces “he lied about the score” with VERIFIED/PARTIAL/FAIL. |
+| **Why** | Live Madden 1v1 head-to-head matches; both players submit **final-score screenshots**; human disputes ~24h. QorTime replaces “he lied about the score” with VERIFIED/PARTIAL/FAIL. |
 | **URL** | https://getlckd.com/play/madden-26 · https://getlckd.com/how-it-works |
 | **X** | [@GetLckd](https://x.com/GetLckd) (confirmed) |
 | **Angle** | Pilot: optional “attach QorTime receipt” on result submit; platform calls open verify (browser or CLI) before releasing escrow. Early-access Verified Match for high-stake matches. |
@@ -44,10 +44,10 @@
 | **Angle** | “Receipt as court of record” alongside AI ruling; open format platforms can re-verify later. |
 | **Certainty** | **Medium** — site returned 500 on one fetch; X `@TrustBridgeGG` not found. Confirm site/contact before send. |
 
-### 4. Compete4ever / ISG Show — weekly Madden money matchups
+### 4. Compete4ever / ISG Show — weekly Madden head-to-head matchups
 | | |
 |---|---|
-| **Why** | Long-running TV/broadcast weekly Madden money matchups; Discord-administered; care about result integrity and streams. |
+| **Why** | Long-running TV/broadcast weekly Madden head-to-head matchups; Discord-administered; care about result integrity and streams. |
 | **URL** | https://compete4ever.com/maddenleague/ · https://theisgshow.com/madden/ |
 | **Angle** | Organizer tool: seal KOTH finals; publish verify links in Discord; early-access hosted referee for televised weeks. |
 | **Certainty** | **High** for org fit. Player Discords are closed — contact via signup/site, not spam inside Discord. |
