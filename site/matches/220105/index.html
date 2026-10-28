@@ -1,0 +1,408 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>QorTime · referee-verified match · local-20261027-220105</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="color-scheme" content="dark"><meta name="theme-color" content="#04080f">
+<!-- Hand-built page (no footage, no bundle viewer). Same stylesheet as /matches/170123/. Gold appears only because the
+     QorTime verifier returns VERIFIED for this receipt with its referee key pinned. -->
+<style>
+@font-face{font-family:"QorWordmark";src:url("../../assets/fonts/qor-wordmark-800.woff2") format("woff2");font-weight:800;font-style:normal;font-display:swap;unicode-range:U+45,U+49,U+4D,U+4F,U+51-52,U+54}
+@font-face{font-family:"QorScore";src:url("../../assets/fonts/barlow-condensed-700.woff2") format("woff2");font-weight:700;font-style:normal;font-display:swap;unicode-range:U+20,U+2D,U+30-39,U+2013-2014}
+:root{--bg:#04080f;--panel:#0b1424;--line:rgba(130,170,210,.16);--line2:rgba(130,170,210,.28);
+--ink:#e7eef8;--mute:#8b9bb0;--dim:#74839a;--aqua:#3fe0d0;--aqua2:#1aa89b;--steel:#9fb2cc;--gold:#f0c95c;--warn:#f0a06a;--bad:#ff6d6d;
+--ease:cubic-bezier(.2,.8,.2,1);--spring:cubic-bezier(.34,1.56,.64,1);--flip:cubic-bezier(.22,.8,.2,1);
+--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;--score:"QorScore","Arial Narrow","Helvetica Neue",sans-serif;
+--sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Inter,Roboto,sans-serif}
+[hidden]{display:none!important}
+*{box-sizing:border-box}
+/* clip (hidden only where clip is unsupported): hidden on html/body is a scroll container, so position:sticky never pins */
+html{-webkit-text-size-adjust:100%;max-width:100%;overflow-x:hidden;overflow-x:clip}
+body{margin:0;max-width:100%;background:
+ radial-gradient(70% 46% at 80% -8%, rgba(24,58,92,.5), transparent 55%),
+ radial-gradient(50% 36% at 0% 100%, rgba(14,48,52,.4), transparent 50%),
+ #04080f;color:var(--ink);font:13.5px/1.45 var(--sans);font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased;overflow-x:hidden;overflow-x:clip}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:40;opacity:.22;
+ background:repeating-linear-gradient(to bottom, rgba(255,255,255,.05) 0 1px, transparent 1px 4px);mix-blend-mode:overlay}
+a{color:var(--aqua)}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+:focus-visible{outline:2px solid var(--aqua);outline-offset:2px;border-radius:8px}
+.mono{font-family:var(--mono)}
+.lbl{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--mute);font-weight:650}
+.sub{color:var(--dim);font-size:12px}
+.tag{display:inline-flex;align-items:center;gap:5px;font-size:10px;letter-spacing:.12em;text-transform:uppercase;padding:2px 8px;border-radius:99px;border:1px solid var(--line2);color:var(--mute);white-space:nowrap}
+.tag.a{color:var(--aqua);border-color:rgba(63,224,208,.45)}.tag.g{color:var(--gold);border-color:rgba(240,201,92,.55)}.tag.w{color:var(--warn);border-color:rgba(240,160,106,.5)}.tag.x{color:var(--bad);border-color:rgba(255,109,109,.55)}
+.ind{margin-top:10px;padding:8px 10px;border-radius:10px;border:1px solid var(--line2);color:var(--mute);font-size:12px;line-height:1.45}
+.ind .tag{margin-right:6px}
+.ind.cy{border-color:rgba(63,224,208,.45)}
+.ind.bad{border-color:rgba(255,109,109,.55);color:#ffb4b0}
+.ind.warn{border-color:rgba(210,153,34,.7);color:#e6c07b}
+.miss{color:var(--warn);font-style:italic}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 14px;min-width:0}
+.h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.btn{border:1px solid var(--line2);border-radius:99px;padding:8px 12px;min-height:44px;color:var(--aqua);font-size:12.5px}
+.btn:hover{border-color:var(--aqua)}.btn.round{width:44px;height:44px;padding:0;display:grid;place-items:center;font-size:22px;line-height:1}
+.btn:disabled,.btn[aria-busy="true"]{opacity:.35;cursor:default}
+.enter{opacity:0;transform:translateY(12px)}
+body.ready .enter{opacity:1;transform:none;transition:opacity 420ms var(--ease),transform 420ms var(--ease)}
+body.ready .d1{transition-delay:80ms}body.ready .d2{transition-delay:160ms}body.ready .d3{transition-delay:240ms}
+/* sticky broadcast header */
+.top{position:sticky;top:0;z-index:30;display:grid;grid-template-columns:minmax(140px,1fr) auto minmax(140px,1fr);align-items:center;gap:12px;
+ padding:max(8px,env(safe-area-inset-top)) clamp(10px,2vw,22px) 10px;background:rgba(4,8,15,.94);border-bottom:1px solid var(--line)}
+.brand-row{display:flex;align-items:center;gap:10px;min-width:0}
+.brand{display:inline-flex;align-items:center;min-height:44px;font:800 22px/1 "QorWordmark","Big Shoulders Display",Impact,"Arial Narrow",sans-serif;letter-spacing:.04em;text-transform:uppercase;text-decoration:none;color:var(--ink);white-space:nowrap}.brand span{color:#4f7cff}.brand .mark{flex:none;margin-right:10px;width:30px;height:30px}
+.mid{font:11px var(--mono);color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ticker{position:relative;display:grid;grid-template-columns:1fr auto 1fr;align-items:stretch;min-width:min(440px,70vw);
+ background:linear-gradient(#101a2e,#070d18);border:1px solid rgba(140,180,220,.28);border-radius:12px;overflow:hidden}
+.ticker::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:linear-gradient(90deg,var(--steel),var(--aqua))}
+.ticker .side{position:relative;display:flex;align-items:center;gap:8px;padding:8px 14px 10px;overflow:hidden}
+.ticker .away{justify-content:flex-start}.ticker .home{justify-content:flex-end}
+.ticker .nm{font-size:10px;letter-spacing:.18em;color:var(--mute)}
+.ticker .dg{position:relative;font:700 42px/1 var(--score);letter-spacing:.01em;color:var(--aqua);display:inline-flex}
+.sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.ticker .away .dg{color:var(--steel)}
+.ticker .ctr{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:6px 12px 8px;background:rgba(0,0,0,.28);min-width:72px}
+.ticker .q{font:11px var(--mono);letter-spacing:.14em;color:var(--mute)}
+.ticker .clk{font:600 16px/1.1 var(--mono);color:var(--ink)}
+.ticker .tstate{margin-top:3px;font-size:8.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);text-align:center;max-width:120px;line-height:1.25}
+.ticker.gold::before{background:var(--gold)}
+.ticker.gold .dg{color:var(--gold)}
+.ticker.gold .tstate{color:var(--gold)}
+.status{justify-self:end;font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:7px 10px;border-radius:10px;border:1px solid rgba(240,160,106,.55);color:var(--warn);max-width:280px;text-align:right}
+.status.fail{border-color:rgba(255,109,109,.6);color:var(--bad)}.status.ok{border-color:rgba(240,201,92,.6);color:var(--gold)}
+/* id, not .seal: the verified rail used to share that class and was pulled out of the grid */
+#seal{position:absolute;right:8px;top:6px;z-index:2;font-size:9px;letter-spacing:.16em;color:var(--gold);border:1px solid rgba(240,201,92,.7);background:#140f04;border-radius:99px;padding:2px 6px;opacity:0}
+#seal.go{animation:stamp 520ms var(--spring) forwards}
+@keyframes stamp{0%{opacity:0;transform:scale(1.4) rotate(-8deg)}100%{opacity:1;transform:none}}
+.col{display:inline-block;height:1em;overflow:hidden;line-height:1}
+.col i{display:block;font-style:normal;transition:transform 560ms var(--ease);will-change:transform}
+.col i b{display:block;height:1em;font-weight:inherit;text-align:center}
+.bump{animation:bump 700ms var(--spring)}
+@keyframes bump{0%{transform:scale(1)}30%{transform:scale(1.18)}100%{transform:scale(1)}}
+.sweep{position:absolute;top:0;bottom:0;width:46%;left:0;pointer-events:none;opacity:0;transform:translateX(-140%);
+ background:linear-gradient(90deg,transparent,rgba(220,255,250,.5),transparent)}
+.side.hot .sweep{animation:sweep 640ms var(--ease)}
+@keyframes sweep{0%{opacity:0;transform:translateX(-140%)}18%{opacity:1}100%{opacity:0;transform:translateX(250%)}}
+/* page */
+.grid{display:grid;gap:14px;max-width:1440px;margin:0 auto;padding:14px clamp(12px,2.2vw,28px) 36px;min-width:0;
+ grid-template-columns:minmax(0,1fr) 372px;grid-template-areas:"stage side" "rail side" "clips clips" "foot foot"}
+.stage-card{grid-area:stage;position:relative;background:transparent;border:0;padding:0;box-shadow:none;min-width:0}
+.footage-card{display:none;padding:14px 16px;border:1px solid var(--line);border-radius:12px;background:rgba(8,16,30,.65)}
+.footage-card p{margin:6px 0 0;color:var(--mute);max-width:62ch}
+.stage-card.nofootage .footage-card{display:block}
+.stage-card.nofootage .stage,.stage-card.nofootage .ctl,.stage-card.nofootage .clipstat,.stage-card.nofootage .aisaw,.stage-card.nofootage .bleed{display:none}
+.rail-card{grid-area:rail;min-width:0}.side-col{grid-area:side;display:flex;flex-direction:column;gap:12px;min-width:0}
+.main-col{grid-area:main;display:flex;flex-direction:column;gap:14px;min-width:0;align-self:start}
+.grid.nofootage{grid-template-areas:"main side" "clips clips" "foot foot"}
+.clips-card{grid-area:clips;min-width:0}.foot{grid-area:foot;min-width:0}
+.bleed{position:absolute;z-index:0;left:6%;right:6%;top:8%;height:62%;pointer-events:none;
+ background:radial-gradient(55% 70% at 50% 40%, var(--bleed, transparent), transparent 72%)}
+.stage,.ctl,.aisaw{position:relative;z-index:1}
+.stage{position:relative;aspect-ratio:16/9;border-radius:12px;overflow:hidden;background:#02050a;border:1px solid var(--line);contain:layout paint;touch-action:pan-y}
+.stage .fr,.stage video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000;display:block}
+.stage .fr{opacity:0;transition:opacity 160ms linear}.stage .fr.on{opacity:1}
+.stage .fr:not([src]),.stage .fr[src=""]{display:none}
+.burn{position:absolute;z-index:4;left:0.8%;top:1.4%;width:56%;min-height:20%;background:#081122;border-left:2px solid var(--aqua);
+ display:flex;flex-direction:column;gap:1px;padding:4px 8px 5px;pointer-events:none}
+.burn b{font-size:9px;letter-spacing:.14em;color:var(--aqua);font-weight:700}
+.burn .sc{font:700 clamp(13px,1.6vw,18px)/1 var(--score);color:var(--aqua);letter-spacing:.02em}
+.burn .meta{font:9px/1.3 var(--mono);color:#b8c7da}
+.burn.seal{border-left-color:var(--gold)}.burn.seal b,.burn.seal .sc{color:var(--gold)}
+.ov{position:absolute;z-index:3;top:8px;right:8px;display:flex;flex-direction:column;align-items:flex-end;gap:4px;pointer-events:none}
+.mode{font-size:10px;letter-spacing:.12em;text-transform:uppercase;padding:3px 8px;border-radius:99px;background:rgba(4,8,15,.82);border:1px solid var(--line2)}
+.mode.clip{border-color:rgba(63,224,208,.5);color:var(--aqua)}
+.dt{font:700 15px var(--mono);padding:1px 7px;border-radius:7px;background:rgba(4,8,15,.72)}
+.dt.zero{color:var(--aqua)}
+.readpop{position:absolute;z-index:3;right:8px;bottom:10px;display:flex;flex-direction:column;align-items:flex-end;gap:1px;
+ background:rgba(4,8,15,.86);border:1px solid rgba(63,224,208,.45);border-radius:10px;padding:6px 10px;pointer-events:none}
+.readpop b{color:var(--aqua);font-weight:650;font-size:12px}.readpop span{font:11px var(--mono);color:var(--mute)}
+.readpop.go{animation:pop 320ms var(--spring)}
+@keyframes pop{from{opacity:0;transform:translateY(8px) scale(.94)}to{opacity:1;transform:none}}
+.flash{position:absolute;inset:0;z-index:2;pointer-events:none;opacity:0;box-shadow:inset 0 0 0 2px var(--aqua)}
+.flash.go{animation:flash 900ms var(--ease)}
+@keyframes flash{0%{opacity:0}12%{opacity:1}100%{opacity:0}}
+.empty{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:20px;color:var(--mute)}
+.ctl{display:flex;align-items:center;gap:8px;margin-top:8px}
+.prog{position:relative;flex:1;height:44px;display:flex;align-items:center;cursor:pointer;touch-action:pan-y}
+.prog .bar{position:relative;height:4px;width:100%;border-radius:4px;background:var(--line2);overflow:hidden}
+.prog .bar i{position:absolute;inset:0;transform-origin:0 50%;transform:scaleX(0);background:linear-gradient(90deg,var(--aqua2),var(--aqua))}
+.lockpin{position:absolute;top:50%;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;border:2px solid var(--aqua);background:#04080f;pointer-events:none}
+.lockpin.g{border-color:var(--gold);background:var(--gold)}
+.pos{color:var(--mute);min-width:72px;text-align:right;font:12px var(--mono)}
+.strip{display:flex;gap:6px;overflow-x:auto;padding:2px 2px 6px;scrollbar-width:thin;-webkit-overflow-scrolling:touch;max-width:100%;min-width:0}
+.strip button{flex:0 0 auto;width:96px;min-height:44px;border-radius:8px;overflow:hidden;border:1px solid var(--line);opacity:.55;position:relative;transition:opacity 160ms,transform 320ms var(--spring)}
+.strip button img{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;background:#02050a}
+.strip button span{position:absolute;right:3px;bottom:1px;font:10px var(--mono);text-shadow:0 1px 2px #000}
+.strip button.on{opacity:1;border-color:var(--aqua);transform:translateY(-3px)}
+.strip button.z span{color:var(--aqua);font-weight:700}
+.strip button.z::after{content:"read";position:absolute;left:3px;top:1px;font:9px var(--mono);color:var(--aqua);text-shadow:0 1px 2px #000}
+/* proof chain + score worm */
+.chainClip{overflow:hidden;height:34px;display:flex;justify-content:center;margin:2px 0 6px;width:100%;min-width:0;max-width:100%}
+.chainWin{display:flex;height:34px;will-change:transform}
+.chainClip:not(.booted) .link{opacity:0;transform:translateY(-10px)}
+.chainClip.booted .link{transition:transform 280ms var(--spring),opacity 220ms var(--ease)}
+.link{width:32px;flex:0 0 32px;display:flex;align-items:center;color:var(--steel);opacity:.95}
+.link .pin{width:7px;height:7px;border:1.5px solid currentColor;border-radius:50%;flex:none}
+.link .bar{flex:1;height:2px;background:currentColor;margin:0 -1px}
+.link.future{transform:translateY(-6px);opacity:.38}
+.link.now{color:var(--aqua)}
+.link.now .pin{transform:scale(1.25)}
+.link.ok{color:var(--aqua);opacity:1}
+.link.ok .bar{opacity:1}
+.link.ok .pin{transform:scale(1.15)}
+.link.now.ok .pin{transform:scale(1.35)}
+.link .pin{transition:transform 280ms var(--spring)}
+.link.crack{color:var(--bad)}
+.link.crack .bar{background:linear-gradient(90deg,currentColor 0 34%,transparent 34% 66%,currentColor 66%);transform:rotate(-16deg) scaleX(.55)}
+.link.pad{opacity:0}
+.rail-card.sealed .link.past{color:var(--aqua)}
+.rail-card.sealed .link.crack{color:var(--bad)}
+.tl{position:relative;margin-top:2px;min-width:0;max-width:100%}
+.macro{position:relative;height:28px}
+.crackbtns{position:absolute;inset:0;z-index:3}
+.crackbtn{position:absolute;top:0;left:0;width:44px;height:44px;margin:-8px 0 0 -22px;display:grid;place-items:center}
+.crackbtn i{width:3px;height:18px;border-radius:1px;background:var(--bad);box-shadow:0 0 0 3px rgba(255,109,109,.3)}
+#rail{display:block;width:100%;height:28px}
+.ph{position:absolute;top:0;bottom:0;left:0;width:2px;margin-left:-1px;pointer-events:none;will-change:transform;z-index:2}
+.ph i{position:absolute;inset:0;background:linear-gradient(180deg,transparent,var(--aqua) 18%,var(--aqua) 82%,transparent)}
+.worm-wrap{position:relative;height:132px;min-width:0;max-width:100%}
+#worm{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+#worm .qline{stroke:rgba(130,170,210,.28);stroke-dasharray:3 4}
+#worm .ln{fill:none;stroke-width:2.2;vector-effect:non-scaling-stroke;stroke-linejoin:round;stroke-linecap:round}
+#worm .ln.a{stroke:var(--steel)}#worm .ln.h{stroke:var(--aqua)}
+#worm .ghost{opacity:.28}
+.mks{position:absolute;inset:0}
+.mk{position:absolute;width:44px;height:44px;margin:-22px 0 0 -22px;border-radius:50%;display:grid;place-items:center}
+.mk::before{content:"";width:11px;height:11px;border-radius:50%;border:2px solid currentColor;background:#04080f;transition:transform 320ms var(--spring)}
+.mk.a{color:var(--steel)}.mk.h{color:var(--aqua)}.mk.g{color:var(--gold)}
+.mk.sel::before{transform:scale(1.5)}
+.mk .t{position:absolute;top:-14px;font:600 11px var(--mono);white-space:nowrap;color:var(--ink);opacity:0;transition:opacity 160ms}
+.mk.sel .t{opacity:1}
+.qlab{position:absolute;top:2px;font:10px var(--mono);color:var(--dim);pointer-events:none}
+#shock{position:absolute;left:0;top:0;width:0;height:0;pointer-events:none;z-index:3}
+#shock i{position:absolute;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;border:2px solid var(--aqua);opacity:0}
+#shock.go i{animation:shock 720ms var(--ease)}
+@keyframes shock{0%{opacity:.9;transform:scale(.4)}100%{opacity:0;transform:scale(2.6)}}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--mute);margin-top:2px}
+.legend i{display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:5px;vertical-align:middle}
+.legend .la{background:var(--steel)}.legend .lh{background:var(--aqua)}.legend .lg{background:var(--gold)}.legend .lc{background:var(--bad)}.legend .lk{background:var(--aqua);box-shadow:0 0 0 1px rgba(63,224,208,.45)}
+.proofnote{margin-top:8px;display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--mute);min-width:0;max-width:100%;overflow-wrap:anywhere}
+.proofnote .ok{color:var(--aqua)}.proofnote .bad{color:var(--bad)}
+.pad{margin-top:10px}
+.padstage{position:relative;height:56px;border-radius:8px;overflow:hidden;background:rgba(0,0,0,.28);border:1px solid var(--line)}
+#padcv{display:block;width:100%;height:56px}
+.padph{position:absolute;top:0;bottom:0;left:0;width:2px;margin-left:-1px;pointer-events:none;will-change:transform}
+.padph i{position:absolute;inset:0;background:var(--aqua)}
+.chips{display:flex;gap:8px;overflow-x:auto;padding:8px 2px 2px;scrollbar-width:thin;-webkit-overflow-scrolling:touch;max-width:100%;min-width:0}
+.chip{flex:0 0 auto;text-align:left;border:1px solid var(--line);border-radius:12px;padding:7px 10px;min-height:44px;background:rgba(8,16,30,.65);transition:transform 320ms var(--spring)}
+.chip .s{font:700 16px/1 var(--score);letter-spacing:.03em}.chip .m{display:block;font-size:11px;color:var(--mute);margin-top:2px}
+.chip.sel{border-color:var(--aqua);transform:translateY(-2px)}.chip.g .s{color:var(--gold)}
+.chip .c{font-size:10px;color:var(--aqua);margin-left:6px}
+.nav{margin-left:auto;display:flex;gap:6px}
+/* side instrument */
+.big{font:700 64px/0.9 var(--score);letter-spacing:.02em;display:flex;align-items:baseline;gap:.12em}
+.big .dash{opacity:.35}.big .away{color:var(--steel)}.big .home{color:var(--aqua)}
+.big.g .away,.big.g .home{color:var(--gold)}
+.kv{display:grid;grid-template-columns:108px minmax(0,1fr);gap:4px 10px;font-size:12.5px;margin-top:10px}
+.kv b{color:var(--mute);font-weight:500}
+.conf{height:3px;border-radius:3px;background:var(--line2);overflow:hidden;margin-top:4px}
+.conf i{display:block;height:100%;background:var(--aqua);transform-origin:0 50%;transform:scaleX(0);transition:transform 600ms var(--ease)}
+.chk{display:grid;grid-template-columns:16px minmax(0,1fr);gap:3px 8px;font-size:12.5px;padding:7px 0;border-top:1px solid var(--line)}
+.chk:first-of-type{border-top:0}
+.chk .ok{color:var(--aqua)}.chk .no{color:var(--bad)}.chk .na{color:var(--dim)}
+.chk .hx{font:11px var(--mono);color:#c5d2e4;word-break:break-all}
+.errs{margin:4px 0 0;padding-left:16px;font:11px var(--mono);color:var(--bad)}
+.note{font-size:12px;color:var(--mute);border-left:2px solid var(--aqua2);padding:2px 0 2px 10px;margin-top:8px}
+.notproven{margin:0 0 10px;padding:10px 12px;border:1px solid var(--line2);border-radius:12px;background:rgba(0,0,0,.28)}
+.notproven .lbl{color:var(--ink)}
+.notproven ul{margin:6px 0 0;padding-left:18px;color:var(--ink)}
+.notproven li{margin:4px 0}
+details.scope-card summary{cursor:pointer;list-style:none;min-height:44px;display:flex;align-items:center}
+details.scope-card summary::-webkit-details-marker{display:none}
+#scope{width:100%;height:120px;display:block;margin-top:6px}
+.cgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(210px,100%),1fr));gap:10px;min-width:0;max-width:100%}
+.clip{border:1px solid var(--line);border-radius:12px;overflow:hidden;text-align:left;background:rgba(8,16,30,.55);transition:transform 320ms var(--ease);min-width:0}
+.clip button.clipbtn{display:block;width:100%;text-align:left;border:0;border-radius:0;padding:0;color:inherit}
+.clip:hover{transform:translateY(-3px)}.clip.sel{border-color:var(--aqua)}
+.clip .pv{position:relative;display:block}
+.clip .cov{position:absolute;left:0.8%;top:1.4%;width:56%;min-height:20%;background:#081122;border-left:2px solid var(--aqua);color:var(--aqua);font-size:8px;letter-spacing:.12em;padding:3px 5px 2px;pointer-events:none}
+.clip img,.clip .phimg{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;background:#02050a}
+.clip .b{padding:8px 10px}.clip .s{font:700 20px/1 var(--score);color:var(--aqua)}.clip .k{font:10.5px var(--mono);color:var(--dim);margin-top:3px}
+.foot{color:var(--dim);font-size:11.5px;line-height:1.55}
+.finalwrap{max-width:1440px;margin:0 auto;padding:12px clamp(12px,2.2vw,28px) 0;min-width:0}
+.finalrow{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;min-width:0}
+h1.finalsum{margin:0;font:700 clamp(28px,7vw,46px)/1 var(--score);letter-spacing:.02em;color:var(--aqua)}
+h1.finalsum.gold{color:var(--gold)}
+.finalwhy{margin:4px 0 0;color:var(--mute);font-size:13px;max-width:70ch}
+.taphint{position:absolute;z-index:5;left:8px;right:8px;bottom:8px;text-align:center;font-size:12px;color:var(--ink);background:rgba(4,8,15,.82);border:1px solid var(--line2);border-radius:10px;padding:8px 10px;pointer-events:none}
+.clipstat{margin-top:6px;color:var(--mute);font-size:12px;min-height:1.2em}
+.plays{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;max-height:280px;overflow:auto}
+.plays button{width:100%;text-align:left;min-height:44px;border:1px solid var(--line);border-radius:10px;padding:6px 10px;display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center}
+.plays button.on{border-color:var(--aqua)}
+.howto{margin-top:8px}.howto summary{min-height:44px;display:flex;align-items:center;cursor:pointer}
+.howto ol{margin:4px 0 8px;padding-left:18px;color:var(--mute);font-size:12.5px}
+.howto pre{margin:0;white-space:pre-wrap;font:11.5px var(--mono);color:#c5d2e4}
+.clip .dl{display:inline-flex;align-items:center;min-height:44px;margin:0 10px 8px;font-size:12px}
+@media (max-width:1060px){.grid{grid-template-columns:1fr;grid-template-areas:"stage" "rail" "side" "clips" "foot"}
+ .grid.nofootage{grid-template-columns:1fr;grid-template-areas:"main" "side" "clips" "foot"}}
+@media (max-width:720px){
+ .top{grid-template-columns:1fr;gap:6px;padding:8px 10px 10px}
+ .brand-row{justify-content:space-between}.mid{display:none}
+ .ticker{min-width:0;justify-self:stretch}.ticker .dg{font-size:34px}.ticker .side{padding:6px 10px 8px}
+ .status{justify-self:stretch;text-align:center;max-width:none}
+ .grid{padding:10px 10px 28px;gap:10px}.main-col{gap:10px}
+ .worm-wrap{height:112px}.big{font-size:52px}.padstage,#padcv{height:48px}.kv{grid-template-columns:92px minmax(0,1fr)}
+ .strip button{width:96px;min-height:44px}
+ .finalrow{align-items:stretch;flex-direction:column}
+ #share{align-self:flex-start}
+ .cgrid{display:flex;overflow-x:auto;grid-template-columns:none;scroll-snap-type:x mandatory}
+ .cgrid .clip{flex:0 0 min(78%,280px);scroll-snap-align:start}
+ .ctl{position:sticky;bottom:0;z-index:15;background:rgba(4,8,15,.94);margin:8px -10px 0;padding:6px 10px calc(8px + env(safe-area-inset-bottom))}
+ .mode .lng{display:none}.legend span:last-child{display:none}
+ .burn{width:58%}.burn .meta{display:none}
+ .ov{max-width:calc(42% - 12px)}.mode{font-size:9px;letter-spacing:.06em;text-align:right} /* clip label no longer slides under the locked-score card */
+}
+@media (pointer:coarse){body::before{display:none}}
+.sig{display:grid}
+.sigrow{display:grid;grid-template-columns:12px minmax(0,1fr);gap:8px;align-items:start;padding:8px 0;border-top:1px solid var(--line);opacity:0;transform:translateY(8px)}
+.sigrow:first-child{border-top:0}
+body.ready .sigrow{opacity:1;transform:none;transition:opacity .4s var(--ease),transform .5s var(--ease);transition-delay:calc(var(--k,0) * 70ms + 180ms)}
+.sigrow .pip{width:8px;height:8px;margin-top:4px;border-radius:50%;background:var(--dim)}
+.sigrow.pass .pip{background:var(--aqua)}.sigrow.fail .pip{background:var(--bad)}.sigrow.partial .pip{background:var(--warn)}
+.sigrow.info .pip{background:var(--steel)}.sigrow.absent .pip{background:transparent;box-shadow:inset 0 0 0 1.5px var(--dim)}
+.sigrow .nm{font-weight:650}.sigrow .st{float:right;margin-left:8px;font:10px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--mute)}
+.sigrow.fail .st{color:var(--bad)}.sigrow.partial .st{color:var(--warn)}.sigrow.pass .st{color:var(--aqua)}
+.meter{height:4px;border-radius:4px;background:var(--line2);overflow:hidden;margin-top:6px}
+.meter i{display:block;height:100%;background:var(--aqua);transform-origin:0 50%;transform:scaleX(0)}
+body.ready .meter i{transform:scaleX(var(--f,0));transition:transform .7s var(--ease) .4s}
+.chk .code{color:var(--dim)}
+@media (prefers-reduced-motion:reduce){
+ *,*::before,*::after{animation:none!important;transition:none!important}
+ .enter,.sigrow{opacity:1;transform:none}
+ .chainClip:not(.booted) .link{opacity:1;transform:none}
+ .meter i{transform:scaleX(var(--f,0))}
+}
+
+.main-col .card p{margin:6px 0 0;color:var(--mute);max-width:70ch}
+.main-col .card p.ink{color:var(--ink)}
+.ai p{margin:8px 0 0;color:var(--ink);max-width:70ch}
+.echo{width:100%;border-collapse:collapse;margin-top:8px;font-size:12.5px}
+.echo th,.echo td{text-align:left;padding:6px 8px 6px 0;border-top:1px solid var(--line)}
+.echo th{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute);font-weight:650;border-top:0}
+.echo td.mono{font-family:var(--mono)}
+.btnrow{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+a.btn{display:inline-flex;align-items:center;text-decoration:none}
+#logLive{margin-top:8px;font-size:12px;color:var(--mute);overflow-wrap:anywhere}
+#logLive .ok{color:var(--aqua)} #logLive .bad{color:var(--bad)}
+</style><link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PGNpcmNsZSBjeD0iMzIiIGN5PSIzMiIgcj0iMjciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzJlZjJmZiIgc3Ryb2tlLXdpZHRoPSI1Ii8+PGcgc3Ryb2tlPSIjMmVmMmZmIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCI+PHBhdGggZD0iTTMyIDl2NU01NSAzMmgtNU0zMiA1NXYtNU05IDMyaDUiLz48L2c+PHBhdGggZD0iTTMyIDMyVjE5IiBzdHJva2U9IiNmZmYiIHN0cm9rZS13aWR0aD0iNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PHBhdGggZD0iTTMyIDMybDE3IDE3IiBzdHJva2U9IiM0ZjdjZmYiIHN0cm9rZS13aWR0aD0iNiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PGNpcmNsZSBjeD0iMzIiIGN5PSIzMiIgcj0iNSIgZmlsbD0iIzRmN2NmZiIvPjwvc3ZnPgo="><link rel="canonical" href="https://qortime.com/matches/220105/"><meta name="description" content="local-20261027-220105. Final 7–21. Receipt VERIFIED. Referee-verified."><meta property="og:title" content="QorTime · local-20261027-220105"><meta property="og:description" content="local-20261027-220105. Final 7–21. Receipt VERIFIED. Referee-verified."><meta property="og:url" content="https://qortime.com/matches/220105/"><meta property="og:image" content="https://qortime.com/matches/220105/og.png"><meta property="og:type" content="website"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="QorTime · local-20261027-220105"><meta name="twitter:description" content="local-20261027-220105. Final 7–21. Receipt VERIFIED. Referee-verified."><meta name="twitter:image" content="https://qortime.com/matches/220105/og.png"></head><body>
+<header class="top enter d0">
+ <div class="brand-row"><a class="brand" href="../" aria-label="QorTime home"><svg class="mark" viewBox="0 0 64 64" width="30" height="30" aria-hidden="true" focusable="false"><circle cx="32" cy="32" r="27" fill="none" stroke="#2ef2ff" stroke-width="5"/><g stroke="#2ef2ff" stroke-width="3" stroke-linecap="round"><path d="M32 9v5M55 32h-5M32 55v-5M9 32h5"/></g><path d="M32 32V19" stroke="#fff" stroke-width="5" stroke-linecap="round"/><path d="M32 32l17 17" stroke="#4f7cff" stroke-width="6" stroke-linecap="round"/><circle cx="32" cy="32" r="5" fill="#4f7cff"/></svg>QOR<span>TIME</span></a><div class="mid" id="mid">local-20261027-220105 · qorcap 0.3.38</div></div>
+ <div class="ticker gold" id="ticker">
+  <div class="side away" id="sideA"><span class="nm">AWAY</span><span class="dg" id="tA">7</span></div>
+  <div class="ctr"><span class="q" id="tQ">Q4</span><span class="clk" id="tC">FINAL</span><span class="tstate" id="tState">referee-verified</span></div>
+  <div class="side home" id="sideH"><span class="dg" id="tH">21</span><span class="nm">HOME</span></div>
+  <span class="seal" id="seal" hidden>SEAL</span>
+ </div>
+ <div class="status ok" id="status" title="VERIFIED · co-signed by qortime-online-s2 (delegation serial 2 from root qortime-v1)">Verified by the referee</div>
+</header>
+<div class="finalwrap enter d0"><div class="finalrow">
+ <div><h1 class="finalsum gold" id="finalSum">Final 7–21</h1><p class="finalwhy" id="finalWhy">Referee-verified. Home win. Final read from the end-of-game menu, through the referee's end-menu fallback (explained below). Recorded Oct 27, 2026, 10:01 PM–10:30 PM CT.</p></div>
+ <button class="btn" id="share" type="button">Share</button>
+</div></div>
+<main class="grid nofootage">
+ <div class="main-col">
+  <section class="card enter d1" aria-label="Footage"><div class="lbl">Footage</div>
+   <p>Footage is not published. The recording stays on the player's PC. This page has the referee's signed result, the checks it ran, and a plain-English explanation. No frames, clips, on-screen names or controller timelines are on this page.</p></section>
+
+  <section class="card enter d1" id="verifyCard" aria-label="Verify it yourself"><div class="h"><span class="lbl">Verify it yourself</span><span class="sub">you do not have to trust this page</span></div>
+   <p class="ink">The verdict is math anyone can re-run. The QorTime verifier checks the signed receipt in your browser, with the referee's public key pinned.</p>
+   <div class="btnrow"><a class="btn" id="verifyBtn" href="../../verify/?receipt=/matches/220105/receipt.json&amp;referee=b283cffb9279f2f90859268c64ef21861ef7e5d9fc773bdb8061af0e80624889">Check the receipt in the verifier</a><button class="btn" id="logGo" type="button">Check the referee's public log</button><a class="btn" id="rcptLink" href="receipt.json">receipt.json</a></div>
+   <div id="logLive">The referee logs every receipt it signs in an append-only, hash-chained public log. This receipt is entry #4 (submission <span class="mono">1d424dc2836f1a8c</span>).</div>
+   <details class="howto"><summary class="lbl">Do it from a terminal</summary><ol>
+    <li>Download <a href="receipt.json">receipt.json</a>. Its sha256 is <span class="mono">c35f4fd739b25cc61a82e98afb7addb4ed7467e40a0fb8cbe68f0443fdd7579c</span>.</li>
+    <li>Run the open verifier with the referee key pinned. It should print VERIFIED. Without the pin it prints PARTIAL (referee_key_not_pinned), which is expected.</li>
+    <li>Look the receipt up in the referee's public log. The logged <span class="mono">body_sha256</span> is SHA-256 of the receipt's canonical JSON without <span class="mono">signatures</span>.</li></ol>
+<pre>git clone https://github.com/ConWan30/qortime &amp;&amp; cd qortime &amp;&amp; pip install -e .
+qortime verify receipt.json --referee-pub b283cffb9279f2f90859268c64ef21861ef7e5d9fc773bdb8061af0e80624889
+curl https://qortime-referee-production.up.railway.app/v1/log/inclusion/8a3a6d60e498c607fef79e013afab333b760fb7c9e58e16fa9912683c98cb71b</pre>
+   </details>
+  </section>
+
+  <section class="card enter d1 ai" id="aiCard" aria-label="Plain-English explanation"><div class="h"><span class="lbl">In plain English · Muse Spark</span><span class="tag">advisory</span></div>
+   <p class="sub" style="margin:0">AI explains, it never decides. Meta Muse Spark (muse-spark-1.3) was given only the verifier's result and allowlisted facts. A deterministic guardrail checked the text before it was kept. The verdict above comes from the verifier, not from this text. Signed with the separate AI advisory key <span class="mono">2d5de84a3dcdeaec</span>, which cannot make or change a verdict.</p>
+   <p>VERIFIED</p><p>This Madden27 single match on PS5 for home 21 away 7 in Q4 was confirmed from the end menu re-read, which matches the claimed final.</p><p>What passed: bundle structure, capture chain, challenges, final re-read, input integrity, motion, and video bytes. Referee qortime-online-s2 is trusted. No errors and nothing missing.</p><p>Video was spot-check: 270 of 878 segments checked.</p><p>Controller input advisory did not pass as human proof, with alignment at chance level. It is advisory only.</p><p>NOT proven: who was holding the controller, that laptop countersignatures were made live, that footage was not fabricated before QorCap hashed it except where anchored, or content of unchecked video segments.</p>
+   <div class="note"><a href="ai_ruling.json">ai_ruling.json</a> · bound to receipt sha256 <span class="mono">c35f4fd739b2…</span> · guardrail passed</div>
+  </section>
+
+  <section class="card enter d2" id="finalCard" aria-label="How the final was confirmed"><div class="h"><span class="lbl">How the final was confirmed</span><span class="tag">end-menu fallback</span></div>
+   <p class="ink">The referee re-reads the end of the recording itself. Normally it finds a fourth-quarter scorebug in the last part of the video and checks the end-of-game menu against that read.</p>
+   <p>In this match that normal path did not apply. The referee looked at 486 frames at the end of the recording and found no fourth-quarter scorebug among them: all 486 were end-of-game menu frames. It recorded this as <span class="mono">“no Q4 scorebug read before the end-of-game menu”</span>.</p>
+   <p>So the referee used its end-menu fallback. It read the end-of-game menu and checked it against the last locked score in the bundle's signed timeline: away 7, home 21, Q4. They match, so the final re-read check passed. The referee's own note, word for word:</p>
+   <div class="note mono">referee end-menu fallback: menu read at 0.923 over 486 frames with no Q4 scorebug read in the tail; checked against the last locked read (bundle timeline lock) AWAY 7 - HOME 21 Q4</div>
+   <p>What this means: the final comes from the end-of-game menu plus the last scorebug lock in the signed chain. It does not come from a fresh fourth-quarter scorebug read at the very end of the video.</p>
+  </section>
+
+  <section class="card enter d2" id="echoCard" aria-label="Challenge Echo"><div class="h"><span class="lbl">Challenge Echo · Meta SAM 3.1</span><span class="tag">info only</span></div>
+   <p class="ink">During the match the referee sent 3 official challenges (kickoff, halftime, end): a short button pattern to enter on the pause menu. The referee checked all three itself (rule 2): latencies 1464 ms, 1486 ms, 1550 ms.</p>
+   <p>Challenge Echo is a separate, information-only cross-check. Meta SAM 3.1 tracks the pause-menu highlight in the video, and deterministic code checks that each logged D-pad press shows up on screen. It never raises a status and never changes the verdict. At most it could suggest lowering VERIFIED to PARTIAL. Here it found all three challenges consistent.</p>
+   <table class="echo"><thead><tr><th>Challenge</th><th>Echo</th><th>Median press-to-screen</th></tr></thead><tbody>
+   <tr><td>kickoff</td><td>consistent</td><td class="mono">1637 ms</td></tr><tr><td>halftime</td><td>consistent</td><td class="mono">1626 ms</td></tr><tr><td>end</td><td>consistent</td><td class="mono">1662 ms</td></tr>
+   </tbody></table>
+   <p class="sub">3 of 3 consistent. Press-to-screen is how long a D-pad press took to show up in the captured video. That is a different measure from the referee's challenge latency. Echo scores UP and DOWN moves and checks that LEFT and RIGHT leave the highlight still. It does not score SQUARE. Run with qortime-ai Challenge Echo after <a href="https://github.com/ConWan30/qortime-ai/pull/7">PR #7</a> (menu-aware wrap test). Echo's per-press files are not published.</p>
+  </section>
+ </div>
+ <aside class="side-col enter d3">
+  <section class="card" id="rcCard" aria-label="Receipt and verification"><div class="h"><span class="lbl">Receipt &amp; verification</span><span class="tag g">VERIFIED</span></div>
+   <div class="notproven"><div class="lbl">Not proven</div><ul><li>who was holding the controller (identity)</li><li>that the laptop&#x27;s local countersignatures were made live: they come from a key on the player&#x27;s own PC</li><li>that the footage was not fabricated or edited before QorCap hashed it, except where an official challenge or anchor timestamps the chain</li><li>content of video segments the referee did not receive (spot-check mode)</li></ul></div><div class="chk"><span class="ok">✓</span><div><div>bundle structure</div><div class="hx">manifest chain, checkpoint chain, inputs chain and receipt binding recomputed by the referee</div></div></div><div class="chk"><span class="ok">✓</span><div><div>capture chain</div><div class="hx">laptop checkpoint countersignatures valid under the capture key; gaps/skew within limits (timing is the laptop&#x27;s own clock)</div></div></div><div class="chk"><span class="ok">✓</span><div><div>video bytes</div><div class="hx">spot-check 270/878 segments</div></div></div><div class="chk"><span class="ok">✓</span><div><div>final reread</div><div class="hx">end-of-game menu re-read by the referee matches the claimed final (no Q4 scorebug read in the tail; menu checked against the last locked read)</div></div></div><div class="chk"><span class="ok">✓</span><div><div>challenges</div><div class="hx">3 challenges, rule 2</div></div></div><div class="chk"><span class="ok">✓</span><div><div>motion</div><div class="hx">rule 4, 327 per mille, 86 bins</div></div></div><div class="chk"><span class="ok">✓</span><div><div>input integrity</div><div class="hx">1021 presses, 1158 haptic events</div></div></div>
+   <div class="chk"><span class="ok">✓</span><div><div>Receipt: VERIFIED · co-signed by qortime-online-s2 (delegation serial 2 from root qortime-v1)</div></div></div>
+   <div class="ind "><span class="tag ">SINGLE-SIDED</span> Separate indicator. Does not change the receipt status.</div><div class="ind"><span class="tag">not provided</span> Device key. No device key file was reviewed for this receipt.</div>
+   <div class="chk"><span class="ok">✓</span><div><div>Referee countersignature</div></div></div>
+   <div class="chk"><span class="ok">✓</span><div><div>Official anchors · 29 valid, 0 invalid</div><div class="hx">segments 1–847 timestamped by the official referee</div></div></div>
+   <div class="chk" id="logRow"><span class="na">○</span><div><div>Public log entry #4</div><div class="hx">body_sha256 8a3a6d60e498…</div></div></div>
+   <div class="chk"><span class="na">○</span><div><div>Chain · 900 checkpoints · 878 segments</div><div class="hx">head 0f5e9bd191de…</div></div></div>
+   <div class="note"><a href="receipt.json">receipt.json</a> · <a href="../../verify/?receipt=/matches/220105/receipt.json&amp;referee=b283cffb9279f2f90859268c64ef21861ef7e5d9fc773bdb8061af0e80624889">check it in the verifier</a></div>
+   <details class="howto"><summary class="lbl">How to check</summary><ol>
+    <li>sha256 receipt.json. It must equal <span class="mono">c35f4fd739b25cc6…</span>, the sha256 that ai_ruling.json is bound to.</li>
+    <li>Open it in the verifier with the referee key pinned. It returns VERIFIED; unpinned it returns PARTIAL.</li>
+    <li>Find body_sha256 in the referee's public log (entry #4).</li>
+    <li>Video segment bytes are not on this page. The referee spot-checked 270 of 878 segments when the bundle was uploaded.</li></ol>
+<pre>qortime verify receipt.json --referee-pub b283cffb9279f2f9…</pre>
+   </details></section>
+  <section class="card" id="sigCard" aria-label="Signals in this recording"><div class="h"><span class="lbl">Signals</span><span class="sub">published with this page · a blank row was not in the data</span></div><div class="sig">
+   <div class="sigrow pass" style="--k:0"><i class="pip" aria-hidden="true"></i><div><div><span class="nm">Receipt</span><span class="st">VERIFIED</span></div><div class="sub">VERIFIED · co-signed by qortime-online-s2 (delegation serial 2 from root qortime-v1)</div></div></div>
+   <div class="sigrow info" style="--k:1"><i class="pip" aria-hidden="true"></i><div><div><span class="nm">Two-sided corroboration</span><span class="st">single-sided</span></div><div class="sub">Separate indicator. Does not change the receipt status.</div></div></div>
+   <div class="sigrow absent" style="--k:2"><i class="pip" aria-hidden="true"></i><div><div><span class="nm">Device key</span><span class="st">not provided</span></div><div class="sub">No device key file was reviewed. The strongest status the referee gives is TPM claimed (unverified).</div></div></div>
+   <div class="sigrow partial" style="--k:3"><i class="pip" aria-hidden="true"></i><div><div><span class="nm">Controller</span><span class="st">advisory flag</span></div><div class="sub">DualSense Edge (USB) · human-likeness 950/1000 · 1158 haptic events · advisory, not who held it<div class="meter" role="img" aria-label="human-likeness"><i style="--f:0.950"></i></div></div></div></div>
+   <div class="sigrow pass" style="--k:4"><i class="pip" aria-hidden="true"></i><div><div><span class="nm">Hash chain</span><span class="st">checks out</span></div><div class="sub">900 checkpoints · 878 segments</div></div></div>
+   <div class="sigrow info" style="--k:5"><i class="pip" aria-hidden="true"></i><div><div><span class="nm">Capture</span><span class="st">shown as recorded</span></div><div class="sub">platform ps5 · game madden27 · mode single · side home · qorcap 0.3.38 · length 1755 s</div></div></div>
+  </div></section>
+  <section class="card" id="flagCard" aria-label="Advisory flag"><div class="h"><span class="lbl">Disclosed · advisory flag</span><span class="tag w">alignment_not_above_chance</span></div>
+   <div class="chk"><span class="na">!</span><div><div>Controller timing is not clearly above chance against the video.</div><div class="hx">alignment 435‰ vs chance 477‰ (the advisory needs +50) · human-likeness 950‰</div></div></div>
+   <p class="sub" style="margin:6px 0 0">This is an advisory signal from QorCap's on-device model. It is shown, not hidden. It is not one of the referee's seven checks and it does not change the receipt status. The referee recomputed the input hashes, chains and counts (input integrity passed) but does not re-run this model. Controller signals never show who was holding the controller.</p>
+  </section>
+ </aside>
+ <footer class="foot" id="foot"><b>Claims.</b> Receipt status (computed by the QorTime verifier when this page was built): VERIFIED · co-signed by qortime-online-s2 (delegation serial 2 from root qortime-v1). Official post-hoc review of an uploaded QorCap bundle, submission 1d424dc2836f1a8c, public log entry #4. Final 7–21 (away–home), method end_menu_read, confirmed through the referee's end-menu fallback. Advisory evidence only: controller inputs and haptics show activity in sync with the video, not who played or what happened; this receipt carries the advisory flag alignment_not_above_chance. The Muse Spark explanation and Challenge Echo are information only and never decide or change the verdict. Footage is not published. The recording stays on the player's PC.<br>QorTime is integrity verification for video-game matches: anti-cheat and verified skill. It is not coaching.</footer>
+</main>
+<script>
+const D={"slug": "220105", "body_sha256": "8a3a6d60e498c607fef79e013afab333b760fb7c9e58e16fa9912683c98cb71b", "receipt_sha256": "c35f4fd739b25cc61a82e98afb7addb4ed7467e40a0fb8cbe68f0443fdd7579c", "log_seq": 4, "submission": "1d424dc2836f1a8c", "referee_api": "https://qortime-referee-production.up.railway.app", "referee_pub": "b283cffb9279f2f90859268c64ef21861ef7e5d9fc773bdb8061af0e80624889"};
+const $=s=>document.querySelector(s);
+requestAnimationFrame(()=>document.body.classList.add("ready"));
+$("#share").onclick=async()=>{const url=location.href.split("#")[0],text=document.querySelector('meta[name="description"]').content;
+ if(navigator.share){try{await navigator.share({title:document.title,text,url});return}catch(err){if(err&&err.name==="AbortError")return}}
+ try{await navigator.clipboard.writeText(url);$("#share").textContent="Link copied"}catch{}};
+// Verifier link with an absolute receipt URL (same-origin rule in /verify/), like the 170123 page.
+(()=>{const rc=new URL("receipt.json",location.href).href;const v=new URL("../../verify/",location.href);
+ v.searchParams.set("receipt",rc);v.searchParams.set("referee",D.referee_pub);
+ document.querySelectorAll('a[href^="../../verify/"]').forEach(a=>a.href=v.href);
+ fetch(rc,{method:"HEAD"}).then(r=>{if(!r.ok)throw 0}).catch(()=>{document.querySelectorAll('a[href$="receipt.json"]').forEach(a=>{a.removeAttribute("href");a.title="receipt.json is not in this copy of the page"});
+  const b=$("#verifyBtn");b.removeAttribute("href");b.setAttribute("aria-disabled","true");b.style.opacity=.45;b.textContent="Verifier link needs receipt.json"});})();
+// JCS for the flat log entry (strings and integers only): sorted keys, no whitespace.
+const jcs=o=>"{"+Object.keys(o).sort().map(k=>JSON.stringify(k)+":"+JSON.stringify(o[k])).join(",")+"}";
+const hex=b=>[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("");
+$("#logGo").onclick=async()=>{const out=$("#logLive"),row=$("#logRow");$("#logGo").setAttribute("aria-busy","true");
+ try{const res=await fetch(`${D.referee_api}/v1/log/inclusion/${D.body_sha256}`);if(!res.ok)throw new Error("HTTP "+res.status);
+  const j=await res.json();const e=(j.entries||[]).find(x=>x.body_sha256===D.body_sha256);if(!e)throw new Error("entry not found");
+  const {hash,...rest}=e;const h=hex(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(jcs(rest))));
+  const ok=h===hash&&e.seq===D.log_seq&&e.submission===D.submission;
+  out.innerHTML=ok?`<span class="ok">✓ Found.</span> Log entry #${e.seq} holds this receipt's body_sha256, and this browser recomputed the entry hash (${h.slice(0,12)}…). Log size now ${j.head?j.head.size:"?"}. To check the receipt's own signatures, use the verifier.`
+   :`<span class="bad">✗ Mismatch.</span> The log answered, but the entry did not match this page.`;
+  if(ok&&row){row.querySelector("span").className="ok";row.querySelector("span").textContent="✓"}
+ }catch(err){out.innerHTML=`<span class="bad">Could not reach the referee log from this page (${String(err.message||err)}).</span> Try the curl command below.`}
+ finally{$("#logGo").removeAttribute("aria-busy")}};
+</script></body></html>

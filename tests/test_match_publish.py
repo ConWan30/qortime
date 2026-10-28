@@ -1,5 +1,6 @@
 """qortime publish: receipt-gated public match pages, privacy scan, highlights linking, /matches/ index."""
 import hashlib
+import html
 import json
 import shutil
 from pathlib import Path
@@ -306,9 +307,56 @@ def test_published_match_170123_verifies_and_stays_public():
     index = (root / "site/matches/index.html").read_text(encoding="utf-8")
     assert index.find('href="170123/"') < index.find('href="125430/"')
     assert 'href="021003/"' not in index
-    assert 'class="lockg"' in index and "n = 1" in index
+    assert 'class="lockg"' in index and "n = 2" in index
     assert ">FAIL<" in index
     assert "No page here is referee-verified" not in index
+
+
+OFFICIAL_220105_SHA256 = "c35f4fd739b25cc61a82e98afb7addb4ed7467e40a0fb8cbe68f0443fdd7579c"
+OFFICIAL_220105_BODY_SHA256 = "8a3a6d60e498c607fef79e013afab333b760fb7c9e58e16fa9912683c98cb71b"
+
+
+def test_published_match_220105_hand_built_page_stays_honest():
+    """Second referee-verified match: hand-built page, no footage. receipt.json, when present, is byte-for-byte."""
+    root = Path(__file__).resolve().parents[1]
+    folder = root / "site/matches/220105"
+    page = (folder / "index.html").read_text(encoding="utf-8")
+    ai = json.loads((folder / "ai_ruling.json").read_text(encoding="utf-8"))
+    assert ai["receipt_sha256"] == OFFICIAL_220105_SHA256 and ai["affects_verdict"] is False
+    assert ai["verdict_echo"]["status"] == "VERIFIED" and ai["advisory_key"]["key_kind"] == "qortime-ai-advisory"
+    assert OFFICIAL_220105_SHA256 in page and OFFICIAL_220105_BODY_SHA256 in page
+    assert "Final 7–21" in page and 'class="finalsum gold"' in page and 'class="ticker gold"' in page
+    assert "qortime-online-s2" in page and "delegation serial 2" in page and "Recorded Oct 27, 2026" in page
+    assert "alignment_not_above_chance" in page and "435" in page and "477" in page
+    assert "no Q4 scorebug read in the tail" in page and "end-menu fallback" in page
+    assert "Footage is not published" in page and "AI explains, it never decides" in page and "info only" in page
+    from qor_receipt.ai_ruling.guardrail import BANNED  # same banned trust words as the AI explainer
+    assert [why for rx, why in BANNED[:3] if rx.search(page)] == []  # the three trust-word rules
+    assert "id=instance:" not in page and "HID#" not in page and "@device" not in page
+    assert "<video" not in page and ".mp4" not in page and ".jpg" not in page
+    assert P.privacy_problems(page) == [] and P.privacy_problems(json.dumps(ai)) == []
+    assert not list(folder.rglob("*.mp4")) and not list(folder.rglob("*.jpg"))
+    summary = json.loads((folder / "match.json").read_text(encoding="utf-8"))
+    assert summary["receipt_status"] == "VERIFIED" and summary["final"] == {"away": 7, "home": 21}
+    assert summary["receipt_result"] == {"away": 7, "home": 21, "method": "end_menu_read"} and summary["clips"] == 0
+    assert (folder / "og.png").read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+    rp = folder / "receipt.json"
+    if rp.exists():  # publishing the signed receipt is a separate decision (it carries a controller instance id)
+        raw = rp.read_bytes()
+        assert hashlib.sha256(raw).hexdigest() == OFFICIAL_220105_SHA256
+        body = json.loads(raw)
+        pinned = verify_receipt(body, referee_pub=body["referee"]["pubkey"])
+        assert pinned["status"] == "VERIFIED" and pinned["errors"] == [] and pinned["partial"] == []
+        for line in body["review"]["not_proven"]:
+            assert html.escape(line) in page
+    index = (root / "site/matches/index.html").read_text(encoding="utf-8")
+    assert index.find('href="220105/"') < index.find('href="170123/"') < index.find('href="125430/"')
+
+
+def test_index_card_without_bundle_counts_says_so():
+    card = P._card({"url": "x/", "match_id": "local-20261027-220105", "receipt_status": "VERIFIED", "final_confirmed": True,
+                    "final": {"away": 7, "home": 21}, "events": None, "touchdowns": None, "clips": 0})
+    assert "footage not published" in card and "None" not in card and 'class="lockg"' in card
 
 
 def test_publish_uses_no_glibc_only_strftime_flags():
