@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hackathon entry — QorTime AI · QorTime</title>
+<meta name="robots" content="noindex">
+<meta name="description" content="QorTime's entry to the Meta Global AI Developer Hackathon (Cerebral Valley), Indie Developer track: Meta models explain and stress-test the referee's result. They never decide it.">
+<meta name="theme-color" content="#04050a"><meta name="color-scheme" content="dark">
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg"><link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32.png"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
+<link rel="canonical" href="https://qortime.com/hackathon/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="QorTime AI · hackathon entry">
+<meta property="og:description" content="Meta models explain and stress-test a video-game referee's result. They never decide it.">
+<meta property="og:url" content="https://qortime.com/hackathon/">
+<meta property="og:image" content="https://qortime.com/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="QorTime AI · hackathon entry">
+<meta name="twitter:description" content="AI explains, it never decides. Advisory signals can only lower a result, at most to PARTIAL.">
+<meta name="twitter:site" content="@QorTimeHQ">
+<meta name="twitter:image" content="https://qortime.com/assets/og.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../style.css">
+<style>
+.hk-demo{display:grid;place-items:center;aspect-ratio:16/9;max-width:880px;margin:28px 0;padding:24px;text-align:center;border-style:dashed}
+.hk-demo b{font:900 clamp(26px,3.4vw,40px)/1 var(--disp);text-transform:uppercase;letter-spacing:.04em}
+.hk-demo .tag{margin-top:12px}
+.hk-list{margin:12px 0 0 20px;display:grid;gap:8px;color:#b9c1d6}
+.hk-list b{color:var(--ink)}
+.hk-panel{padding:32px 28px;margin:14px 0}
+.hk-panel h2{font:900 clamp(28px,3vw,40px)/.95 var(--disp);text-transform:uppercase;margin-bottom:10px}
+.hk-panel p{color:#b9c1d6;max-width:72ch}
+.hk-panel p+p{margin-top:10px}
+</style>
+</head><body class="page">
+<div class="grain" aria-hidden="true"></div>
+<header class="nav glass"><a class="brand" href="../"><img src="../assets/logo.svg" alt="" width="30" height="30"><b>Qor<span>Time</span></b></a>
+<nav><a href="../matches/" class="keep">Matches</a><a href="../challenge/" class="keep">Challenges</a><a href="../how-it-works/" class="keep">How it works</a><a href="../pricing/" class="keep">Pricing</a><a href="../early-access/" class="keep">Early access</a><a href="../verify/" class="btn sm mag">Verifier</a></nav></header>
+<main>
+<section class="page-hero">
+ <p class="kicker"><span class="dot"></span> hackathon entry · Meta Global AI Developer Hackathon (Cerebral Valley) · Indie Developer track</p>
+ <h1>QorTime AI.<br><span class="accent">AI explains.</span><br>It never decides.</h1>
+ <p class="lede" id="before-and-during"><b>QorTime existed before the event:</b> the signed match receipts, the referee and the QorCap capture app. <b>What was built during the hackathon week</b> (Mon Oct 26 – Wed Nov 4, 2026) lives in the public repo <a href="https://github.com/ConWan30/qortime-ai">github.com/ConWan30/qortime-ai</a>.</p>
+ <p class="fine">This page describes a hackathon entry. It is a solo build by Contravious Battle. It is not endorsed, certified or partnered with by Meta or Cerebral Valley.</p>
+ <nav class="page-nav" aria-label="On this page">
+  <a href="#demo">Demo</a>
+  <a href="#rule">The rule</a>
+  <a href="#built">Built this week</a>
+  <a href="#matches">Verified matches</a>
+  <a href="#limits">Limits</a>
+ </nav>
+</section>
+<section class="page-body">
+ <!-- DEMO_VIDEO -->
+ <div class="glass hk-demo" id="demo" role="note" aria-label="Demo video placeholder">
+  <div><b>Demo video coming soon</b><br><span class="tag">placeholder · no video uploaded yet</span></div>
+ </div>
+ <!-- /DEMO_VIDEO -->
+
+ <div class="glass hk-panel" id="rule">
+  <h2>The rule: AI explains, it never decides</h2>
+  <p>The verdict comes only from QorTime's pre-existing deterministic verifier, which checks a signed, hash-chained receipt and returns VERIFIED, PARTIAL, SELF-SIGNED or FAIL. Meta models explain that result and stress-test the verifier. Their output lives in separate signed sidecar files next to the receipt.</p>
+  <p>Advisory signals can only lower a result, and only as far as PARTIAL: VERIFIED can become PARTIAL, nothing else. They never raise a status and never fail a match. Deleting or tampering with the AI files never changes the verdict.</p>
+ </div>
+
+ <ol class="steps" id="built">
+  <li class="step glass">
+   <span class="n">01</span>
+   <div>
+    <h2>Explain · Muse Spark</h2>
+    <p>A signed plain-English explanation of the referee's result. A deterministic guardrail drops any text that misstates the status or overclaims, and it fails closed: no key, an error or a guardrail hit means no explanation. It is signed with a separate AI advisory key, never a referee key.</p>
+    <p>Muse Spark is also a second, independent reader of every locked score. Agreement changes nothing. A disagreement can lower VERIFIED to PARTIAL. Unsure means unchecked, with no penalty.</p>
+   </div>
+  </li>
+  <li class="step glass">
+   <span class="n">02</span>
+   <div>
+    <h2>See · SAM 3.1 Evidence Lens</h2>
+    <p>“What the referee saw”: SAM 3.1 video-tracks the scorebug starting from the referee's own scorebug-reading region, on the public highlight clips of match 170123, with cited Muse Spark captions. It is a visualization, not a referee input.</p>
+   </div>
+  </li>
+  <li class="step glass">
+   <span class="n">03</span>
+   <div>
+    <h2>Challenge Echo · SAM 3.1</h2>
+    <p>During a pause challenge, each logged D-pad press should show up as a move of the pause-menu highlight on screen. SAM 3.1 tracks that highlight and deterministic code does the matching. It is information only; a mismatch can at most lower VERIFIED to PARTIAL.</p>
+   </div>
+  </li>
+  <li class="step glass">
+   <span class="n">04</span>
+   <div>
+    <h2>Red-Team the Referee · Muse Wonder</h2>
+    <p>Muse Wonder wrote 26 receipt-tampering attacks once, cached so the run is offline and repeatable. They run against the unmodified pre-existing verifier on a synthetic match with freshly generated test keys, never a real key or the live referee. As an outside attacker without signing keys: 25 attacks, 0 accepted.</p>
+    <p class="fine">As an insider holding the test signing keys, 12 of 25 were accepted, labelled “needs key protection”. That includes 5 inner-check gaps in the pre-existing verifier, reported and left unchanged.</p>
+   </div>
+  </li>
+  <li class="step glass">
+   <span class="n">05</span>
+   <div>
+    <h2>Also this week</h2>
+    <ul class="hk-list">
+     <li><b>Show Your Hands:</b> a verified-input overlay and press-to-pixel check. A Muse Spark filter can only remove candidates; it is lower only, capped at PARTIAL.</li>
+     <li><b>Automatic advisory job</b> run by the referee after the verdict is final. It never delays or changes it.</li>
+     <li><b>Advisory fetch and verifier auto-pin</b> of trusted referee keys, plus browser panels for the signed advisory files.</li>
+     <li><b>Demo-video captions</b> timed with Muse Voice Transcribe.</li>
+    </ul>
+    <p class="fine"><a href="https://github.com/ConWan30/qortime-ai">Full list and file-by-file origin in the qortime-ai README</a></p>
+   </div>
+  </li>
+ </ol>
+
+ <ol class="steps" id="matches" aria-label="Referee-verified matches">
+  <li class="step glass gold">
+   <span class="n">170123</span>
+   <div>
+    <h2>Match 170123 · <span class="tag">VERIFIED</span></h2>
+    <p>Madden, Oct 23, 2026 (CT), before the event. Away 10 – home 0. Co-signed by the official referee key <code>qortime-online-s2</code>.</p>
+    <p class="fine"><a href="../matches/170123/">Open match 170123</a></p>
+   </div>
+  </li>
+  <li class="step glass gold">
+   <span class="n">220105</span>
+   <div>
+    <h2>Match 220105 · <span class="tag">VERIFIED</span></h2>
+    <p>Madden, Oct 27, 2026 (CT), played and verified during the event week. Away 7 – home 21. Co-signed by <code>qortime-online-s2</code>. The final came through the referee's end-of-game menu fallback, and the page discloses the advisory flag <code>alignment_not_above_chance</code>.</p>
+    <p class="fine"><a href="../matches/220105/">Open match 220105</a></p>
+   </div>
+  </li>
+ </ol>
+ <p class="fine">Check any receipt yourself in the <a href="../verify/">verifier</a>. It runs in your browser.</p>
+
+ <div class="glass hk-panel" id="limits" style="margin-bottom:48px">
+  <h2>Limits, stated plainly</h2>
+  <p>Two referee-verified matches is a small sample (n = 2), not a measured accuracy. Both are Madden on PS5, one player's own matches, with one side recorded. The referee spot-checks video segments rather than re-hashing all of them. QorTime does not prove who held the controller and does not catch collusion. The full match recordings are not published; they stay on the player's PC.</p>
+  <p>Not affiliated with Meta, Cerebral Valley, EA, the NFL or Sony. Madden NFL is a trademark of its owner.</p>
+ </div>
+</section>
+</main>
+<footer class="wrap foot"><span>QorTime · MIT · early prototype</span><span class="foot-links"><a href="../verify/">Verify</a><a href="../matches/">Matches</a><a href="../challenge/">Challenges</a><a href="../pricing/">Pricing</a><a href="../early-access/">Early access</a><a href="https://github.com/ConWan30/qortime">GitHub</a><a href="https://x.com/QorTimeHQ">@QorTimeHQ</a></span><span>Not affiliated with EA, the NFL or Sony.</span></footer>
+</body></html>
