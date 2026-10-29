@@ -383,8 +383,8 @@ export function inputProofAdvisory(signals) {
   const notes = [], flags = [];
   const human = inp.human_permille, label = inp.human_label;
   if (typeof human === "number") {
-    if (human < INPUT_HUMAN_MIN) { flags.push("human_score_low"); notes.push(`human_permille=${human} below advisory floor ${INPUT_HUMAN_MIN}` + (label ? ` (${label})` : "")); }
-    else notes.push(`human_permille=${human}` + (label ? ` (${label})` : ""));
+    if (human < INPUT_HUMAN_MIN) { flags.push("human_score_low"); notes.push(`human_permille=${human} below advisory floor ${INPUT_HUMAN_MIN}` + (label ? ` (${label}) (advisory label only; it does not show who played)` : "")); }
+    else notes.push(`human_permille=${human}` + (label ? ` (${label}) (advisory label only; it does not show who played)` : ""));
   } else flags.push("human_score_missing");
   const matchP = inp.match_permille, chanceP = inp.chance_permille;
   if (typeof matchP === "number" && typeof chanceP === "number") {
