@@ -100,7 +100,7 @@
    <span class="n">05</span>
    <div>
     <h2>Red-Team the Referee · Muse Wonder</h2>
-    <p>Muse Wonder wrote 26 receipt-tampering attacks once, cached so the run is offline and repeatable. They run against the unmodified pre-existing verifier on a synthetic match with freshly generated test keys, never a real key or the live referee. As an outside attacker without signing keys: 25 attacks, 0 accepted.</p>
+    <p>Muse Wonder wrote 26 attacks once: 25 tampered receipts plus 1 byte-identical replay, which is reported separately. They are cached so the run is offline and repeatable. They run against the unmodified pre-existing verifier on a synthetic match with freshly generated test keys, never a real key or the live referee. As an outside attacker without signing keys: 25 attacks, 0 accepted. As an insider holding the test keys: 12 of 25 accepted. The keys are synthetic test keys.</p>
     <p class="fine">As an insider holding the test signing keys, 12 of 25 were accepted, labelled “needs key protection”. That includes 5 inner-check gaps in the pre-existing verifier, reported and left unchanged.</p>
    </div>
   </li>
@@ -139,7 +139,7 @@
    </div>
   </li>
  </ol>
- <p class="fine">Check any receipt yourself in the <a href="../verify/">verifier</a>. It runs in your browser.</p>
+ <p class="fine">Check any receipt yourself in the <a href="../verify/">verifier</a>. It runs in your browser. Both matches show VERIFIED with the referee key pinned. Without the pin the verifier shows PARTIAL (<code>referee_key_not_pinned</code>), which is expected. The referee's public log has 6 entries (seq 0–5). Seq 1 (170123) and seq 4 (220105) are these two VERIFIED matches. Seq 0 is an earlier PARTIAL submission of 170123, before the pre-event motion rule fix. Seq 2, 3 and 5 are two other matches that came back PARTIAL. None of those four has a match page. The <a href="https://github.com/ConWan30/qortime-ai/blob/main/PROVENANCE.md#referee-log-entries-without-a-match-page">qortime-ai PROVENANCE</a> lists them.</p>
 
  <div class="glass hk-panel" id="limits" style="margin-bottom:48px">
   <h2>Limits, stated plainly</h2>
@@ -148,5 +148,5 @@
  </div>
 </section>
 </main>
-<footer class="wrap foot"><span>QorTime · MIT · early prototype</span><span class="foot-links"><a href="../verify/">Verify</a><a href="../matches/">Matches</a><a href="../challenge/">Challenges</a><a href="../pricing/">Pricing</a><a href="../early-access/">Early access</a><a href="https://github.com/ConWan30/qortime">GitHub</a><a href="https://x.com/QorTimeHQ">@QorTimeHQ</a></span><span>Not affiliated with EA, the NFL or Sony.</span></footer>
+<footer class="wrap foot"><span>QorTime · early prototype · qortime-ai (this entry) is PolyForm Noncommercial 1.0.0 · site and receipt code (ConWan30/qortime) MIT</span><span class="foot-links"><a href="../verify/">Verify</a><a href="../matches/">Matches</a><a href="../challenge/">Challenges</a><a href="../pricing/">Pricing</a><a href="../early-access/">Early access</a><a href="https://github.com/ConWan30/qortime">GitHub</a><a href="https://x.com/QorTimeHQ">@QorTimeHQ</a></span><span>Not affiliated with EA, the NFL or Sony.</span></footer>
 </body></html>
