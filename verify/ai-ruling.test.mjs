@@ -24,7 +24,7 @@ const v = await verifyReceipt(receipt, receipt.referee.pubkey);
 const vBefore = JSON.stringify(v);
 
 let r = await checkAiRuling(ruling, receipt, v.status);
-ok(r.ok && r.text.startsWith("STATUS") && r.text.includes("VERIFIED"), "published 170123 ai_ruling.json shows for the VERIFIED result");
+ok(r.ok && /^(STATUS:? )?VERIFIED/.test(r.text), "published 170123 ai_ruling.json shows for the VERIFIED result");
 ok(JSON.stringify(await verifyReceipt(receipt, receipt.referee.pubkey)) === vBefore, "checking the AI explanation does not change the verdict");
 ok(!(await checkAiRuling(ruling, receipt, "PARTIAL")).ok, "hidden when the live verdict differs from the echoed one (stale)");
 ok((await checkAiRuling(ruling, receipt, "PARTIAL")).problems.join() === "verdict_echo_stale", "stale is the only problem for an unpinned check");
