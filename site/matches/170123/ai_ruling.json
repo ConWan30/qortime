@@ -11,7 +11,7 @@
   "partial": []
  },
  "model": "muse-spark-1.3",
- "explanation": "STATUS VERIFIED\n\nThis was a Madden27 single match on PS5, claimed as away win 10 to 0 in quarter 4 from the end menu read, with final confirmed.\n\nWhat passed: bundle structure, capture chain, challenges, final re-read, input integrity, motion and video bytes. The referee re-read of the end menu matches the claimed final. Referee qortime-online-s2 with trusted key qortime-v1 serial 2. No errors and nothing missing. 166 of 525 video segments were checked by spot-check.\n\nController input looks human-like but is advisory only, not proof of a human player.\n\nNot proven: who was holding the controller, that laptop countersignatures were made live, that footage was not made up before hashing, and content of segments not received.",
+ "explanation": "VERIFIED\n\nMadden27 on PS5, single mode, claimed final away 10 home 0 in quarter 4 by end menu read, final confirmed.\n\nWhat passed: manifest chain, checkpoint chain, inputs chain and receipt binding recomputed, laptop checkpoint countersignatures valid with gaps and skew within limits, end-of-game menu re-read matches the claimed final, plus challenges, input integrity, motion and video bytes.\n\nThe referee checked 166 of 525 video segments in spot-check mode.\n\nThe controller-timing advisory was above chance (522\u2030 vs 447\u2030). It is advisory only and does not show who played.\n\nNot proven: who was holding the controller, that laptop countersignatures were made live, that footage was not fabricated before hashing, and content of segments not received.",
  "guardrail": {
   "passed": true,
   "rules": [
@@ -23,10 +23,10 @@
    "max_chars"
   ]
  },
- "facts_sha256": "67158a85f416ccb01497ad9ddce964c10998a214ffdc372bd5043f5c401c0343",
+ "facts_sha256": "4ae26372025770076027ca6941366b2b39299d9c6dceabec8a654632d973dd5f",
  "usage": {
-  "prompt_tokens": 692,
-  "completion_tokens": 623,
+  "prompt_tokens": 781,
+  "completion_tokens": 618,
   "reasoning_tokens": 449
  },
  "advisory_key": {
@@ -38,6 +38,6 @@
  "advisory_signature": {
   "alg": "Ed25519",
   "key_id": "2d5de84a3dcdeaec",
-  "sig": "2cacff299f0393bdc84e49656110c3a06ea6cd0afbd0b40f2c5334077f8a3c84b362b180cf145852838a6bcc6f4f2b5cab3686aa2a30be4174d139e27154770b"
+  "sig": "1d5c1fd97df34fcd7f0a08d362777da7dc5928a7aa34773f520ccd3c13c63c500d3c1a8bb3b32b8723dd7558bc8a396d3615a3f89d2a51db920258aaec31ce02"
  }
 }
