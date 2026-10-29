@@ -402,7 +402,7 @@ export function inputProofAdvisory(signals) {
   const ok = !flags.some((f) => bad.includes(f));
   return { present: true, ok, flags, notes, status: inp.status, human_permille: human, match_permille: matchP,
            chance_permille: chanceP, haptic_events: he, haptic_high_confidence: hc,
-           claims: "advisory evidence only — not cryptographic proof of a human player" };
+           claims: "advisory evidence only; it does not show who played" };
 }
 
 export async function verifyReceipt(r, refereePub = null, opts = {}) {
