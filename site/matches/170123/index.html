@@ -295,6 +295,12 @@ body.ready .meter i{transform:scaleX(var(--f,0));transition:transform .7s var(--
  .chainClip:not(.booted) .link{opacity:1;transform:none}
  .meter i{transform:scaleX(var(--f,0))}
 }
+.vy-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+a.btn.vy{display:inline-flex;align-items:center;text-decoration:none}
+#vyLog{margin-top:8px;font-size:12px;color:var(--mute);overflow-wrap:anywhere}
+#vyLog .ok{color:var(--aqua)} #vyLog .bad{color:var(--bad)}
+#verifyCard .howto pre{margin:0;white-space:pre-wrap;font:11.5px var(--mono);color:#c5d2e4}
+#verifyCard p{margin:6px 0 0;font-size:13px}
 </style><link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PGNpcmNsZSBjeD0iMzIiIGN5PSIzMiIgcj0iMjciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzJlZjJmZiIgc3Ryb2tlLXdpZHRoPSI1Ii8+PGcgc3Ryb2tlPSIjMmVmMmZmIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCI+PHBhdGggZD0iTTMyIDl2NU01NSAzMmgtNU0zMiA1NXYtNU05IDMyaDUiLz48L2c+PHBhdGggZD0iTTMyIDMyVjE5IiBzdHJva2U9IiNmZmYiIHN0cm9rZS13aWR0aD0iNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PHBhdGggZD0iTTMyIDMybDE3IDE3IiBzdHJva2U9IiM0ZjdjZmYiIHN0cm9rZS13aWR0aD0iNiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PGNpcmNsZSBjeD0iMzIiIGN5PSIzMiIgcj0iNSIgZmlsbD0iIzRmN2NmZiIvPjwvc3ZnPgo="><link rel="canonical" href="https://qortime.com/matches/170123/"><meta name="description" content="local-20261023-170123. Final 10–0. Receipt VERIFIED. Referee-verified."><meta property="og:title" content="QorTime · local-20261023-170123"><meta property="og:description" content="local-20261023-170123. Final 10–0. Receipt VERIFIED. Referee-verified."><meta property="og:url" content="https://qortime.com/matches/170123/"><meta property="og:image" content="https://qortime.com/matches/170123/og.png"><meta property="og:type" content="website"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="QorTime · local-20261023-170123"><meta name="twitter:description" content="local-20261023-170123. Final 10–0. Receipt VERIFIED. Referee-verified."><meta name="twitter:image" content="https://qortime.com/matches/170123/og.png"></head><body>
 <header class="top enter d0">
  <div class="brand-row"><a class="brand" href="../" aria-label="QorTime home"><svg class="mark" viewBox="0 0 64 64" width="30" height="30" aria-hidden="true" focusable="false"><circle cx="32" cy="32" r="27" fill="none" stroke="#2ef2ff" stroke-width="5"/><g stroke="#2ef2ff" stroke-width="3" stroke-linecap="round"><path d="M32 9v5M55 32h-5M32 55v-5M9 32h5"/></g><path d="M32 32V19" stroke="#fff" stroke-width="5" stroke-linecap="round"/><path d="M32 32l17 17" stroke="#4f7cff" stroke-width="6" stroke-linecap="round"/><circle cx="32" cy="32" r="5" fill="#4f7cff"/></svg>QOR<span>TIME</span></a><div class="mid" id="mid"></div></div>
@@ -360,6 +366,19 @@ body.ready .meter i{transform:scaleX(var(--f,0));transition:transform .7s var(--
   <div class="chips" id="chips" role="listbox" aria-label="Score changes"></div>
  </section>
  <aside class="side-col enter d3">
+  <section class="card" id="verifyCard" aria-label="Verify it yourself"><div class="h"><span class="lbl">Verify it yourself</span><span class="sub">you do not have to trust this page</span></div>
+   <p>The verdict is math anyone can re-run. The QorTime verifier checks the signed receipt in your browser, with the referee's public key pinned. VERIFIED with the referee key pinned. Unpinned, the verifier shows PARTIAL (referee_key_not_pinned), which is expected.</p>
+   <div class="vy-row"><a class="btn vy" id="vyBtn" href="../../verify/?receipt=https%3A%2F%2Fqortime.com%2Fmatches%2F170123%2Freceipt.json&amp;referee=b283cffb9279f2f90859268c64ef21861ef7e5d9fc773bdb8061af0e80624889">Check the receipt in the verifier</a><button class="btn" id="vyGo" type="button">Check the referee's public log</button><a class="btn vy" href="receipt.json">receipt.json</a></div>
+   <div id="vyLog">The referee logs every receipt it signs in an append-only, hash-chained public log. This receipt is entry #1 (submission <span class="mono">64a1a54b77948a49</span>). Entry #0 is an earlier PARTIAL submission of the same match, made before the motion rule fix of Oct 23, 2026.</div>
+   <details class="howto"><summary class="lbl">Do it from a terminal</summary><ol>
+    <li>Download <a href="receipt.json">receipt.json</a>. Its sha256 is <span class="mono">69480a406d1621409cf03dc98eadcb9020c384a368d9fb0fcab63b61c9f12bb0</span>.</li>
+    <li>Run the open verifier with the referee key pinned. It should print VERIFIED. Without the pin it prints PARTIAL (referee_key_not_pinned), which is expected.</li>
+    <li>Look the receipt up in the referee's public log. The logged <span class="mono">body_sha256</span> is SHA-256 of the receipt's canonical JSON without <span class="mono">signatures</span>.</li></ol>
+<pre>git clone https://github.com/ConWan30/qortime &amp;&amp; cd qortime &amp;&amp; pip install -e .
+qortime verify receipt.json --referee-pub b283cffb9279f2f90859268c64ef21861ef7e5d9fc773bdb8061af0e80624889
+curl https://qortime-referee-production.up.railway.app/v1/log/inclusion/a69d866796d778dfaab409505b4d238a70d92bde458148de4cfc27fb778803c5</pre>
+   </details>
+  </section>
   <section class="card" id="evCard" aria-label="Selected moment"></section>
   <section class="card" id="playsCard" aria-label="Plays in this match"></section>
   <section class="card" id="rcCard" aria-label="Receipt and verification"></section>
@@ -1053,4 +1072,21 @@ function boot(){const st=$("#status");
  if(RM)$("#chainClip").classList.add("booted")}
 boot();
 })();
+</script>
+<script>
+// Verify it yourself: public-log check for this receipt (same method as the 220105 page).
+(()=>{const V={body_sha256:"a69d866796d778dfaab409505b4d238a70d92bde458148de4cfc27fb778803c5",log_seq:1,submission:"64a1a54b77948a49",referee_api:"https://qortime-referee-production.up.railway.app"};
+ const q=s=>document.querySelector(s);
+ const jcs=o=>"{"+Object.keys(o).sort().map(k=>JSON.stringify(k)+":"+JSON.stringify(o[k])).join(",")+"}";
+ const hex=b=>[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("");
+ const go=q("#vyGo");if(!go)return;
+ go.onclick=async()=>{const out=q("#vyLog");go.setAttribute("aria-busy","true");
+  try{const res=await fetch(`${V.referee_api}/v1/log/inclusion/${V.body_sha256}`);if(!res.ok)throw new Error("HTTP "+res.status);
+   const j=await res.json();const e=(j.entries||[]).find(x=>x.body_sha256===V.body_sha256);if(!e)throw new Error("entry not found");
+   const {hash,...rest}=e;const h=hex(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(jcs(rest))));
+   const ok=h===hash&&e.seq===V.log_seq&&e.submission===V.submission;
+   out.innerHTML=ok?`<span class="ok">✓ Found.</span> Log entry #${e.seq} holds this receipt's body_sha256, and this browser recomputed the entry hash (${h.slice(0,12)}…). Log size now ${j.head?j.head.size:"?"}. To check the receipt's own signatures, use the verifier.`
+    :`<span class="bad">✗ Mismatch.</span> The log answered, but the entry did not match this page.`;
+  }catch(err){out.innerHTML=`<span class="bad">Could not reach the referee log from this page (${String(err.message||err)}).</span> Try the curl command below.`}
+  finally{go.removeAttribute("aria-busy")}};})();
 </script></body></html>
