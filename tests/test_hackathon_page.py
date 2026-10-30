@@ -36,6 +36,10 @@ def test_page_links_and_demo_slot():
     assert "Demo video coming soon" not in block
     assert '<iframe src="https://www.youtube-nocookie.com/embed/vlGJ1LXxumE"' in block
     assert 'href="https://youtu.be/vlGJ1LXxumE"' in block
+    judges = html.split("<!-- JUDGES_CUT -->", 1)[1].split("<!-- /JUDGES_CUT -->", 1)[0]
+    assert '<iframe src="https://www.youtube-nocookie.com/embed/INGaC9IYsNM"' in judges
+    assert 'loading="lazy"' in judges and "gold" not in judges
+    assert html.index("<!-- /DEMO_VIDEO -->") < html.index("<!-- JUDGES_CUT -->")
     assert "AI explains, it never decides" in html and "PARTIAL" in html
 
 
