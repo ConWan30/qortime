@@ -23,7 +23,7 @@
 <div class="grain" aria-hidden="true"></div>
 <div class="cursor" aria-hidden="true"></div>
 <header class="nav glass"><a class="brand" href="./"><img src="assets/logo.svg" alt="" width="30" height="30"><b>Qor<span>Time</span></b></a>
-<nav><a href="#flow">Capture · Prove · Share</a><a href="matches/" class="keep">Matches</a><a href="challenge/" class="keep">Challenges</a><a href="how-it-works/" class="keep">How it works</a><a href="pricing/" class="keep">Pricing</a><a href="early-access/" class="keep">Early access</a><a href="verify/" class="btn sm mag">Verifier</a></nav></header>
+<nav><a href="cap/" class="keep cap-nav">Capture</a><a href="#flow">Prove · Share</a><a href="matches/" class="keep">Matches</a><a href="challenge/" class="keep">Challenges</a><a href="how-it-works/" class="keep">How it works</a><a href="pricing/" class="keep">Pricing</a><a href="early-access/" class="keep">Early access</a><a href="verify/" class="btn sm mag">Verifier</a></nav></header>
 <main>
 
 <section class="hero" id="top">
@@ -31,7 +31,7 @@
  <div class="hero-copy">
   <p class="kicker reveal-up"><span class="dot"></span> capture · prove · share · Madden NFL 27 first</p>
   <h1 class="kinetic"><span class="line">One app.</span><span class="line">One recording.</span><span class="line accent">One receipt.</span></h1>
-  <p class="lede reveal-up">Play your match with <b>QorCap</b>, one lightweight Windows app that records the capture card and fingerprints every second of video. When the match is over, QorTime does the heavy lifting on the finished recording: a signed receipt, an AI referee verdict, and a public verify link. Nothing heavy runs while you play.</p>
+  <p class="lede reveal-up">Play your match with <b><a href="cap/">QorCap</a></b>, one lightweight Windows app that records the capture card and fingerprints every second of video. When the match is over, QorTime does the heavy lifting on the finished recording: a signed receipt, an AI referee verdict, and a public verify link. Nothing heavy runs while you play.</p>
   <div class="ctas reveal-up"><a class="btn mag" href="verify/"><span>Verify a receipt</span></a><a class="btn ghost mag" href="https://github.com/ConWan30/qorcap/releases/latest"><span>Download QorCap</span></a></div>
   <p class="plan-note reveal-up">Verified Match, a hosted referee countersign, is planned at $9.99. Self-verify is free today.</p>
  </div>
@@ -44,7 +44,7 @@
  <p class="num">how it works</p>
  <h2 class="split big">Capture. Prove. Share.</h2>
  <div class="cards">
-  <div class="card glass"><h3>1 · Capture</h3><p><b>QorCap</b> is the one app you run, on Windows, during the match. It records the capture card and fingerprints the video as it is written: every segment is hashed and chained, with timestamped checkpoints. It stays light, so it doesn't strain your laptop.</p><span class="tag">controller button log in the same session · since v0.3.0</span></div>
+  <div class="card glass"><h3>1 · Capture</h3><p><b>QorCap</b> is the one app you run, on Windows, during the match. It records the capture card and fingerprints the video as it is written: every segment is hashed and chained, with timestamped checkpoints. It stays light, so it doesn't strain your laptop.</p><span class="tag">controller button log in the same session · since v0.3.0</span><div class="ctas"><a class="btn ghost mag" href="cap/"><span>Open Capture</span></a></div></div>
   <div class="card glass"><h3>2 · Prove</h3><p>After the final whistle, QorTime works on the finished recording. It re-checks the fingerprints, reads the score, and seals a signed receipt. The <b>AI referee</b> reviews the evidence and signs a verdict: <b>accept</b>, <b>dispute</b>, or <b>abstain</b>, with plain reasons and the evidence frames.</p></div>
   <div class="card glass"><h3>3 · Share</h3><p>Send the receipt to your opponent, a tournament, or a platform. Anyone can check it in the free <a href="verify/">browser verifier</a>, and nothing is uploaded. A hosted referee countersign, Verified Match, is planned.</p></div>
  </div>
@@ -88,6 +88,7 @@
    <h2 class="split">The scorebug, read off the screen.</h2>
    <p>QorTime's scorebug reader reads the final score from the recording, digit by digit, and only locks when consecutive frames agree.</p>
    <ul class="ticks"><li>frames read from the capture card</li><li>score locked on frame agreement</li><li>Madden NFL 27 first, more titles <span class="tag">roadmap</span></li></ul>
+   <p class="note"><a href="cap/">QorCap, the Capture step</a></p>
   </div>
   <div class="scene-art">
    <div class="scorebug glass" id="scorebug">
@@ -229,7 +230,7 @@ receipt_hash</pre>
  <div class="ctas c"><a class="btn mag" href="verify/"><span>Open the verifier</span></a><a class="btn ghost mag" href="https://github.com/ConWan30/qortime"><span>Star on GitHub</span></a></div>
 </section>
 </main>
-<footer class="wrap foot"><span>QorTime · MIT · early prototype</span><span class="foot-links"><a href="verify/">Verify</a><a href="matches/">Matches</a><a href="challenge/">Challenges</a><a href="how-it-works/">How it works</a><a href="pricing/">Pricing</a><a href="early-access/">Early access</a><a href="https://github.com/ConWan30/qorcap/releases/latest">QorCap</a><a href="https://github.com/ConWan30/qortime">GitHub</a><a href="https://x.com/QorTimeHQ">@QorTimeHQ</a></span><span>Not affiliated with EA, the NFL or Sony. Madden NFL is a trademark of its owner.</span></footer>
+<footer class="wrap foot"><span>QorTime · MIT · early prototype</span><span class="foot-links"><a href="verify/">Verify</a><a href="matches/">Matches</a><a href="challenge/">Challenges</a><a href="how-it-works/">How it works</a><a href="pricing/">Pricing</a><a href="early-access/">Early access</a><a href="cap/">Capture</a><a href="https://github.com/ConWan30/qorcap/releases/latest">QorCap</a><a href="https://github.com/ConWan30/qortime">GitHub</a><a href="https://x.com/QorTimeHQ">@QorTimeHQ</a></span><span>Not affiliated with EA, the NFL or Sony. Madden NFL is a trademark of its owner.</span></footer>
 <script src="vendor/gsap.min.js" defer></script>
 <script src="vendor/ScrollTrigger.min.js" defer></script>
 <script src="vendor/lenis.min.js" defer></script>
