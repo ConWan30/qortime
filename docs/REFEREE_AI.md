@@ -67,3 +67,9 @@ The verdict sits next to the bundle. It does not modify `receipt.json`, whose si
 - Bundle frames are mapped to wall time from the manifest (last segment `wall_ms` minus video duration). Positions are approximate (about 1 segment), and `video.partN.mp4` is hashed but not sampled.
 - The checks do not cover challenges, `challenges.jsonl` nonce stamps, or player identity. Like QorCap itself, the referee proves footage integrity and timing, not who held the controller.
 - Jev images are "Dreamer-ready" (beta). Re-run `eval/referee_ai_frames.py` after model bumps.
+
+CoD structured rereads may add `value: {game: "cod", kills, deaths, outcome, assists?}`.
+Kills and deaths must be non-negative safe integers; outcome is `victory` or `defeat`.
+Missing required reads omit value; optional assists are omitted unless integer.
+This is additive review metadata, not a receipt format or verifier rule change.
+It does not install or enable a CoD referee reader.

@@ -820,13 +820,26 @@ def _score_atom(n: Any) -> int | None:
     return None
 
 
-def _reread_value(src: dict[str, Any] | None) -> dict[str, int] | None:
-    """Optional structured score beside final_reread. Absent when away/home are not integers.
+def _reread_value(src: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Optional structured score beside final_reread. Missing required integers abstain.
 
     Learning may compare this object. It is not a verdict, and a missing value does not change ``state``.
     """
     if not isinstance(src, dict):
         return None
+    if src.get("game") == "cod" or src.get("game_set") == "cod":
+        stats = src.get("owner_row", src)
+        if not isinstance(stats, dict):
+            return None
+        kills, deaths = _score_atom(stats.get("kills")), _score_atom(stats.get("deaths"))
+        outcome = stats.get("outcome", stats.get("result"))
+        if kills is None or deaths is None or outcome not in ("victory", "defeat"):
+            return None
+        value = {"game": "cod", "kills": kills, "deaths": deaths, "outcome": outcome}
+        assists = _score_atom(stats.get("assists"))
+        if assists is not None:
+            value["assists"] = assists
+        return value
     away, home = _score_atom(src.get("away")), _score_atom(src.get("home"))
     if away is None or home is None:
         return None
@@ -843,6 +856,22 @@ def _final_check(final: dict, claimed: dict) -> dict[str, Any]:
     src = f or lr
     if src is None:
         return {"state": FAIL_CHECK, "detail": "referee could not read any score from the recorded tail"}
+    if src.get("game") == "cod" or src.get("game_set") == "cod":
+        # Independent reader data only; never derive missing values from the claim.
+        value = _reread_value(src)
+        expected = _reread_value(claimed)
+        if value is None:
+            return {"state": FAIL_CHECK, "detail": "referee could not read a structured CoD final"}
+        if expected is None:
+            row = {"state": PARTIAL_CHECK, "detail": "CoD final read; no structured claim to compare"}
+        elif any(value.get(k) != v for k, v in expected.items()):
+            row = {"state": FAIL_CHECK, "detail": "referee CoD final differs from the structured claim"}
+        elif f and f.get("final_confirmed") is True:
+            row = {"state": PASS, "detail": "referee CoD final matches the structured claim"}
+        else:
+            row = {"state": PARTIAL_CHECK, "detail": "CoD final read; agreement not confirmed"}
+        row["value"] = value
+        return row
     mine = (src["home"], src["away"])
     theirs = (claimed.get("home_score"), claimed.get("away_score"))
     if mine != theirs:
