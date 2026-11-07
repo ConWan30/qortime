@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import copy
 import json
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -73,7 +75,9 @@ def test_existing_receipts_keep_their_verdicts():
         assert _verdict(rec, pub) == expect, rel
 
 
-def test_value_does_not_change_a_resigned_review_receipt(tmp_path):
+@pytest.mark.parametrize("value", [{"away": 99, "home": 0, "quarter": 4},
+    {"game": "cod", "kills": 12, "deaths": 3, "outcome": "victory"}])
+def test_value_does_not_change_a_resigned_review_receipt(tmp_path, value):
     """Same bytes except final_reread.value, both signed by the synthetic demo keys."""
     vec = json.loads((ROOT / "tests/vectors/review_receipt.json").read_text(encoding="utf-8"))
     base = copy.deepcopy(vec["receipt"])
@@ -86,14 +90,14 @@ def test_value_does_not_change_a_resigned_review_receipt(tmp_path):
     path.write_text(json.dumps(allow), encoding="utf-8")
     plain = _resign(base)
     valued = copy.deepcopy(base)
-    valued["review"]["checks"]["final_reread"]["value"] = {"away": 99, "home": 0, "quarter": 4}
+    valued["review"]["checks"]["final_reread"]["value"] = value
     valued = _resign(valued)
     a = _verdict(plain, REFEREE.pubkey_hex, str(path))
     b = _verdict(valued, REFEREE.pubkey_hex, str(path))
     assert a == b
     assert a[0] == "VERIFIED"
     assert "value" not in plain["review"]["checks"]["final_reread"]
-    assert valued["review"]["checks"]["final_reread"]["value"]["away"] == 99
+    assert valued["review"]["checks"]["final_reread"]["value"] == value
 
 
 @pytest.mark.parametrize("path", sorted((ROOT / "tests/vectors/viewer").glob("*.json")), ids=lambda p: p.stem)
@@ -190,3 +194,63 @@ def test_final_check_keeps_detail_and_adds_value_only_for_integer_scores():
     assert fuzzy["state"] == PASS
     assert "value" not in fuzzy
     assert fuzzy["detail"] == "end-of-game menu re-read by the referee matches the claimed final"
+
+
+@pytest.mark.parametrize("kills", [None, True, -1, 1.0, "1", 2**53])
+def test_cod_missing_integer_has_no_value(kills):
+    from qor_receipt.review.engine import _reread_value
+    assert _reread_value({"game": "cod", "kills": kills, "deaths": 2, "outcome": "victory"}) is None
+
+
+def test_cod_owner_row_and_comparison():
+    from qor_receipt.review.engine import _reread_value
+    value = {"game": "cod", "kills": 12, "deaths": 3, "outcome": "victory"}
+    src = {"game_set": "cod", "owner_row": {"kills": 12, "deaths": 3, "assists": None, "result": "victory"},
+           "final_confirmed": True}
+    assert _reread_value(src) == value
+    assert _final_check({"final": src}, value) == {
+        "state": PASS, "detail": "referee CoD final matches the structured claim", "value": value}
+    assert _final_check({"final": src}, {**value, "kills": 13})["state"] == "fail"
+    assert _final_check({"final": src}, {})["state"] == PARTIAL_CHECK
+    assert _final_check({"final": src}, {**value, "assists": 2})["state"] == PARTIAL_CHECK
+    assert _final_check({"final": {**src, "final_confirmed": False}}, value)["state"] == PARTIAL_CHECK
+    assert _reread_value({**value, "outcome": "UNKNOWN"}) is None
+    assert _reread_value({**value, "assists": True}) == value
+    assert _reread_value({**value, "assists": 0}) == {**value, "assists": 0}
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js not installed")
+def test_cod_value_python_browser_parity(tmp_path):
+    vec = json.loads((ROOT / "tests/vectors/review_receipt.json").read_text(encoding="utf-8"))
+    base = copy.deepcopy(vec["receipt"])
+    base["referee"].update(pubkey=REFEREE.pubkey_hex, key_id=REFEREE.key_id)
+    base["players"][0]["pubkey"] = PLAYER.pubkey_hex
+    base["review"]["checks"]["final_reread"].pop("value", None)
+    allow = copy.deepcopy(vec["allowlist"])
+    allow["referees"].append({"id": "demo-cod", "pubkey": REFEREE.pubkey_hex,
+                              "key_id": REFEREE.key_id, "status": "active"})
+    path = tmp_path / "allow.json"
+    path.write_text(json.dumps(allow), encoding="utf-8")
+    valued = copy.deepcopy(base)
+    valued["review"]["checks"]["final_reread"]["value"] = {
+        "game": "cod", "kills": 12, "deaths": 3, "outcome": "victory"}
+    receipts = [_resign(base), _resign(valued)]
+    script = """
+      import {verifyReceipt} from './verify/verify.js';
+      let text = ''; for await (const chunk of process.stdin) text += chunk;
+      const data = JSON.parse(text);
+      const results = [];
+      for (const receipt of data.receipts) {
+        const out = await verifyReceipt(receipt, data.pub, {allowlist: data.allow});
+        results.push([out.status, out.trust_tier, out.errors, out.partial]);
+      }
+      console.log(JSON.stringify(results));
+    """
+    proc = subprocess.run(["node", "--input-type=module", "-e", script], cwd=ROOT,
+                          input=json.dumps({"receipts": receipts, "pub": REFEREE.pubkey_hex, "allow": allow}),
+                          text=True, capture_output=True, check=True, timeout=30)
+    browser = json.loads(proc.stdout)
+    python = [list(_verdict(rec, REFEREE.pubkey_hex, str(path))) for rec in receipts]
+    assert browser == python
+    assert browser[0] == browser[1]
+    assert browser[0][0] == "VERIFIED"
