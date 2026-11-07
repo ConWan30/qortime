@@ -212,6 +212,7 @@ def test_cod_owner_row_and_comparison():
         "state": PASS, "detail": "referee CoD final matches the structured claim", "value": value}
     assert _final_check({"final": src}, {**value, "kills": 13})["state"] == "fail"
     assert _final_check({"final": src}, {})["state"] == PARTIAL_CHECK
+    assert _final_check({"final": src}, {**value, "assists": 2})["state"] == PARTIAL_CHECK
     assert _final_check({"final": {**src, "final_confirmed": False}}, value)["state"] == PARTIAL_CHECK
     assert _reread_value({**value, "outcome": "UNKNOWN"}) is None
     assert _reread_value({**value, "assists": True}) == value

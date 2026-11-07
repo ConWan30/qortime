@@ -864,8 +864,10 @@ def _final_check(final: dict, claimed: dict) -> dict[str, Any]:
             return {"state": FAIL_CHECK, "detail": "referee could not read a structured CoD final"}
         if expected is None:
             row = {"state": PARTIAL_CHECK, "detail": "CoD final read; no structured claim to compare"}
-        elif any(value.get(k) != v for k, v in expected.items()):
+        elif any(k in value and value[k] != v for k, v in expected.items()):
             row = {"state": FAIL_CHECK, "detail": "referee CoD final differs from the structured claim"}
+        elif any(k not in value for k in expected):
+            row = {"state": PARTIAL_CHECK, "detail": "CoD final read; requested optional count not read"}
         elif f and f.get("final_confirmed") is True:
             row = {"state": PASS, "detail": "referee CoD final matches the structured claim"}
         else:
