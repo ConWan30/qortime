@@ -1,0 +1,3 @@
+# Hashed files must be byte-identical on every OS (a Windows CRLF checkout broke the scorebug_dict.txt sha256 check).
+* text=auto eol=lf
+*.png binary

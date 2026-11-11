@@ -9,3 +9,4 @@ dist/
 node_modules/
 .env
 services/verified-match/data/
+.cache/

@@ -1,0 +1,49 @@
+name: OCR spike golden (research)
+# Research-only job for eval/ocr_spike. It never gates receipts, verification or scoring.
+# Same pinned weights x committed synthetic probe on different CPU types -> output hashes vs committed golden.
+on:
+  pull_request:
+    paths:
+      - "eval/ocr_spike/**"
+      - "tests/test_ocr_spike.py"
+      - ".github/workflows/ocr-spike.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  golden:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      OCR_SPIKE_CACHE: .cache/ocr_spike
+      OMP_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/cache@v4
+        with:
+          path: .cache/ocr_spike
+          key: ocr-spike-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('eval/ocr_spike/pinned_models.json') }}
+      - run: pip install -r eval/ocr_spike/requirements-ci.txt
+      - name: CPU flags
+        shell: bash
+        run: |
+          if command -v lscpu >/dev/null; then lscpu; fi
+          if [ "$(uname)" = "Darwin" ]; then sysctl -n machdep.cpu.brand_string; sysctl hw.optional | grep -E "arm|neon|dotprod|i8mm|bf16" || true; fi
+          python -c "import platform; print(platform.platform(), platform.processor())"
+      - name: Golden check (downloads pinned weights, verifies sha256, single-thread inference)
+        shell: bash
+        run: python eval/ocr_spike/golden_check.py --cache "$OCR_SPIKE_CACHE" --report "golden-${{ matrix.os }}.json"
+      - name: Spike tests (synthetic only)
+        if: always()
+        run: python -m pytest -q tests/test_ocr_spike.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: golden-${{ matrix.os }}
+          path: golden-${{ matrix.os }}.json

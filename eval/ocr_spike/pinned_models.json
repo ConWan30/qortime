@@ -1,0 +1,46 @@
+{
+  "note": "Weights are NOT committed. Each entry is fetched by URL (or derived by a pinned recipe) and checked by sha256 before it runs.",
+  "dict": {
+    "full": {
+      "url": "https://raw.githubusercontent.com/PaddlePaddle/PaddleOCR/dab3fe35379033fdcb2d0e9572fac0b36c9a9ebf/ppocr/utils/dict/ppocrv6_dict.txt",
+      "sha256": "b5f2bfe2bdd9448429e3e82b51c789775d9b42f2403d082b00662eb77e401c5d",
+      "file": "ppocrv6_dict.txt"
+    },
+    "scorebug": {
+      "path": "scorebug_dict.txt",
+      "sha256": "aabbe6eea68a0bcc1b159d6031835b8fa83aaf6adeef35b23c317ff1483f537e"
+    }
+  },
+  "models": {
+    "upstream_fp32": {
+      "desc": "PaddlePaddle/PP-OCRv6_small_rec_onnx inference.onnx (Apache-2.0), HF revision b8f84f0b",
+      "url": "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx/resolve/b8f84f0b80c529de40b4fbb3544b84fa7233a513/inference.onnx",
+      "sha256": "5435fd747c9e0efe15a96d0b378d5bd157e9492ed8fd80edf08f30d02fa24634",
+      "file": "PP-OCRv6_small_rec_fp32.onnx",
+      "dict": "full"
+    },
+    "upstream_int8_dynamic": {
+      "desc": "upstream_fp32 weight-quantised with onnxruntime.quantization.quantize_dynamic (QUInt8, per-channel, MatMul+Conv); the derived file is sha256-checked",
+      "derive": {
+        "from": "upstream_fp32",
+        "recipe": "quantize_dynamic_u8_per_channel_v1",
+        "onnxruntime": "1.31.0"
+      },
+      "sha256": "178515d6d8b2949df2f60c0d3d8a16f2c83c411ae70a2bcf4558d46ea3c49033",
+      "file": "PP-OCRv6_small_rec_int8_dyn.onnx",
+      "dict": "full"
+    },
+    "scorebug_ft_int8": {
+      "desc": "PP-OCRv6_small_rec fine-tuned 750 steps on synthetic scorebug crops (CPU), 69-class CTC head, static QDQ U8U8 int8 on MatMul only (convs fp32). Built with onnxruntime 1.31.0. Not hosted yet (publishing weights needs Con's OK), so CI skips it.",
+      "url": null,
+      "sha256": "09f13fce44628f43c29bf4af8c9f20564ae0ceedfa86743401bbc04d7cfa9777",
+      "file": "scorebug_rec_int8.onnx",
+      "dict": "scorebug",
+      "built_with": {
+        "onnxruntime": "1.31.0",
+        "fp32_onnx_sha256": "5d6700b1ffb22f8bbb6ebf01836dbc0f93d7b45c86384e2124751fc4d1e52c8e",
+        "trained_pdparams_sha256": "c65d6530be956346b2d88632bb6414aa7d0f22a4b7375eca7795cc0a202110b2"
+      }
+    }
+  }
+}

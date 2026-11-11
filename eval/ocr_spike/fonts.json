@@ -1,0 +1,15 @@
+{
+  "note": "Open-licence fonts used by synth.py. Files are not committed; fetch them with fetch_fonts.py (URLs below) and they are checked by sha256.",
+  "fonts": [
+    {"file": "DejaVuSans-Bold.ttf", "sha256": "a4c5bc453ca281d90ea079e596da7ae0dfeb5777497c29ec254e76d97ff6f890", "license": "Bitstream Vera Fonts licence + public-domain DejaVu changes (permissive)", "url": "https://github.com/dejavu-fonts/dejavu-fonts (Debian fonts-dejavu-core 2.37)"},
+    {"file": "LiberationSans-Bold.ttf", "sha256": "1b5f2da6f4cadce4c05b9ecebe3a6fcd374eb95ae443605e799f4c3287978939", "license": "SIL OFL 1.1", "url": "https://github.com/liberationfonts/liberation-fonts (Debian fonts-liberation)"},
+    {"file": "barlow__Barlow-Bold.ttf", "sha256": "84e6a4d61e7c3e21f3c50ea6a4f7e5303a3467864c038be6ea3759bab8d547f9", "license": "SIL OFL 1.1", "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/barlow/Barlow-Bold.ttf"},
+    {"file": "barlow__Barlow-SemiBold.ttf", "sha256": "86577cb32f8abe3673db53ca0f4221e6856751a4f6730c867e00f720f8bb1fc5", "license": "SIL OFL 1.1", "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/barlow/Barlow-SemiBold.ttf"},
+    {"file": "barlowsemicondensed__BarlowSemiCondensed-Bold.ttf", "sha256": "5bd6757e459a110da81b44532f0f43058e2dab2401688abca84f2fdbde193cbb", "license": "SIL OFL 1.1", "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/barlowsemicondensed/BarlowSemiCondensed-Bold.ttf"},
+    {"file": "rajdhani__Rajdhani-Bold.ttf", "sha256": "691470dd3286a14e9677940d0bf75796179841ba5215cbda1a2c8910a3226afd", "license": "SIL OFL 1.1", "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/rajdhani/Rajdhani-Bold.ttf"},
+    {"file": "rajdhani__Rajdhani-SemiBold.ttf", "sha256": "94bbd25a18ca665999feb05a537de9fd2b860dcfb78bbe9ca00270825bf235da", "license": "SIL OFL 1.1", "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/rajdhani/Rajdhani-SemiBold.ttf"},
+    {"file": "montserrat__Montserrat[wght].ttf", "sha256": "0f7b311b2f3279e4eef9b2f968bcdbab6e28f4daeb1f049f4f278a902bcd82f7", "wght": 800, "license": "SIL OFL 1.1", "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/montserrat/Montserrat%5Bwght%5D.ttf"},
+    {"file": "exo2__Exo2[wght].ttf", "sha256": "205a448676a2586f9c57c25f3d5c58ca8db7e6cf5edf7506783a010c6fe2bfb5", "wght": 700, "license": "SIL OFL 1.1", "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/exo2/Exo2%5Bwght%5D.ttf"},
+    {"file": "russoone__RussoOne-Regular.ttf", "sha256": "bc0abcc660bd8b7ad3000ecb2898a27c58a29a50f7ec81652fa12e75148d09df", "license": "SIL OFL 1.1", "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/russoone/RussoOne-Regular.ttf"}
+  ]
+}
