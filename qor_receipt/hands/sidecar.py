@@ -114,6 +114,41 @@ def apply_to_result(v: dict[str, Any], doc: dict[str, Any] | None) -> dict[str, 
     return out
 
 
+_RATIONAL = re.compile(r"([0-9]+)/([0-9]+)", re.ASCII)
+
+
+class ClipRateError(ValueError):
+    """A highlight clip's ``source.frame_rate`` is present but not a usable rate. Never guessed."""
+
+
+def clip_fps(clip: dict[str, Any]) -> float:
+    """Frames per second the highlight clip's ``source.start_s`` was cut at.
+
+    qorcap (from #164) writes ``source.frame_rate`` as a rational string such as ``"60/1"`` or
+    ``"60000/1001"`` on clips that are not 30/1. Absent (every older manifest, and every 30/1 clip) means
+    30/1. Present but not ``N/D`` with 1 <= N/D <= 1000 raises ClipRateError (fail closed).
+    """
+    src = clip.get("source") if isinstance(clip.get("source"), dict) else {}
+    if "frame_rate" not in src:
+        return 30.0
+    fr = src["frame_rate"]
+    m = _RATIONAL.fullmatch(fr.strip()) if isinstance(fr, str) else None
+    num, den = (int(m.group(1)), int(m.group(2))) if m else (0, 0)
+    if not m or num <= 0 or den <= 0 or not 1.0 <= num / den <= 1000.0:
+        raise ClipRateError(f"clip {clip.get('id', '?')}: source.frame_rate {fr!r} is not a positive frame rate; "
+                            "refusing to place it on the capture clock (fail closed)")
+    return num / den
+
+
+def clip_start_mono_ms(clip: dict[str, Any], segments: list[dict[str, Any]]) -> float:
+    """Capture mono ms of the clip's first frame: the manifest frame fit at the clip's own rate."""
+    from qor_receipt.review.clock import capture_clock
+
+    fps = clip_fps(clip)
+    intercept, ms_per_frame = capture_clock(segments, fps)
+    return intercept + ms_per_frame * float(clip["source"]["start_s"]) * fps
+
+
 def main(argv: list[str] | None = None) -> int:
     """python -m qor_receipt.hands.sidecar RECEIPT INPUTS_JSONL CLIPS_MANIFEST SEGMENTS_JSONL --clips DIR
     [--muse] [--max-calls N] [--no-track] [--sign-key PATH] [--out FILE]
@@ -126,7 +161,6 @@ def main(argv: list[str] | None = None) -> int:
 
     from qor_receipt.hands.muse_context import MuseContext, filter_actions
     from qor_receipt.hands.video_events import detect, energy_curve
-    from qor_receipt.review.clock import capture_clock
 
     ap = argparse.ArgumentParser(prog="qor_receipt.hands.sidecar")
     ap.add_argument("receipt"); ap.add_argument("inputs"); ap.add_argument("clips_manifest"); ap.add_argument("segments")  # noqa: E702
@@ -138,14 +172,20 @@ def main(argv: list[str] | None = None) -> int:
     recs = [json.loads(x) for x in Path(a.inputs).read_text(encoding="utf-8").splitlines() if x.strip()]
     data, chunks = [r for r in recs if r.get("type") != "chunk"], [r for r in recs if r.get("type") == "chunk"]
     segs = [json.loads(x) for x in Path(a.segments).read_text(encoding="utf-8").splitlines() if x.strip()]
-    clock = capture_clock([s for s in segs if s.get("type") == "segment"])
+    media = [s for s in segs if s.get("type") == "segment"]
     man = json.loads(Path(a.clips_manifest).read_text(encoding="utf-8"))
     clips, cands = [], []
     for c in man.get("clips", []):
         f = Path(a.clips) / c["file"]
         if not f.exists():
             continue
-        t0 = clock[0] + clock[1] * float(c["source"]["start_s"]) * 30.0
+        try:
+            t0 = clip_start_mono_ms(c, media)
+        except ClipRateError as e:
+            import sys
+
+            print(f"error: {e}", file=sys.stderr)
+            return 2
         e, cc, fps = energy_curve(str(f))
         evs = [dict(ev, clip=c["id"], t0=t0, path=str(f)) for ev in detect(e, cc, fps)]
         cands += evs
