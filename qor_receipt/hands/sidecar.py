@@ -115,6 +115,9 @@ def apply_to_result(v: dict[str, Any], doc: dict[str, Any] | None) -> dict[str, 
 
 
 _RATIONAL = re.compile(r"([0-9]+)/([0-9]+)", re.ASCII)
+# "60000/1001" is 11 characters. A 400-digit numerator used to OverflowError on num/den
+# (QorProof INFO Q1). Bound the field before int() or division so that becomes a clean refusal.
+_MAX_FRAME_RATE_CHARS = 32
 
 
 class ClipRateError(ValueError):
@@ -126,13 +129,15 @@ def clip_fps(clip: dict[str, Any]) -> float:
 
     qorcap (from #164) writes ``source.frame_rate`` as a rational string such as ``"60/1"`` or
     ``"60000/1001"`` on clips that are not 30/1. Absent (every older manifest, and every 30/1 clip) means
-    30/1. Present but not ``N/D`` with 1 <= N/D <= 1000 raises ClipRateError (fail closed).
+    30/1. Present but not ``N/D`` with 1 <= N/D <= 1000, or a field longer than
+    ``_MAX_FRAME_RATE_CHARS``, raises ClipRateError (fail closed).
     """
     src = clip.get("source") if isinstance(clip.get("source"), dict) else {}
     if "frame_rate" not in src:
         return 30.0
     fr = src["frame_rate"]
-    m = _RATIONAL.fullmatch(fr.strip()) if isinstance(fr, str) else None
+    field = fr.strip() if isinstance(fr, str) else None
+    m = _RATIONAL.fullmatch(field) if field is not None and len(field) <= _MAX_FRAME_RATE_CHARS else None
     num, den = (int(m.group(1)), int(m.group(2))) if m else (0, 0)
     if not m or num <= 0 or den <= 0 or not 1.0 <= num / den <= 1000.0:
         raise ClipRateError(f"clip {clip.get('id', '?')}: source.frame_rate {fr!r} is not a positive frame rate; "

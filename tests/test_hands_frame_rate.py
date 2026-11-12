@@ -153,7 +153,7 @@ def test_missing_frame_rate_means_thirty():
 
 
 @pytest.mark.parametrize("bad", ["garbage", "", "60", "0/1", "-60/1", "60/0", "60.0/1", "6_0/1", "nan/1", "１２/1",
-                                 "5000/1", "1/2", 60, None, ["60/1"]])
+                                 "5000/1", "1/2", "1" * 400 + "/1", 60, None, ["60/1"]])
 def test_garbage_frame_rate_fails_closed(tmp_path, bad):
     c = _clips([12.0], bad)[0]
     with pytest.raises(S.ClipRateError, match="fail closed"):
@@ -161,3 +161,16 @@ def test_garbage_frame_rate_fails_closed(tmp_path, bad):
     rc, out, err, seen = _run_main(tmp_path, _segs("regular"), _clips([0.5, 12.0]) + [dict(c, id="bad", file="bad.mp4")])
     assert rc == 2 and out == "" and seen == [], "never guessed: no hands document is built"
     assert "source.frame_rate" in err and "fail closed" in err
+
+
+def test_huge_numerator_is_a_clean_refusal_not_a_traceback(tmp_path):
+    """QorProof INFO Q1: a 400-digit numerator must exit 2 with ClipRateError, not OverflowError."""
+    bad = "1" * 400 + "/1"
+    c = _clips([12.0], bad)[0]
+    with pytest.raises(S.ClipRateError, match="fail closed") as ei:
+        S.clip_fps(c)
+    assert "source.frame_rate" in str(ei.value)
+    rc, out, err, seen = _run_main(tmp_path, _segs("regular"), _clips([0.5, 12.0]) + [dict(c, id="bad", file="bad.mp4")])
+    assert rc == 2 and out == "" and seen == [], "never guessed: no hands document is built"
+    assert "source.frame_rate" in err and "fail closed" in err
+    assert "Traceback" not in err and "OverflowError" not in err
