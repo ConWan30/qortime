@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import math
 import re
 from typing import Any
 
@@ -120,8 +121,65 @@ _RATIONAL = re.compile(r"([0-9]+)/([0-9]+)", re.ASCII)
 _MAX_FRAME_RATE_CHARS = 32
 
 
-class ClipRateError(ValueError):
+class ClipInputError(ValueError):
+    """A highlight clip's source, start_s, file or id is missing or not usable. Never guessed."""
+
+
+class ClipRateError(ClipInputError):
     """A highlight clip's ``source.frame_rate`` is present but not a usable rate. Never guessed."""
+
+
+def clip_id_and_file(clip: Any) -> tuple[str, str]:
+    """Return ``(id, file)``. Both must be present non-empty strings. Never guessed."""
+    if not isinstance(clip, dict):
+        raise ClipInputError(
+            "highlight clip is not an object; refusing to place it on the capture clock (fail closed)"
+        )
+    cid, fname = clip.get("id"), clip.get("file")
+    if not isinstance(cid, str) or not cid:
+        raise ClipInputError(
+            f"clip {cid!r}: id is missing or not a usable name; refusing to place it on the capture clock (fail closed)"
+        )
+    if not isinstance(fname, str) or not fname:
+        raise ClipInputError(
+            f"clip {cid}: file {fname!r} is missing or not a usable name; refusing to place it on the capture clock (fail closed)"
+        )
+    return cid, fname
+
+
+def clip_start_s(clip: dict[str, Any]) -> float:
+    """The clip's ``source.start_s`` as a finite number of seconds ≥ 0. Never guessed.
+
+    ``source`` must be a dict. ``start_s`` must be an ``int`` or ``float`` (not ``bool``,
+    not a string) that is finite and ≥ 0. Anything else raises ClipInputError.
+    """
+    cid = clip.get("id", "?") if isinstance(clip, dict) else "?"
+    src = clip.get("source") if isinstance(clip, dict) else None
+    if not isinstance(src, dict):
+        raise ClipInputError(
+            f"clip {cid}: source is missing or not an object; refusing to place it on the capture clock (fail closed)"
+        )
+    if "start_s" not in src:
+        raise ClipInputError(
+            f"clip {cid}: source.start_s is missing; refusing to place it on the capture clock (fail closed)"
+        )
+    raw = src["start_s"]
+    # bool is a subclass of int, so True/False would otherwise pass as 1 or 0.
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        raise ClipInputError(
+            f"clip {cid}: source.start_s {raw!r} is not a finite start time ≥ 0; "
+            "refusing to place it on the capture clock (fail closed)"
+        )
+    try:
+        start = float(raw)
+    except OverflowError:
+        start = float("inf")
+    if raw < 0 or not math.isfinite(start):
+        raise ClipInputError(
+            f"clip {cid}: source.start_s {raw!r} is not a finite start time ≥ 0; "
+            "refusing to place it on the capture clock (fail closed)"
+        )
+    return start
 
 
 def clip_fps(clip: dict[str, Any]) -> float:
@@ -146,12 +204,24 @@ def clip_fps(clip: dict[str, Any]) -> float:
 
 
 def clip_start_mono_ms(clip: dict[str, Any], segments: list[dict[str, Any]]) -> float:
-    """Capture mono ms of the clip's first frame: the manifest frame fit at the clip's own rate."""
+    """Capture mono ms of the clip's first frame: the manifest frame fit at the clip's own rate.
+
+    ``source`` must be a dict and ``start_s`` a finite number ≥ 0 (not a bool). A bad
+    value raises ClipInputError (fail closed). The returned time is finite.
+    """
     from qor_receipt.review.clock import capture_clock
 
+    start_s = clip_start_s(clip)
     fps = clip_fps(clip)
     intercept, ms_per_frame = capture_clock(segments, fps)
-    return intercept + ms_per_frame * float(clip["source"]["start_s"]) * fps
+    t0 = intercept + ms_per_frame * start_s * fps
+    if not math.isfinite(t0):
+        cid = clip.get("id", "?") if isinstance(clip, dict) else "?"
+        raise ClipInputError(
+            f"clip {cid}: start on the capture clock is not finite for source.start_s {start_s!r}; "
+            "refusing to place it on the capture clock (fail closed)"
+        )
+    return t0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -162,6 +232,7 @@ def main(argv: list[str] | None = None) -> int:
     """
     import argparse
     import json
+    import sys
     from pathlib import Path
 
     from qor_receipt.hands.muse_context import MuseContext, filter_actions
@@ -181,20 +252,19 @@ def main(argv: list[str] | None = None) -> int:
     man = json.loads(Path(a.clips_manifest).read_text(encoding="utf-8"))
     clips, cands = [], []
     for c in man.get("clips", []):
-        f = Path(a.clips) / c["file"]
-        if not f.exists():
-            continue
         try:
+            cid, fname = clip_id_and_file(c)
+            f = Path(a.clips) / fname
+            if not f.exists():
+                continue
             t0 = clip_start_mono_ms(c, media)
-        except ClipRateError as e:
-            import sys
-
+        except ClipInputError as e:
             print(f"error: {e}", file=sys.stderr)
             return 2
         e, cc, fps = energy_curve(str(f))
-        evs = [dict(ev, clip=c["id"], t0=t0, path=str(f)) for ev in detect(e, cc, fps)]
+        evs = [dict(ev, clip=cid, t0=t0, path=str(f)) for ev in detect(e, cc, fps)]
         cands += evs
-        clips.append({"id": c["id"], "start_mono_ms": round(t0), "duration_s": float(c.get("duration_s", 12.0)), "events": evs})
+        clips.append({"id": cid, "start_mono_ms": round(t0), "duration_s": float(c.get("duration_s", 12.0)), "events": evs})
     report = None
     if a.muse:
         kept, report = filter_actions(cands, _frames_for, MuseContext(), max_calls=a.max_calls)
