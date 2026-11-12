@@ -20,7 +20,7 @@ from qor_receipt.hands import video_events as V
 from qor_receipt.review.clock import capture_clock
 
 GOLDEN_FILE = Path(__file__).resolve().parent / "fixtures" / "hands_clip_clock" / "golden_30fps_fda7b51.txt"
-GOLDEN_SHA256 = "03f35cebd802bb6b31fec92bdfb50f704d6c5fcba7438c60687fbaa86ed42778"
+GOLDEN_SHA256 = "1d47f90ddc8b7888da491aa8baf17551bff9508e87652c70ac365ab4930d510c"
 
 
 # ---------------------------------------------------------------- golden harness (runs on pre-fix and fixed code)
@@ -75,7 +75,10 @@ def hands_golden_text() -> str:
     lines = []
     for kind in ("regular", "jitter", "short", "flat"):
         segs = _segs(kind)
-        lines.append(f"## {kind} capture_clock={capture_clock([s for s in segs if s.get('type') == 'segment'])!r}")
+        # 9 decimals, not repr: Python 3.12 made sum() of floats compensated, which moves the last digit or two
+        # of the jitter fit between 3.11 and 3.13. The rounded start_mono_ms values are the same on both.
+        cc = capture_clock([s for s in segs if s.get("type") == "segment"])
+        lines.append(f"## {kind} capture_clock=({cc[0]:.9f}, {cc[1]:.9f})")
         clips = [{"id": f"hl{n:02d}", "file": f"hl{n:02d}.mp4", "duration_s": 12.0,
                   "source": {"file": "video.mp4", "start_s": s, "end_s": s + 12.0}} for n, s in enumerate(STARTS)]
         with tempfile.TemporaryDirectory() as d:
