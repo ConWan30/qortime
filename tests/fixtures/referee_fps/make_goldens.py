@@ -133,12 +133,18 @@ def _strip(v):
     return v
 
 
-def referee_scenarios(tmp: Path, fps: int = 30):
-    """(name, review output) for the synthetic fMP4 bundle: rule v1, rule v2 on a live counter, rule v2 with a 4 s close lag."""
+def referee_scenarios(tmp: Path, fps: int = 30, pts_offset_ms: int = 0, extra_meta: dict | None = None):
+    """(name, env, review output) for the synthetic fMP4 bundle: rule v1, rule v2 on a live counter, rule v2
+    with a 4 s close lag. ``fps``/``pts_offset_ms``/``extra_meta`` are only used by the 60 fps tests; the
+    30 fps golden uses the defaults."""
     from test_referee_service import Env
 
     def run(name, rule, lag):
-        e = Env(tmp / name, tail_ms=8_000, k=2, **({"fps": fps} if fps != 30 else {}))
+        kw = {"fps": fps} if fps != 30 else {}
+        if pts_offset_ms:
+            kw["pts_offset_ms"] = pts_offset_ms
+        e = Env(tmp / name, tail_ms=8_000, k=2, **kw)
+        meta = json.loads(e.fx["files"]["bundle.json"])
         if rule == 2:
             lines = []
             for line in e.fx["files"]["manifest.jsonl"].decode().splitlines():
@@ -148,11 +154,13 @@ def referee_scenarios(tmp: Path, fps: int = 30):
                 if m.get("kind") != "init":
                     m["mono_ms"] = int(m["mono_ms"]) + lag
                     m["wall_ms"] = int(m["wall_ms"]) + lag
-                    m["frames"] = int(round(m["mono_ms"] * fps / 1000))
+                    # The live counter: frame (PTS origin + media ms) * fps, stamped at the lagged close.
+                    m["frames"] = int(round((m["mono_ms"] + pts_offset_ms) * fps / 1000))
                 lines.append(json.dumps(m))
             e.fx["files"]["manifest.jsonl"] = ("\n".join(lines) + "\n").encode()
-            meta = json.loads(e.fx["files"]["bundle.json"])
             meta["challenge_rule"] = 2
+        meta.update(extra_meta or {})
+        if rule == 2 or extra_meta:
             e.fx["files"]["bundle.json"] = json.dumps(meta).encode()
         sub = e.submit()
         e.upload_all(sub)

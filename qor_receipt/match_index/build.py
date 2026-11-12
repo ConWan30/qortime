@@ -13,7 +13,7 @@ from typing import Any
 from qor_receipt.jcs import sha256_hex
 
 SCHEMA = "qortime-match-index/v0"
-FPS = 30.0
+FPS = 30.0  # legacy rate: a bundle with no frame-rate information (see video_rate)
 BUTTONS = ["CROSS", "CIRCLE", "SQUARE", "TRIANGLE", "L1", "R1", "L2", "R2", "CREATE", "OPTIONS", "L3", "R3",
            "UP", "DOWN", "LEFT", "RIGHT", "PS", "TOUCHPAD", "MUTE", "FN_L", "FN_R", "BACK_L", "BACK_R"]  # qorcap src/hid.rs
 ADVISORY = "Advisory evidence only: controller inputs/haptics show activity in sync with the video, not who played or what happened."
@@ -83,11 +83,13 @@ def bitnames(b: int) -> list[str]:
 class Clock:
     """wall_ms <-> recording video seconds, from manifest (mono_ms, cumulative frames) points."""
 
-    def __init__(self, manifest: list[dict]):
+    def __init__(self, manifest: list[dict], fps: float | None = FPS):
+        """``fps`` is the recording's frame rate (``frames`` is its encoder counter). None = unknown:
+        no video time at all (fail closed), never a guess at 30."""
         segs = [m for m in manifest if m.get("type") == "segment" and "mono_ms" in m and "wall_ms" in m]
         offs = sorted(m["wall_ms"] - m["mono_ms"] for m in segs)
         self.wall_minus_mono = offs[len(offs) // 2] if offs else None
-        pts = [(m["wall_ms"], m["frames"] / FPS) for m in segs if isinstance(m.get("frames"), (int, float))]
+        pts = [(m["wall_ms"], m["frames"] / fps) for m in segs if isinstance(m.get("frames"), (int, float))] if fps else []
         self.pts = sorted(pts)
         self.duration_s = self.pts[-1][1] if self.pts else None
 
@@ -282,6 +284,40 @@ def _ff(args: list[str]) -> subprocess.CompletedProcess:
     return subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", *args], capture_output=True, text=True)
 
 
+def probe_r_frame_rate(video: Path) -> str | None:
+    """ffprobe ``r_frame_rate`` of the first video stream, as written (``"60/1"``). None when unavailable."""
+    try:
+        r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=r_frame_rate",
+                            "-of", "default=nw=1:nk=1", str(video)], capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    out = r.stdout.strip().splitlines()
+    return out[0].strip() if r.returncode == 0 and out and out[0].strip() not in ("", "0/0") else None
+
+
+def video_rate(bdir: Path, bundle: dict, video: Path | None) -> tuple[float | None, str | None]:
+    """(fps, label) for the manifest ``frames`` counter, mirroring qorcap ``align::file_rate``.
+
+    Sources, first wins: ffprobe ``r_frame_rate`` of the supplied video, ``frame_clock.jsonl`` in the
+    bundle, ``bundle.json`` ``frame_rate``. They must agree within 1 %. None of them -> the legacy 30/1
+    (every older bundle; output unchanged). Unusable or mixed -> (None, "UNMEASURED: why").
+    """
+    from qor_receipt.review.rate import LEGACY, RateError, frame_clock_rates, label, parse_rate, resolve
+
+    try:
+        sources = []
+        raw = probe_r_frame_rate(video) if video and video.exists() else None
+        if raw is not None:
+            sources.append((f"{video.name} r_frame_rate", parse_rate(raw, f"{video.name} r_frame_rate")))
+        sources += frame_clock_rates(_jsonl(bdir / "frame_clock.jsonl"))
+        if "frame_rate" in bundle:
+            sources.append(("bundle.json frame_rate", parse_rate(bundle["frame_rate"], "bundle.json frame_rate")))
+        r = resolve(sources)
+    except RateError as e:
+        return None, f"UNMEASURED: {e}"
+    return (FPS, None) if r == LEGACY else (float(r), label(r))
+
+
 def probe_duration(video: Path) -> float | None:
     try:
         r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(video)],
@@ -356,7 +392,8 @@ def _build(bdir: Path, out: Path, video: Path | None, video_tail: bool | None, f
     manifest = _jsonl(bdir / "manifest.jsonl")
     haptics = sorted((h for h in _jsonl(bdir / "haptics.jsonl") if h.get("type") == "haptic"), key=lambda h: h.get("t_wall_ms", 0))
     presses, ih = _inputs(_jsonl(bdir / "inputs.jsonl"))
-    clock = Clock(manifest)
+    fps, rate_label = video_rate(bdir, bundle, video)
+    clock = Clock(manifest, fps)
     clips = bundle.get("clips") or [m for m in manifest if m.get("type") == "clip"]
     missing = [n for n in ("timeline.jsonl", "checkpoints.jsonl", "manifest.jsonl", "inputs.jsonl", "haptics.jsonl",
                            "input_proof.json", "receipt.json") if not (bdir / n).exists()]
@@ -383,7 +420,7 @@ def _build(bdir: Path, out: Path, video: Path | None, video_tail: bool | None, f
             bool(e["kind"] == "end_of_game" and e.get("final_confirmed") and e.get("score_after"))
         e["frames"], e["contact_sheet"], e["cuts_video_s"], e["frames_missing_reason"] = [], None, None, None
         if rec_s is None:
-            e["frames_missing_reason"] = "no manifest frame clock"
+            e["frames_missing_reason"] = f"frame rate {rate_label}" if fps is None else "no manifest frame clock"
             continue
         if not (video and vdur):
             e["frames_missing_reason"] = "no video supplied"
@@ -430,6 +467,11 @@ def _build(bdir: Path, out: Path, video: Path | None, video_tail: bool | None, f
                   "alignment_note": "video time = cumulative manifest frames/30 interpolated by wall clock; tail videos assume they end where the recording ends (+-~2 s)"},
         "missing": missing, "events": events,
     }
+    if rate_label is not None:
+        # Only off 30/1, so a 30 fps index keeps its exact bytes.
+        idx["video"]["frame_rate"] = rate_label
+        idx["video"]["alignment_note"] = (idx["video"]["alignment_note"].replace("frames/30", f"frames/({rate_label})")
+                                          if fps else "frame rate unknown: no video time is given (fail closed)")
     (out / "match_index.json").write_text(json.dumps(idx, indent=2), encoding="utf-8")
     from qor_receipt.match_index.viewer import write_viewer
 

@@ -16,6 +16,7 @@ Rule v1 does not use this module. Its frames stay on ``segment_ranges``.
 """
 from __future__ import annotations
 
+import math
 from typing import Any
 
 _NOMINAL_MS = 1000.0 / 30.0
@@ -96,14 +97,25 @@ def fragment_pts0_ms(init: bytes, fragment: bytes) -> float | None:
     return base * 1000.0 / timescale
 
 
-def capture_clock(segments: list[dict[str, Any]]) -> tuple[float, float]:
-    """(mono_ms of video PTS 0, ms per frame) from the manifest.
+def capture_clock(segments: list[dict[str, Any]], fps: float = 30.0) -> tuple[float, float]:
+    """(mono_ms of video PTS 0, ms per frame) from the manifest, for a capture counter running at ``fps``.
 
     Media segments whose ``frames`` count advances are the live capture counter at each close.
     Fitting that against ``mono_ms`` is the clock in ``align.rs`` ``file_clocks``: frame 0 of the
     file, extrapolated back from the closes. A manifest that stores a constant ``frames`` (the
     synthetic review fixture) did not use that counter; its PTS is already the mono clock.
+
+    ``fps`` is the video's frame rate (30 by default, which is every caller before qorcap #164's
+    ``source.frame_rate``). It sets the nominal ms per frame for the 5 % sanity check and the fallback,
+    and the 10 s minimum span (``10 * fps`` frames). At 30 the result is unchanged.
+
+    The means and sums use ``math.fsum`` (correctly rounded). Built-in ``sum`` of floats is
+    compensated from Python 3.12 and plain before it, so the same manifest could fit to different
+    last bits on 3.11 and 3.13.
     """
+    if not (isinstance(fps, (int, float)) and 1.0 <= fps <= 1000.0):
+        raise ValueError(f"capture_clock: fps {fps!r} is not a frame rate")
+    nominal = 1000.0 / fps
     media = []
     for s in segments:
         if s.get("kind") == "init":
@@ -113,38 +125,42 @@ def capture_clock(segments: list[dict[str, Any]]) -> tuple[float, float]:
             continue
         if isinstance(fr, (int, float)) and isinstance(mono, (int, float)) and fr > 0:
             media.append((float(fr), float(mono)))
-    if len(media) >= 5 and media[-1][0] - media[0][0] >= 10 * 30:
+    if len(media) >= 5 and media[-1][0] - media[0][0] >= 10 * fps:
         n = float(len(media))
-        mx = sum(p[0] for p in media) / n
-        my = sum(p[1] for p in media) / n
-        sxx = sum((p[0] - mx) ** 2 for p in media)
-        sxy = sum((p[0] - mx) * (p[1] - my) for p in media)
+        mx = math.fsum(p[0] for p in media) / n
+        my = math.fsum(p[1] for p in media) / n
+        sxx = math.fsum((p[0] - mx) ** 2 for p in media)
+        sxy = math.fsum((p[0] - mx) * (p[1] - my) for p in media)
         if sxx > 0:
             slope = sxy / sxx
-            if abs(slope / _NOMINAL_MS - 1.0) <= 0.05:
+            if abs(slope / nominal - 1.0) <= 0.05:
                 return my - slope * mx, slope
-    return 0.0, _NOMINAL_MS
+    return 0.0, nominal
 
 
-def frame_mono_ms(clock: tuple[float, float], pts0_ms: float, n: int, hz: float) -> int:
+def frame_mono_ms(clock: tuple[float, float], pts0_ms: float, n: int, hz: float, fps: float | None = None) -> int:
     """Capture mono time of decoded frame ``n`` in a run whose first sample PTS is ``pts0_ms``.
 
-    This treats one decoded frame as one media frame. That is the challenge-rule v2 clock at
-    30 fps. Do not use it for a decoder that runs at a different rate.
+    Media time is ``pts0_ms + n * 1000/hz`` (``hz`` is the decode rate). It is mapped to a frame of
+    the recording at ``fps`` (the video's own rate, see ``review.rate``) and through the manifest
+    fit. ``fps=None`` keeps the old meaning, one decoded frame per media frame (``fps == hz``),
+    which is the challenge-rule v2 clock at 30 fps. Passing ``fps=30.0`` with ``hz=30.0`` is the
+    same arithmetic.
     """
     intercept, slope = clock
-    frame = (pts0_ms + n * 1000.0 / hz) * (hz / 1000.0)
+    rate = hz if fps is None else fps
+    frame = (pts0_ms + n * 1000.0 / hz) * (rate / 1000.0)
     return int(round(intercept + slope * frame))
 
 
-def motion_mono_ms(clock: tuple[float, float], pts0_ms: float, n: int, hz: float) -> int:
+def motion_mono_ms(clock: tuple[float, float], pts0_ms: float, n: int, hz: float, fps: float = 30.0) -> int:
     """Capture mono time of motion-sample frame ``n``.
 
-    Media time is ``pts0_ms + n * 1000/hz``. That time is mapped through the nominal 30 fps
-    frame the manifest fit uses, so a 10 Hz sample lands on the same clock as a 30 Hz frame
-    with the same PTS. At 30 fps this matches ``frame_mono_ms``.
+    Media time is ``pts0_ms + n * 1000/hz``. That time is mapped through the recording's frame at
+    ``fps`` (30 by default), the frame the manifest fit uses, so a 10 Hz sample lands on the same
+    clock as a 30 Hz frame with the same PTS. At 30 fps this matches ``frame_mono_ms``.
     """
     intercept, slope = clock
     media_ms = pts0_ms + n * 1000.0 / hz
-    frame = media_ms / _NOMINAL_MS
+    frame = media_ms / (1000.0 / fps)
     return int(round(intercept + slope * frame))

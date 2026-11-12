@@ -67,6 +67,7 @@ from qor_receipt.review.policy import (
     REVIEW_TYPE,
     TAIL_MS,
 )
+from qor_receipt.review.rate import LEGACY, RateError, bundle_rate
 
 SPOT, FULL = "spot-check", "full"
 TAIL_HZ = 2.0
@@ -444,11 +445,12 @@ class Referee:
                 final = None
                 checks["final_reread"] = {"state": FAIL_CHECK, "detail": f"decode/read error: {type(e).__name__}: {e}"}
         # ---- challenges (official nonce tokens, raw HID re-run, pause seen on the referee's decode)
-        ch_out, ch_check, pause_spans = self._challenges(sub, rd, wmm)
+        rate = self._frame_rate(sub, rd)
+        ch_out, ch_check, pause_spans = self._challenges(sub, rd, wmm, rate)
         checks["challenges"] = ch_check
         # ---- motion rule v3: a spread across the match, not the final-reread tail
         try:
-            mp, mdetail = self._motion(sub, rd, pause_spans, wmm)
+            mp, mdetail = self._motion(sub, rd, pause_spans, wmm, rate)
         except Exception as e:
             mp, mdetail = None, {"note": f"motion not computed: {type(e).__name__}: {e}"}
         checks["motion"] = {"state": PASS if mp is not None and mp >= R.MOTION_MIN_PERMILLE else PARTIAL_CHECK,
@@ -518,14 +520,40 @@ class Referee:
             out["log_entry"] = sub.log_entry
         return out
 
-    def _challenges(self, sub: Submission, rd, wmm: int) -> tuple[list[dict], dict[str, Any], list[tuple[int, int]]]:
+    def _frame_rate(self, sub: Submission, rd) -> float | RateError:
+        """The recording's frame rate from the fMP4 the referee holds (``review.rate``), as fps.
+
+        No rate information is the legacy 30.0, so older bundles keep their exact arithmetic. A rate that
+        is present but unusable, or mixed across files, comes back as the RateError; the checks that
+        need the capture clock then fail closed with that reason instead of assuming 30.
+        """
+        b = sub.bundle
+        seqs = sorted(s for s in sub.received if s in sub.decode)
+        media: dict[int, list[bytes]] = {}
+        try:
+            for run in M.runs(seqs, b):
+                init = M.init_seq_for(b, run[0])
+                if init is None:
+                    continue
+                media.setdefault(init, []).extend(x for x in (rd(s) for s in run) if x is not None)
+            files = [(str(b.segments[i].get("file")), rd(i) or b"", frags) for i, frags in sorted(media.items())]
+            r = bundle_rate(b.meta, files)
+        except RateError as e:
+            return e
+        return 30.0 if r == LEGACY else float(r)
+
+    def _challenges(self, sub: Submission, rd, wmm: int, rate: float | RateError = 30.0,
+                    ) -> tuple[list[dict], dict[str, Any], list[tuple[int, int]]]:
         b = sub.bundle
         toks = {t.get("nonce"): t for t in b.jsonl("official_challenges.jsonl")}
         presses = B.press_events(b)
         rule = challenge_rule_of(b.meta)
-        clock = capture_clock(b.segments) if rule == RULE_V2 else None
+        rate_error = rate if isinstance(rate, RateError) else None
+        fps = None if rate_error else rate
+        # Rule v2 dates frames on the manifest fit, which is in frames of the recording's own rate.
+        clock = capture_clock(b.segments, fps) if rule == RULE_V2 and fps is not None else None
         ceiling = latency_ceiling_ms(rule)
-        hz = 30.0
+        hz = 30.0  # decode (sample) rate of the pause scan, not the recording's rate
         out, notes, bad = [], [], False
         pause_spans: list[tuple[int, int]] = []
         for c in b.receipt.get("challenges") or []:
@@ -565,6 +593,10 @@ class Referee:
             scan = None
             if M.ffmpeg_bin() and not missing:
                 def frames(seqs=list(present)):
+                    if rule == RULE_V2 and rate_error is not None:
+                        # Fail closed: no capture clock without a known rate. scan_pause records the error
+                        # and the challenge result stays pause_not_seen_on_video.
+                        raise RateError(f"frame rate UNMEASURED: {rate_error}")
                     for run in M.runs(seqs, b):
                         pts0 = None
                         if rule == RULE_V2:
@@ -573,7 +605,7 @@ class Referee:
                                 pts0 = fragment_pts0_ms(rd(init) or b"", rd(run[0]) or b"")
                         for n, (t, img) in enumerate(M.decode_run(b, run, rd, hz=hz, size=(640, 360))):
                             # No tfdt: keep the segment_ranges time. That stamp is late, so it fails the ceiling.
-                            mono = t if pts0 is None else frame_mono_ms(clock, pts0, n, hz)
+                            mono = t if pts0 is None else frame_mono_ms(clock, pts0, n, hz, fps)
                             yield mono + wmm, img
                 scan = M.scan_pause(frames() if present else iter(()), det)
             if scan is not None and scan.error is None:
@@ -608,7 +640,7 @@ class Referee:
         return out, {"state": state, "detail": {"count": len(out), "rule": rule, "notes": notes}}, pause_spans
 
     def _motion(self, sub: Submission, rd, pause_spans_wall: list[tuple[int, int]],
-                wmm: int) -> tuple[int | None, dict[str, Any]]:
+                wmm: int, rate: float | RateError = 30.0) -> tuple[int | None, dict[str, Any]]:
         """Motion rule v4 over the deterministic stratified draws planned in ``_plan``.
 
         Decode budget: the union of ``MOTION_MEDIAN_DRAWS`` draws of at most
@@ -629,8 +661,13 @@ class Referee:
             return None, {"rule": MOTION_RULE, "basis": MOTION_BASIS_V4, "bins": 0, "sample_segments": union,
                           "sample_draws": draws, "median_draws": MOTION_MEDIAN_DRAWS,
                           "note": "motion sample was not received"}
+        if isinstance(rate, RateError):
+            # Fail closed: motion bins are dated on the capture clock, which needs the recording's rate.
+            return None, {"rule": MOTION_RULE, "basis": MOTION_BASIS_V4, "bins": 0, "sample_segments": union,
+                          "sample_draws": draws, "median_draws": MOTION_MEDIAN_DRAWS,
+                          "note": f"not computed (frame rate UNMEASURED: {rate})"}
         energy = M.input_energy_series(b)
-        clock = capture_clock(b.segments)
+        clock = capture_clock(b.segments, rate)
         ranges = B.segment_ranges(b)
         scorebug = M.sidecar_standard_reader(self.sidecar_dir)()
         end_reader, final_fn = M.motion_screen_detectors(self.sidecar_dir)
@@ -650,7 +687,7 @@ class Referee:
 
             def frames(run=run, pts0=pts0):
                 for n, (t, img) in enumerate(M.decode_run(b, run, rd, hz=MOTION_HZ, size=MOTION_SIZE)):
-                    mono = t if pts0 is None else motion_mono_ms(clock, pts0, n, MOTION_HZ)
+                    mono = t if pts0 is None else motion_mono_ms(clock, pts0, n, MOTION_HZ, rate)
                     sec = int(mono) // 1000
                     owner = run[0]
                     for s in run:
