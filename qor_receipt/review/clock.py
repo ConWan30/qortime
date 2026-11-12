@@ -19,8 +19,6 @@ from __future__ import annotations
 import math
 from typing import Any
 
-_NOMINAL_MS = 1000.0 / 30.0
-
 
 def _boxes(data: bytes):
     i, n = 0, len(data)

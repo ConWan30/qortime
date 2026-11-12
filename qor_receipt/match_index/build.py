@@ -295,27 +295,53 @@ def probe_r_frame_rate(video: Path) -> str | None:
     return out[0].strip() if r.returncode == 0 and out and out[0].strip() not in ("", "0/0") else None
 
 
-def video_rate(bdir: Path, bundle: dict, video: Path | None) -> tuple[float | None, str | None]:
-    """(fps, label) for the manifest ``frames`` counter, mirroring qorcap ``align::file_rate``.
+def counter_fps(manifest: list[dict]) -> float | None:
+    """Rate of the manifest ``frames`` counter itself (frames per second of mono time), least squares.
 
-    Sources, first wins: ffprobe ``r_frame_rate`` of the supplied video, ``frame_clock.jsonl`` in the
-    bundle, ``bundle.json`` ``frame_rate``. They must agree within 1 %. None of them -> the legacy 30/1
-    (every older bundle; output unchanged). Unusable or mixed -> (None, "UNMEASURED: why").
+    None when it cannot be estimated (fewer than 5 advancing points or under 10 s), e.g. a constant counter.
     """
-    from qor_receipt.review.rate import LEGACY, RateError, frame_clock_rates, label, parse_rate, resolve
+    import math
+
+    pts = sorted((float(m["mono_ms"]), float(m["frames"])) for m in manifest
+                 if m.get("type") == "segment" and isinstance(m.get("frames"), (int, float)) and not isinstance(m.get("frames"), bool)
+                 and isinstance(m.get("mono_ms"), (int, float)) and not isinstance(m.get("mono_ms"), bool))
+    if len(pts) < 5 or pts[-1][0] - pts[0][0] < 10_000 or pts[-1][1] <= pts[0][1]:
+        return None
+    n = float(len(pts))
+    mx = math.fsum(p[0] for p in pts) / n
+    my = math.fsum(p[1] for p in pts) / n
+    sxx = math.fsum((p[0] - mx) ** 2 for p in pts)
+    if sxx <= 0:
+        return None
+    return math.fsum((p[0] - mx) * (p[1] - my) for p in pts) / sxx * 1000.0
+
+
+def video_rate(bdir: Path, bundle: dict, video: Path | None, manifest: list[dict] | None = None) -> tuple[float | None, str | None]:
+    """(fps, label) for the manifest ``frames`` counter. ``label`` is None only for the legacy 30/1.
+
+    Measured sources (must be equal): ffprobe ``r_frame_rate`` of the supplied video, ``frame_clock.jsonl``
+    in the bundle (mean PTS step, snapped). ``bundle.json`` ``frame_rate`` only cross-checks them (1 %).
+    None of them -> legacy 30/1 (every older bundle; output unchanged). Then the manifest counter's own
+    rate must be within 5 % of the chosen rate; a 60 fps counter read at the legacy 30 is caught here.
+    Unusable, mixed or contradicted -> (None, "UNMEASURED: why").
+    """
+    from qor_receipt.review.rate import RateError, declared_rate, frame_clock_rates, label, parse_rate, resolve
 
     try:
-        sources = []
+        measured = []
         raw = probe_r_frame_rate(video) if video and video.exists() else None
         if raw is not None:
-            sources.append((f"{video.name} r_frame_rate", parse_rate(raw, f"{video.name} r_frame_rate")))
-        sources += frame_clock_rates(_jsonl(bdir / "frame_clock.jsonl"))
-        if "frame_rate" in bundle:
-            sources.append(("bundle.json frame_rate", parse_rate(bundle["frame_rate"], "bundle.json frame_rate")))
-        r = resolve(sources)
+            measured.append((f"{video.name} r_frame_rate", parse_rate(raw, f"{video.name} r_frame_rate")))
+        measured += frame_clock_rates(_jsonl(bdir / "frame_clock.jsonl"))
+        res = resolve(measured, declared_rate(bundle))
     except RateError as e:
         return None, f"UNMEASURED: {e}"
-    return (FPS, None) if r == LEGACY else (float(r), label(r))
+    fps = float(res.rate)
+    cf = counter_fps(manifest or [])
+    if cf is not None and abs(cf / fps - 1.0) > 0.05:
+        what = "legacy 30/1 (no measured rate)" if res.legacy else f"{label(res.rate)} from {res.source}"
+        return None, f"UNMEASURED: manifest frames counter runs at {cf:.2f} fps, not {what}"
+    return (FPS, None) if res.legacy else (fps, label(res.rate))
 
 
 def probe_duration(video: Path) -> float | None:
@@ -392,7 +418,7 @@ def _build(bdir: Path, out: Path, video: Path | None, video_tail: bool | None, f
     manifest = _jsonl(bdir / "manifest.jsonl")
     haptics = sorted((h for h in _jsonl(bdir / "haptics.jsonl") if h.get("type") == "haptic"), key=lambda h: h.get("t_wall_ms", 0))
     presses, ih = _inputs(_jsonl(bdir / "inputs.jsonl"))
-    fps, rate_label = video_rate(bdir, bundle, video)
+    fps, rate_label = video_rate(bdir, bundle, video, manifest)
     clock = Clock(manifest, fps)
     clips = bundle.get("clips") or [m for m in manifest if m.get("type") == "clip"]
     missing = [n for n in ("timeline.jsonl", "checkpoints.jsonl", "manifest.jsonl", "inputs.jsonl", "haptics.jsonl",

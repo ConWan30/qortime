@@ -6,6 +6,8 @@ The committed goldens were generated from pre-fix main fda7b51 with:
     python tests/fixtures/referee_fps/make_goldens.py match_index  > tests/fixtures/referee_fps/match_index_30fps_fda7b51.json
     python tests/fixtures/referee_fps/make_goldens.py referee      > tests/fixtures/referee_fps/referee_30fps_fda7b51.json
 
+The referee golden was regenerated on fda7b51's product code (qor_receipt/ at fda7b51, this tests/
+tree) after encoder-size fields were stripped and ``review.frame_rate`` was added to the projection.
 ``referee`` needs ffmpeg (it builds the synthetic fMP4 bundle in tests/review_fixture.py).
 Only public call shapes that exist on fda7b51 are used, so the same script runs before and after
 the fix. Synthetic data only.
@@ -122,7 +124,9 @@ def match_index_golden() -> str:
 
 
 VOLATILE = {"pubkey", "key_id", "sig", "signature", "submission", "id", "nonce", "pattern", "issuer", "hid_sha256", "commit",
-            "reviewed_ms", "capture_referee", "local_receipt_sha256", "chain_head", "checkpoint_head", "inputs_chain_head", "inputs_sha256"}
+            "reviewed_ms", "capture_referee", "local_receipt_sha256", "chain_head", "checkpoint_head", "inputs_chain_head", "inputs_sha256",
+            # encoder output sizes depend on the ffmpeg/libx264 build, not on the referee
+            "bytes_total", "bytes_verified", "bytes_required", "bytes"}
 
 
 def _strip(v):
@@ -175,6 +179,7 @@ def referee_scenarios(tmp: Path, fps: int = 30, pts_offset_ms: int = 0, extra_me
 def referee_projection(out: dict) -> dict:
     rec = out.get("receipt") or {}
     return _strip({"state": out.get("state"), "errors": out.get("errors"), "checks": (out.get("review") or {}).get("checks"),
+                   "frame_rate": (out.get("review") or {}).get("frame_rate"),
                    "challenges": [c.get("result") for c in rec.get("challenges") or []],
                    "signals": rec.get("signals"), "result": rec.get("result")})
 

@@ -5,26 +5,37 @@ The manifest ``frames`` field is QorCap's live encoder counter, so its fit again
 assumed 30/1 everywhere. A 60/1 recording then fails the fit's 5 % sanity check, the fit falls back
 to ``(0.0, 33.3)``, and challenge-rule v2 and motion timing are wrong.
 
-The rate comes from the bundle's own media, the way ``align.rs`` ``file_rate`` gets it from the
-stream: the video track's sample durations in the fMP4 the referee already holds (``mdhd``
-timescale over the modal ``trun`` / ``tfhd`` / ``trex`` sample duration; ffprobe derives
-``r_frame_rate`` for an MP4 from the same fields). An optional ``bundle.json`` ``frame_rate``
-string (``"60/1"``, ``"60000/1001"``) is also read when present; QorCap does not write it today.
+Measured sources (the media itself):
 
-* No rate information at all (every bundle recorded before this, and every fixture without
-  sample durations) is the legacy 30/1. Verdicts on those bundles do not change.
-* Rate information that is present but unusable, or two sources that disagree by more than 1 %,
-  raise ``RateError``. Callers fail closed: the dependent check is not computed and says why.
-  A measured rate is never replaced by 30, and an unknown rate is never a pass.
+* the fMP4 the referee holds: video-track ``mdhd`` timescale x sample count / total stated sample
+  duration (``trun`` per-sample, else ``tfhd`` default, else ``trex`` default), snapped to ``N/1`` or
+  ``N*1000/1001``. The mean, not the mode, so 59.94 at a 90 kHz timescale (durations alternating
+  1501/1502) is exactly 60000/1001;
+* for match_index also ffprobe ``r_frame_rate`` of a supplied video and ``frame_clock.jsonl``
+  (mean PTS step per file, snapped the same way).
 
-The string parse mirrors qortime #129 ``hands.sidecar.clip_fps`` (``N/D``, ASCII digits, fullmatch
-after strip, 1 <= N/D <= 1000). It compares as a ``Fraction`` so a huge numerator is a RateError,
-not an OverflowError. Follow-up once #129 is on main: have ``clip_fps`` call ``parse_rate``.
+Rules:
+
+* No rate information at all (every bundle recorded before this, and fixtures without sample
+  durations) is the legacy 30/1. Verdicts on those bundles do not change.
+* Measured sources must agree exactly (no tolerance across files or sources).
+* ``bundle.json`` ``frame_rate`` is declared, not measured, and is not in the manifest chain. It only
+  cross-checks a measured rate (within 1 %). Declared with nothing measured is UNMEASURED (RateError),
+  never the rate. QorCap does not write it today.
+* Anything present but unusable, a mean that does not snap, or a disagreement raises ``RateError``.
+  Every parse failure is a RateError. Callers fail closed: the dependent check is not computed and
+  says why. A measured rate is never replaced by 30, and an unknown rate is never a pass.
+
+The string parse is its own, stricter grammar: ``N/D``, ASCII digits, fullmatch after strip, at most 12
+digits per group, 1 <= N/D <= 1000, compared as a Fraction. It does not mirror qortime #129's
+``hands.sidecar.clip_fps``, which bounds the whole field (<= 32 chars) and so accepts some 26-32 char
+forms this rejects. Both fail closed, and they read different fields. Deduping them is a follow-up.
 """
 from __future__ import annotations
 
 import re
 from collections.abc import Iterable
+from dataclasses import dataclass
 from fractions import Fraction
 from typing import Any
 
@@ -33,11 +44,23 @@ from qor_receipt.review.clock import _boxes, _video_track
 LEGACY = Fraction(30, 1)
 _RATIONAL = re.compile(r"([0-9]+)/([0-9]+)", re.ASCII)
 _MAX_DIGITS = 12
-AGREE = Fraction(1, 100)  # align.rs file_rate: probe and frame clock must agree within 1 %
+DECLARED_AGREE = Fraction(1, 100)  # declared (bundle.json) vs measured
+SNAP_TOL = Fraction(1, 10_000)     # mean rate must be this close to N/1 or N*1000/1001
+MIN_SAMPLES = 10                   # fewer stated samples than this is not a measurement
 
 
 class RateError(ValueError):
     """The recording's frame rate is present but unusable, or its sources disagree. Never guessed."""
+
+
+@dataclass(frozen=True)
+class Resolved:
+    rate: Fraction
+    source: str  # "legacy" when no rate information exists
+
+    @property
+    def legacy(self) -> bool:
+        return self.source == "legacy"
 
 
 def label(r: Fraction) -> str:
@@ -55,7 +78,21 @@ def parse_rate(value: Any, where: str = "frame_rate") -> Fraction:
         num, den = int(m.group(1)), int(m.group(2))
         if num > 0 and den > 0 and _valid(Fraction(num, den)):
             return Fraction(num, den)
-    raise RateError(f"{where} {value!r} is not a frame rate (want N/D with 1 <= N/D <= 1000)")
+    shown = repr(value)
+    shown = shown if len(shown) <= 40 else shown[:37] + "..."
+    raise RateError(f"{where} {shown} is not a frame rate (want N/D with 1 <= N/D <= 1000)")
+
+
+def snap(mean: Fraction, where: str) -> Fraction:
+    """A measured mean rate -> exactly N/1 or N*1000/1001 when within SNAP_TOL, else RateError."""
+    cands = [Fraction(round(mean)), Fraction(round(mean * Fraction(1001, 1000)) * 1000, 1001)]
+    cands = [c for c in cands if c > 0]
+    if cands:
+        best = min(cands, key=lambda c: (abs(mean / c - 1), c.denominator))
+        if abs(mean / best - 1) <= SNAP_TOL and _valid(best):
+            return best
+    raise RateError(f"{where}: mean rate {float(mean):.6f} fps is not N/1 or N*1000/1001 within 0.01 % "
+                    "(variable or unusual rate; frame rate UNMEASURED)")
 
 
 def _u32(p: bytes, i: int) -> int | None:
@@ -71,10 +108,25 @@ def _trex_default(init: bytes, track: int | None) -> int | None:
     return None
 
 
-def _durations(fragment: bytes, track: int | None, trex_dur: int | None) -> list[int]:
-    """Sample durations of the video ``traf`` in one ``moof``. Empty when the fragment states none."""
-    out: list[int] = []
+class _Tally:
+    __slots__ = ("samples", "duration")
+
+    def __init__(self) -> None:
+        self.samples = 0
+        self.duration = 0
+
+
+def _add_fragment(tally: _Tally, fragment: bytes, track: int | None, trex_dur: int | None) -> None:
+    """Add the video ``traf`` sample count and stated duration of one fragment. Nothing is materialised.
+
+    A ``trun`` with no duration source (no per-sample durations, no tfhd or trex default) is skipped.
+    A sample count larger than the bytes present can carry (per-sample fields in the ``trun``, or one
+    byte of media data per sample in the fragment) is a RateError, so a crafted u32 count costs nothing.
+    """
+    budget = len(fragment)
     for t, moof in _boxes(fragment):
+        if t == b"mdat":
+            break
         if t != b"moof":
             continue
         for t2, traf in _boxes(moof):
@@ -100,76 +152,90 @@ def _durations(fragment: bytes, track: int | None, trex_dur: int | None) -> list
                 flags = int.from_bytes(p[1:4], "big")
                 count = _u32(p, 4) or 0
                 i = 8 + (4 if flags & 0x01 else 0) + (4 if flags & 0x04 else 0)
-                per = 4 * sum(1 for f in (0x100, 0x200, 0x400, 0x800) if flags & f)
-                if count <= 0 or per == 0 and fallback is None:
+                if count <= 0:
                     continue
-                if not flags & 0x100:
-                    out.extend([fallback] * count)
-                    continue
-                for k in range(count):
-                    d = _u32(p, i + k * per)
-                    if d is None:
-                        break
-                    out.append(d)
-    return out
+                if flags & 0x100:
+                    per = 4 * sum(1 for f in (0x100, 0x200, 0x400, 0x800) if flags & f)
+                    if count > max(0, (len(p) - i) // per):
+                        raise RateError(f"trun states {count} samples but carries fields for {max(0, (len(p) - i) // per)}")
+                    for k in range(count):
+                        tally.samples += 1
+                        tally.duration += int.from_bytes(p[i + k * per:i + k * per + 4], "big")
+                elif fallback is not None:
+                    if count > budget:
+                        raise RateError(f"trun states {count} samples in a {budget}-byte fragment")
+                    tally.samples += count
+                    tally.duration += count * fallback
+                # else: no duration source for this run; skipped (no information)
 
 
-def fmp4_rate(init: bytes, fragments: Iterable[bytes]) -> Fraction | None:
-    """Rate of the video track: timescale / the modal sample duration over ``fragments``.
+def fmp4_rate(init: bytes, fragments: Iterable[bytes | None]) -> Fraction | None:
+    """Rate of the video track over ``fragments`` (streamed, one at a time).
 
-    None when the init has no video timescale or no fragment states a sample duration (legacy).
-    RateError when a duration is stated but gives no usable rate (0, or outside 1..1000 fps).
-    Ties between equally common durations take the shorter one, as ``align.rs``
-    ``frame_clock_rate`` does.
+    None when the init has no video timescale or no fragment states a sample duration (no
+    information; the legacy default applies upstream). RateError for a stated rate that is unusable:
+    fewer than MIN_SAMPLES samples, a zero total, a mean that does not snap, or any parse failure.
     """
-    track, timescale = _video_track(init)
-    if not timescale:
+    try:
+        track, timescale = _video_track(init or b"")
+        if not timescale:
+            return None
+        trex_dur = _trex_default(init, track)
+        tally = _Tally()
+        for frag in fragments:
+            if frag:
+                _add_fragment(tally, frag, track, trex_dur)
+    except RateError:
+        raise
+    except Exception as e:  # crafted boxes: fail closed, never a crash
+        raise RateError(f"fMP4 rate parse error: {type(e).__name__}") from e
+    if tally.samples == 0:
         return None
-    trex_dur = _trex_default(init, track)
-    counts: dict[int, int] = {}
-    for frag in fragments:
-        for d in _durations(frag, track, trex_dur):
-            counts[d] = counts.get(d, 0) + 1
-    if not counts:
-        return None
-    dur = max(counts, key=lambda k: (counts[k], -k))
-    if dur <= 0 or not _valid(Fraction(timescale, dur)):
-        raise RateError(f"fMP4 video sample duration {dur} at timescale {timescale} is not a frame rate")
-    return Fraction(timescale, dur)
+    if tally.samples < MIN_SAMPLES or tally.duration <= 0:
+        raise RateError(f"fMP4 states {tally.samples} sample(s) with total duration {tally.duration}: not a measurable rate")
+    return snap(Fraction(timescale * tally.samples, tally.duration), "fMP4 video sample durations")
 
 
-def resolve(sources: list[tuple[str, Fraction]]) -> Fraction:
-    """One rate from (where, rate) pairs, first source first. None -> LEGACY. >1 % apart -> RateError."""
-    if not sources:
-        return LEGACY
-    where0, r0 = sources[0]
-    for where, r in sources[1:]:
-        if abs(r / r0 - 1) > AGREE:
+def resolve(measured: list[tuple[str, Fraction]], declared: list[tuple[str, Fraction]] = ()) -> Resolved:
+    """One rate. Measured sources must be equal; declared ones only cross-check (1 %); none -> legacy."""
+    if not measured:
+        if declared:
+            where, r = declared[0]
+            raise RateError(f"{where} {label(r)} is declared only; no measured rate to check it against")
+        return Resolved(LEGACY, "legacy")
+    where0, r0 = measured[0]
+    for where, r in measured[1:]:
+        if r != r0:
             raise RateError(f"mixed frame rates: {where0} says {label(r0)} but {where} says {label(r)}")
-    return r0
+    for where, r in declared:
+        if abs(r / r0 - 1) > DECLARED_AGREE:
+            raise RateError(f"mixed frame rates: {where0} says {label(r0)} but {where} says {label(r)}")
+    return Resolved(r0, where0 if len(measured) == 1 else f"{where0} (+{len(measured) - 1} agreeing)")
 
 
-def bundle_rate(meta: dict[str, Any], media: Iterable[tuple[str, bytes, list[bytes]]]) -> Fraction:
-    """The rate for a referee review: fMP4 sample durations per file, then ``bundle.json`` ``frame_rate``.
+def declared_rate(meta: Any) -> list[tuple[str, Fraction]]:
+    if isinstance(meta, dict) and "frame_rate" in meta:
+        return [("bundle.json frame_rate", parse_rate(meta["frame_rate"], "bundle.json frame_rate"))]
+    return []
 
-    ``media`` is ``(file name, init bytes, [fragment bytes])`` for the fragments the referee holds.
-    """
-    sources: list[tuple[str, Fraction]] = []
+
+def bundle_rate(meta: dict[str, Any], media: Iterable[tuple[str, bytes, Iterable[bytes | None]]]) -> Resolved:
+    """The rate for a referee review. ``media`` is ``(file, init bytes, fragments)`` per file; the
+    fragments may be a generator so only one is in memory at a time."""
+    measured: list[tuple[str, Fraction]] = []
     for name, init, frags in media:
         r = fmp4_rate(init, frags)
         if r is not None:
-            sources.append((f"{name} fMP4 sample duration", r))
-    if isinstance(meta, dict) and "frame_rate" in meta:
-        sources.append(("bundle.json frame_rate", parse_rate(meta["frame_rate"], "bundle.json frame_rate")))
-    return resolve(sources)
+            measured.append((f"{name} fMP4 sample durations", r))
+    return resolve(measured, declared_rate(meta))
 
 
 def frame_clock_rates(rows: Iterable[Any]) -> list[tuple[str, Fraction]]:
-    """Per file, 90000 / the modal PTS step between consecutive frames of ``frame_clock.jsonl``.
+    """Per file, 90000 x steps / total PTS step over consecutive frames of ``frame_clock.jsonl``, snapped.
 
-    Mirrors ``align.rs`` ``frame_clock_rate``: only steps where ``frame`` advances by one and the PTS
-    grows count, fewer than 10 steps is no rate for that file, ties take the shorter step. A step that
-    gives a rate outside 1..1000 fps is a RateError.
+    Like ``align.rs`` ``frame_clock_rate`` only steps where ``frame`` advances by one and the PTS grows
+    count, and fewer than 10 steps is no rate for that file. Unlike it, the mean step is used (then
+    snapped), not the mode, so 59.94 at 90 kHz is exact; a mean that does not snap is a RateError.
     """
     by_file: dict[str, list[tuple[int, int]]] = {}
     for r in rows:
@@ -180,15 +246,12 @@ def frame_clock_rates(rows: Iterable[Any]) -> list[tuple[str, Fraction]]:
             by_file.setdefault(f, []).append((fr, pts))
     out: list[tuple[str, Fraction]] = []
     for f, rows_f in by_file.items():
-        counts: dict[int, int] = {}
+        steps = total = 0
         for (f0, p0), (f1, p1) in zip(rows_f, rows_f[1:]):
             if f1 == f0 + 1 and p1 > p0:
-                counts[p1 - p0] = counts.get(p1 - p0, 0) + 1
-        if sum(counts.values()) < 10:
+                steps += 1
+                total += p1 - p0
+        if steps < 10:
             continue
-        step = max(counts, key=lambda k: (counts[k], -k))
-        r = Fraction(90_000, step)
-        if not _valid(r):
-            raise RateError(f"frame_clock.jsonl {f}: PTS step {step} is not a frame rate")
-        out.append((f"frame_clock.jsonl {f}", r))
+        out.append((f"frame_clock.jsonl {f}", snap(Fraction(90_000 * steps, total), f"frame_clock.jsonl {f}")))
     return out

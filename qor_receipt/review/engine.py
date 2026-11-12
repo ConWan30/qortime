@@ -67,7 +67,7 @@ from qor_receipt.review.policy import (
     REVIEW_TYPE,
     TAIL_MS,
 )
-from qor_receipt.review.rate import LEGACY, RateError, bundle_rate
+from qor_receipt.review.rate import RateError, Resolved, bundle_rate, label
 
 SPOT, FULL = "spot-check", "full"
 TAIL_HZ = 2.0
@@ -445,7 +445,8 @@ class Referee:
                 final = None
                 checks["final_reread"] = {"state": FAIL_CHECK, "detail": f"decode/read error: {type(e).__name__}: {e}"}
         # ---- challenges (official nonce tokens, raw HID re-run, pause seen on the referee's decode)
-        rate = self._frame_rate(sub, rd)
+        resolved = self._frame_rate(sub, rd)
+        rate = resolved if isinstance(resolved, RateError) else float(resolved.rate)
         ch_out, ch_check, pause_spans = self._challenges(sub, rd, wmm, rate)
         checks["challenges"] = ch_check
         # ---- motion rule v3: a spread across the match, not the final-reread tail
@@ -485,6 +486,10 @@ class Referee:
         if device_key is not None:
             # Informational. Not a check, so it cannot pass or fail the review.
             review["device_key"] = device_key
+        rate_record = self._rate_record(resolved, b.segments)
+        if rate_record is not None:
+            # Informational, like device_key. Not a check, so it cannot pass or fail the review.
+            review["frame_rate"] = rate_record
         sub.review = review
         sub.corroboration = corroboration
         if any(c["state"] == FAIL_CHECK for c in checks.values()):
@@ -520,27 +525,39 @@ class Referee:
             out["log_entry"] = sub.log_entry
         return out
 
-    def _frame_rate(self, sub: Submission, rd) -> float | RateError:
-        """The recording's frame rate from the fMP4 the referee holds (``review.rate``), as fps.
+    def _frame_rate(self, sub: Submission, rd) -> Resolved | RateError:
+        """The recording's frame rate from the fMP4 the referee holds (``review.rate``).
 
-        No rate information is the legacy 30.0, so older bundles keep their exact arithmetic. A rate that
-        is present but unusable, or mixed across files, comes back as the RateError; the checks that
-        need the capture clock then fail closed with that reason instead of assuming 30.
+        Fragments are read one at a time and only their ``moof`` is parsed. No rate information is the
+        legacy 30/1, so older bundles keep their exact arithmetic. A rate that is present but unusable,
+        mixed across files, or any parse failure comes back as a RateError; the checks that need the
+        capture clock then fail closed with that reason instead of assuming 30.
         """
         b = sub.bundle
-        seqs = sorted(s for s in sub.received if s in sub.decode)
-        media: dict[int, list[bytes]] = {}
         try:
+            seqs = sorted(s for s in sub.received if s in sub.decode)
+            by_init: dict[int, list[int]] = {}
             for run in M.runs(seqs, b):
                 init = M.init_seq_for(b, run[0])
-                if init is None:
-                    continue
-                media.setdefault(init, []).extend(x for x in (rd(s) for s in run) if x is not None)
-            files = [(str(b.segments[i].get("file")), rd(i) or b"", frags) for i, frags in sorted(media.items())]
-            r = bundle_rate(b.meta, files)
+                if init is not None:
+                    by_init.setdefault(init, []).extend(run)
+            files = [(str(b.segments[i].get("file")), rd(i) or b"", (rd(s) for s in ss)) for i, ss in sorted(by_init.items())]
+            return bundle_rate(b.meta, files)
         except RateError as e:
             return e
-        return 30.0 if r == LEGACY else float(r)
+        except Exception as e:  # never a crash: an unreadable rate is UNMEASURED
+            return RateError(f"rate parse error: {type(e).__name__}")
+
+    @staticmethod
+    def _rate_record(rate: Resolved | RateError, segments: list[dict[str, Any]]) -> dict[str, Any] | None:
+        """``review.frame_rate``: informational, not a check. Omitted at 30/1 so 30 fps reviews keep their bytes."""
+        if isinstance(rate, RateError):
+            return {"rate": "UNMEASURED", "reason": str(rate), "source": None, "clock_fit": "not_computed"}
+        if rate.rate == 30:
+            return None
+        fps = float(rate.rate)
+        fitted = capture_clock(segments, fps) != (0.0, 1000.0 / fps)
+        return {"rate": label(rate.rate), "source": rate.source, "clock_fit": "fitted" if fitted else "fallback"}
 
     def _challenges(self, sub: Submission, rd, wmm: int, rate: float | RateError = 30.0,
                     ) -> tuple[list[dict], dict[str, Any], list[tuple[int, int]]]:
