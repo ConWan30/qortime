@@ -33,7 +33,7 @@ def allowlist_for(tmp: Path, key: SoftwareKey, status: str = "active") -> str:
 
 
 class Env:
-    def __init__(self, tmp: Path, *, tokens: bool = True, claim=(14, 7), core=None, tail_ms=240_000, k=16):
+    def __init__(self, tmp: Path, *, tokens: bool = True, claim=(14, 7), core=None, tail_ms=240_000, k=16, **fixture):
         self.tmp = tmp
         self.key = SoftwareKey()
         self.clock = {"t": F.W0}
@@ -44,7 +44,7 @@ class Env:
             for ph, iss, *_ in F.CHALLENGES:
                 self.clock["t"] = F.W0 + iss
                 toks.append(self.ref.issue_challenge(ph, "home", "local-test-review"))
-        self.fx = F.build(tmp / "bundle", challenge_tokens=toks or None, claim=claim)
+        self.fx = F.build(tmp / "bundle", challenge_tokens=toks or None, claim=claim, **fixture)
         self.clock["t"] = F.W0 + 120_000
         self.allow = allowlist_for(tmp, self.key)
 
