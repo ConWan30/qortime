@@ -14,10 +14,16 @@ a traceback instead of 2.
 from __future__ import annotations
 
 import contextlib
+import errno
 import io
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
-from test_hands_frame_rate import _clips, _segs, run_main_subprocess, write_sidecar_bundle
+from test_hands_frame_rate import _REPO_ROOT, _clips, _segs, run_main_subprocess, write_sidecar_bundle
 
 from qor_receipt.hands import sidecar as S
 from qor_receipt.hands import video_events as V
@@ -412,3 +418,181 @@ def test_all_clips_are_validated_before_any_decode(tmp_path):
     assert rc == 2 and out.getvalue() == ""
     assert calls == [], "decode must not run before every clip has been validated"
     assert "duration_s" in err.getvalue() and "fail closed" in err.getvalue()
+
+
+# ---------------------------------------------------------------- long names / OSError / symlink (QorProof qt131 r2 INFO)
+def _rewrite_manifest(tmp_path, clips: list) -> None:
+    """Overwrite the manifest without trying to materialize overlong or symlink names."""
+    (tmp_path / "clips_manifest.json").write_text(
+        json.dumps({"schema": "qorcap-highlights/v0", "clips": clips}), encoding="utf-8"
+    )
+
+
+def _run_prepared_subprocess(argv: list[str]) -> tuple[int, str, str]:
+    """Child-process run on an already-written bundle (QorProof INFO QT2)."""
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(_REPO_ROOT) + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+    proc = subprocess.run(
+        [sys.executable, "-m", "qor_receipt.hands.sidecar", *argv],
+        cwd=str(_REPO_ROOT),
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=30,
+    )
+    return proc.returncode, proc.stdout, proc.stderr
+
+
+def _refuse_overlong_before_decode(tmp_path, field: str, value: str) -> None:
+    """A later overlong file/id must exit 2 with no traceback and no energy_curve call."""
+    good, bad = _clip(), _clip()
+    bad["id"], bad["file"] = "bad", "bad.mp4"
+    bad[field] = value
+    with pytest.raises(S.ClipInputError, match="fail closed") as ei:
+        S.clip_id_and_file(bad)
+    assert "UTF-8 bytes" in str(ei.value)
+    assert "\n" not in str(ei.value)
+
+    argv = write_sidecar_bundle(tmp_path, _segs("regular"), [good])
+    _rewrite_manifest(tmp_path, [good, bad])
+
+    calls: list = []
+    saved = (V.energy_curve, V.detect, S.build)
+    V.energy_curve = lambda path: (calls.append(path), ([], [], 30.0))[1]
+    V.detect = lambda e, c, fps: (_ for _ in ()).throw(AssertionError("detect called before refusal"))
+    S.build = lambda *a, **kw: (_ for _ in ()).throw(AssertionError("build called before refusal"))
+    out, err = io.StringIO(), io.StringIO()
+    try:
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = S.main(argv)
+    finally:
+        V.energy_curve, V.detect, S.build = saved
+    assert rc == 2 and out.getvalue() == ""
+    assert calls == [], "decode must not run before every clip has been validated"
+    assert "fail closed" in err.getvalue() and "UTF-8 bytes" in err.getvalue()
+    assert "Traceback" not in err.getvalue()
+
+    rc, out, err = _run_prepared_subprocess(argv)
+    assert rc == 2 and out == "", "never guessed: no hands document is built"
+    assert "fail closed" in err and "error:" in err and "UTF-8 bytes" in err
+    assert "Traceback" not in err
+
+
+def test_255_byte_name_passes_the_grammar():
+    """A 255-byte file name is a legal path component; it is not refused for length."""
+    c = _clip()
+    c["file"] = "a" * (S._MAX_CLIP_COMPONENT_BYTES - 4) + ".mp4"
+    assert len(c["file"].encode("utf-8")) == S._MAX_CLIP_COMPONENT_BYTES
+    cid, fname = S.clip_id_and_file(c)
+    assert fname == c["file"] and cid == c["id"]
+
+
+def test_128_byte_id_passes_the_grammar():
+    c = _clip()
+    c["id"] = "b" * S._MAX_CLIP_ID_BYTES
+    assert len(c["id"].encode("utf-8")) == S._MAX_CLIP_ID_BYTES
+    cid, fname = S.clip_id_and_file(c)
+    assert cid == c["id"] and fname == c["file"]
+
+
+def test_256_char_name_is_a_clean_refusal_before_any_decode(tmp_path):
+    name = "a" * 256
+    assert len(name) == 256 and len(name.encode("utf-8")) == 256
+    _refuse_overlong_before_decode(tmp_path, "file", name)
+
+
+def test_300_byte_multibyte_name_is_a_clean_refusal_before_any_decode(tmp_path):
+    """150 x U+00E9 is 300 UTF-8 bytes and only 150 characters: a character cap of 255 would miss it."""
+    name = "é" * 150
+    assert len(name) == 150 and len(name.encode("utf-8")) == 300
+    _refuse_overlong_before_decode(tmp_path, "file", name)
+
+
+def test_overlong_id_is_a_clean_refusal_before_any_decode(tmp_path):
+    name = "c" * (S._MAX_CLIP_ID_BYTES + 1)
+    assert len(name.encode("utf-8")) == S._MAX_CLIP_ID_BYTES + 1
+    _refuse_overlong_before_decode(tmp_path, "id", name)
+
+
+def test_oserror_from_exists_is_mapped_and_blocks_decode(tmp_path, monkeypatch):
+    """A path that passes the grammar still refuses cleanly when exists() raises OSError."""
+    good = _clip()
+    argv = write_sidecar_bundle(tmp_path, _segs("regular"), [good])
+
+    def boom(self):
+        raise OSError(errno.ENAMETOOLONG, "File name too long")
+
+    monkeypatch.setattr(Path, "exists", boom)
+
+    calls: list = []
+    saved = (V.energy_curve, V.detect, S.build)
+    V.energy_curve = lambda path: (calls.append(path), ([], [], 30.0))[1]
+    V.detect = lambda e, c, fps: (_ for _ in ()).throw(AssertionError("detect called before refusal"))
+    S.build = lambda *a, **kw: (_ for _ in ()).throw(AssertionError("build called before refusal"))
+    out, err = io.StringIO(), io.StringIO()
+    try:
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = S.main(argv)
+    finally:
+        V.energy_curve, V.detect, S.build = saved
+    assert rc == 2 and out.getvalue() == ""
+    assert calls == [], "decode must not run after an unusable path"
+    text = err.getvalue()
+    assert "fail closed" in text and "error:" in text
+    assert "ENAMETOOLONG" in text or "not usable" in text
+    assert "Traceback" not in text
+
+    # The helper itself maps the same OSError.
+    with pytest.raises(S.ClipInputError, match="fail closed") as ei:
+        S.clip_file_is_readable(tmp_path / "clips" / good["file"], clip_id=good["id"])
+    assert "ENAMETOOLONG" in str(ei.value)
+
+
+@pytest.mark.parametrize("how", ["absolute", "relative"])
+def test_indir_symlink_pointing_outside_is_refused(tmp_path, how):
+    """An in-dir symlink whose target is outside --clips is refused (QorProof r2 INFO)."""
+    clips_dir = tmp_path / "clips"
+    clips_dir.mkdir()
+    outside = tmp_path / "outside.mp4"
+    outside.write_bytes(b"SYNTHETIC")
+    link = clips_dir / "hl00.mp4"
+    target = outside if how == "absolute" else Path("..") / "outside.mp4"
+    try:
+        link.symlink_to(target)
+    except OSError as e:
+        pytest.skip(f"cannot create symlink: {e}")
+
+    with pytest.raises(S.ClipInputError, match="fail closed") as ei:
+        S.clip_file_in_dir(clips_dir, "hl00.mp4", clip_id="hl00")
+    assert "not inside" in str(ei.value)
+
+    good, bad = _clip(), _clip()
+    good["id"], good["file"] = "good", "good.mp4"
+    # write_sidecar_bundle would replace the symlink with a regular stub; put it back.
+    argv = write_sidecar_bundle(tmp_path, _segs("regular"), [good, bad])
+    dest = tmp_path / "clips" / bad["file"]
+    dest.unlink()
+    dest.symlink_to(target)
+
+    calls: list = []
+    saved = (V.energy_curve, V.detect, S.build)
+    V.energy_curve = lambda path: (calls.append(path), ([], [], 30.0))[1]
+    V.detect = lambda e, c, fps: (_ for _ in ()).throw(AssertionError("detect called before refusal"))
+    S.build = lambda *a, **kw: (_ for _ in ()).throw(AssertionError("build called before refusal"))
+    out, err = io.StringIO(), io.StringIO()
+    try:
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = S.main(argv)
+    finally:
+        V.energy_curve, V.detect, S.build = saved
+    assert rc == 2 and out.getvalue() == ""
+    assert calls == [], "decode must not follow an out-of-dir symlink"
+    assert "not inside" in err.getvalue() and "fail closed" in err.getvalue()
+    assert "Traceback" not in err.getvalue()
+
+    rc, out, err = _run_prepared_subprocess(argv)
+    assert rc == 2 and out == ""
+    assert "not inside" in err and "fail closed" in err
+    assert "Traceback" not in err
+    assert outside.exists()
+

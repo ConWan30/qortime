@@ -123,6 +123,14 @@ _MAX_FRAME_RATE_CHARS = 32
 _DEFAULT_DURATION_S = 12.0
 _MAX_DURATION_S = 86_400.0
 _CONTROLS = re.compile(r"[\x00-\x1f\x7f\u2028\u2029]")
+# POSIX NAME_MAX. A longer component used to pass the grammar, then Path.exists()
+# raised OSError (ENAMETOOLONG) outside the ClipInputError handler (QorProof qt131 r2 INFO).
+_MAX_CLIP_COMPONENT_BYTES = 255
+# Ids are not filesystem names, but they are echoed in errors and compared for
+# duplicates. 128 UTF-8 bytes is well above published stems such as hl00-q3-a3-h0.
+_MAX_CLIP_ID_BYTES = 128
+# Bound interpolated labels so a long name cannot flood the error line.
+_MAX_LABEL = 120
 
 
 class ClipInputError(ValueError):
@@ -137,7 +145,20 @@ def _safe_label(value: object) -> str:
     """Single-line label for error text. Never interpolates raw control characters."""
     if isinstance(value, str):
         value = _CONTROLS.sub("\ufffd", value)
-    return ascii(value)
+    text = ascii(value)
+    if len(text) > _MAX_LABEL:
+        return text[: _MAX_LABEL - 3] + "..."
+    return text
+
+
+def _safe_os_error(exc: OSError) -> str:
+    """Short, escaped errno label for a path OSError. Never interpolates raw strerror."""
+    import errno
+
+    code = errno.errorcode.get(exc.errno, "") if exc.errno else ""
+    if code:
+        return code
+    return _safe_label(type(exc).__name__)
 
 
 def _usable_clip_name(value: object, *, kind: str, clip_id: object = "?") -> str:
@@ -167,6 +188,19 @@ def _usable_clip_name(value: object, *, kind: str, clip_id: object = "?") -> str
             f"clip {_safe_label(owner)}: {kind} is not a safe name; "
             "refusing to place it on the capture clock (fail closed)"
         )
+    try:
+        size = len(value.encode("utf-8"))
+    except UnicodeEncodeError:
+        raise ClipInputError(
+            f"clip {_safe_label(owner)}: {kind} is not a safe name; "
+            "refusing to place it on the capture clock (fail closed)"
+        ) from None
+    limit = _MAX_CLIP_ID_BYTES if kind == "id" else _MAX_CLIP_COMPONENT_BYTES
+    if size > limit:
+        raise ClipInputError(
+            f"clip {_safe_label(owner)}: {kind} is longer than {limit} UTF-8 bytes; "
+            "refusing to place it on the capture clock (fail closed)"
+        )
     return value
 
 
@@ -187,18 +221,35 @@ def clip_file_in_dir(clips_dir: Any, fname: str, *, clip_id: str = "?") -> Any:
 
     try:
         base = Path(clips_dir).resolve()
-    except OSError:
+    except OSError as e:
         raise ClipInputError(
-            f"clip {_safe_label(clip_id)}: clips directory is not usable; "
+            f"clip {_safe_label(clip_id)}: clips directory is not usable ({_safe_os_error(e)}); "
             "refusing to place it on the capture clock (fail closed)"
         ) from None
-    dest = (base / fname).resolve()
+    try:
+        dest = (base / fname).resolve()
+    except OSError as e:
+        raise ClipInputError(
+            f"clip {_safe_label(clip_id)}: file is not usable ({_safe_os_error(e)}); "
+            "refusing to place it on the capture clock (fail closed)"
+        ) from None
     if dest == base or base not in dest.parents:
         raise ClipInputError(
             f"clip {_safe_label(clip_id)}: file is not inside the clips directory; "
             "refusing to place it on the capture clock (fail closed)"
         )
     return dest
+
+
+def clip_file_is_readable(path: Any, *, clip_id: str = "?") -> bool:
+    """True if ``path`` is an existing regular file. An OSError is a refusal, not a skip."""
+    try:
+        return bool(path.exists() and path.is_file())
+    except OSError as e:
+        raise ClipInputError(
+            f"clip {_safe_label(clip_id)}: file is not usable ({_safe_os_error(e)}); "
+            "refusing to place it on the capture clock (fail closed)"
+        ) from None
 
 
 def clip_start_s(clip: dict[str, Any]) -> float:
@@ -341,9 +392,11 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
-    # Validate every clip (id, file, start, duration, rate) before any decode, and refuse
-    # a duplicate id, so a later refusal never follows partial work.
-    prepared: list[tuple[str, Path, float, float]] = []
+    # Validate every clip (id, file, start, duration, rate, and that the path is
+    # usable) before any decode, and refuse a duplicate id, so a later refusal
+    # never follows partial work. exists() / resolve() OSError is mapped here
+    # (QorProof qt131 r2 INFO): a 256-byte name used to traceback after a decode.
+    prepared: list[tuple[str, Path, float, float, bool]] = []
     seen_ids: set[str] = set()
     try:
         for c in raw_clips:
@@ -356,13 +409,14 @@ def main(argv: list[str] | None = None) -> int:
             f = clip_file_in_dir(a.clips, fname, clip_id=cid)
             t0 = clip_start_mono_ms(c, media)
             dur = clip_duration_s(c)
-            prepared.append((cid, f, t0, dur))
+            present = clip_file_is_readable(f, clip_id=cid)
+            prepared.append((cid, f, t0, dur, present))
     except ClipInputError as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
     clips, cands = [], []
-    for cid, f, t0, dur in prepared:
-        if not f.exists() or not f.is_file():
+    for cid, f, t0, dur, present in prepared:
+        if not present:
             continue
         e, cc, fps = energy_curve(str(f))
         evs = [dict(ev, clip=cid, t0=t0, path=str(f)) for ev in detect(e, cc, fps)]
