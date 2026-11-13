@@ -80,10 +80,19 @@ def write_sidecar_bundle(tmp: Path, segs: list[dict], clips: list) -> list[str]:
     """Write a synthetic sidecar bundle. Only materializes clip files whose ``file`` is a string."""
     (tmp / "clips").mkdir(parents=True, exist_ok=True)
     for c in clips:
-        if isinstance(c, dict) and isinstance(c.get("file"), str) and c["file"]:
-            dest = tmp / "clips" / c["file"]
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes(b"SYNTHETIC")
+        name = c.get("file") if isinstance(c, dict) else None
+        # Only materialize a single path component inside tmp/clips. Never follow '..',
+        # separators, or control characters (NUL in a path raises ValueError on open).
+        if (
+            not isinstance(name, str)
+            or not name
+            or name != Path(name).name
+            or name in (".", "..")
+            or any(ord(ch) < 32 or ch in "  " for ch in name)
+        ):
+            continue
+        dest = tmp / "clips" / name
+        dest.write_bytes(b"SYNTHETIC")
     (tmp / "receipt.json").write_text(json.dumps({"match": {"match_id": "SYNTHETIC"}}))
     (tmp / "inputs.jsonl").write_text("")
     (tmp / "segments.jsonl").write_text("".join(json.dumps(s) + "\n" for s in segs))

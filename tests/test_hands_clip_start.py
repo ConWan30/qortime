@@ -205,3 +205,210 @@ def test_absent_clip_file_is_still_skipped_not_refused(tmp_path):
     assert rc == 0 and err.getvalue() == ""
     assert [c["id"] for c in seen[0]] == ["hl01"]
     assert seen[0][0]["start_mono_ms"] == 30333
+
+
+# ---------------------------------------------------------------- L1 / L2 / INFO (QorProof qt131)
+def _set_duration(kind: str):
+    c = _clip()
+    if kind == "missing duration_s":
+        del c["duration_s"]
+    elif kind == "duration_s abc":
+        c["duration_s"] = "abc"
+    elif kind == "duration_s 12.0 str":
+        c["duration_s"] = "12.0"
+    elif kind == "duration_s None":
+        c["duration_s"] = None
+    elif kind == "duration_s list":
+        c["duration_s"] = [12]
+    elif kind == "duration_s True":
+        c["duration_s"] = True
+    elif kind == "duration_s False":
+        c["duration_s"] = False
+    elif kind == "duration_s zero":
+        c["duration_s"] = 0
+    elif kind == "duration_s negative":
+        c["duration_s"] = -1.0
+    elif kind == "duration_s nan":
+        c["duration_s"] = float("nan")
+    elif kind == "duration_s inf":
+        c["duration_s"] = float("inf")
+    elif kind == "duration_s -inf":
+        c["duration_s"] = float("-inf")
+    elif kind == "duration_s huge int":
+        c["duration_s"] = 10**400
+    elif kind == "duration_s 1e16":
+        c["duration_s"] = 1e16
+    elif kind == "duration_s over max":
+        c["duration_s"] = S._MAX_DURATION_S + 1
+    else:
+        raise AssertionError(kind)
+    return c
+
+
+BAD_DURATION_KINDS = [
+    "duration_s abc",
+    "duration_s 12.0 str",
+    "duration_s None",
+    "duration_s list",
+    "duration_s True",
+    "duration_s False",
+    "duration_s zero",
+    "duration_s negative",
+    "duration_s nan",
+    "duration_s inf",
+    "duration_s -inf",
+    "duration_s huge int",
+    "duration_s 1e16",
+    "duration_s over max",
+]
+
+
+@pytest.mark.parametrize("kind", BAD_DURATION_KINDS)
+def test_bad_duration_s_raises_clip_input_error(kind):
+    with pytest.raises(S.ClipInputError, match="fail closed") as ei:
+        S.clip_duration_s(_set_duration(kind))
+    assert "duration_s" in str(ei.value)
+
+
+@pytest.mark.parametrize("kind", BAD_DURATION_KINDS)
+def test_bad_duration_s_is_a_clean_refusal_from_main(tmp_path, kind):
+    good = _clips([0.5, 12.0])
+    bad = _set_duration(kind)
+    bad["id"], bad["file"] = "bad", "bad.mp4"
+    rc, out, err = run_main_subprocess(tmp_path, _segs("regular"), good + [bad])
+    assert rc == 2 and out == "", "never guessed: no hands document is built"
+    assert "fail closed" in err and "duration_s" in err and "error:" in err
+    assert "Traceback" not in err
+
+
+def test_absent_duration_s_defaults_to_twelve():
+    c = _clip()
+    del c["duration_s"]
+    assert S.clip_duration_s(c) == 12.0
+
+
+def test_duration_s_int_and_max_are_accepted(tmp_path):
+    c = _clip()
+    c["duration_s"] = 12
+    assert S.clip_duration_s(c) == 12.0
+    c["duration_s"] = S._MAX_DURATION_S
+    assert S.clip_duration_s(c) == S._MAX_DURATION_S
+    c["duration_s"] = 0.001
+    assert S.clip_duration_s(c) == 0.001
+    # default-12 still lands in the built document when the key is absent
+    from test_hands_frame_rate import _run_main
+
+    clip = _clip()
+    del clip["duration_s"]
+    rc, out, err, seen = _run_main(tmp_path, _segs("regular"), [clip])
+    assert rc == 0 and err == ""
+    assert seen[0][0]["duration_s"] == 12.0
+
+
+UNSAFE_NAME_CASES = [
+    ("file parent", "file", ".."),
+    ("file dot", "file", "."),
+    ("file traversal", "file", "../outside.mp4"),
+    ("file nested traversal", "file", "foo/../../outside.mp4"),
+    ("file slash", "file", "sub/hl00.mp4"),
+    ("file backslash", "file", "sub\\hl00.mp4"),
+    ("file absolute posix", "file", "/tmp/outside.mp4"),
+    ("file drive", "file", "C:\\outside.mp4"),
+    ("file colon", "file", "hl00:stream.mp4"),
+    ("file newline", "file", "hl00.mp4\nOK: forged"),
+    ("file cr", "file", "hl00.mp4\rOK"),
+    ("file nul", "file", "hl00.mp4\x00"),
+    ("file line sep", "file", "hl00.mp4\u2028"),
+    ("file whitespace", "file", " "),
+    ("file padded", "file", " hl00.mp4"),
+    ("id parent", "id", ".."),
+    ("id slash", "id", "a/b"),
+    ("id backslash", "id", "a\\b"),
+    ("id newline", "id", "hl00\nOK: forged"),
+    ("id cr", "id", "hl00\rOK"),
+    ("id nul", "id", "hl00\x00"),
+    ("id line sep", "id", "hl00\u2028"),
+    ("id whitespace", "id", " "),
+    ("id padded", "id", " hl00"),
+]
+
+
+@pytest.mark.parametrize("label,field,value", UNSAFE_NAME_CASES)
+def test_unsafe_file_or_id_raises_clip_input_error(label, field, value):
+    c = _clip()
+    c[field] = value
+    with pytest.raises(S.ClipInputError, match="fail closed") as ei:
+        S.clip_id_and_file(c)
+    msg = str(ei.value)
+    assert field in msg
+    # no raw control / newline injection in the error text
+    assert "\nOK:" not in msg and "\rOK" not in msg and "\x00" not in msg and "\u2028" not in msg
+
+
+@pytest.mark.parametrize("label,field,value", UNSAFE_NAME_CASES)
+def test_unsafe_file_or_id_is_a_clean_refusal_from_main(tmp_path, label, field, value):
+    c = _clip()
+    c[field] = value
+    rc, out, err = run_main_subprocess(tmp_path, _segs("regular"), [c])
+    assert rc == 2 and out == "", "never guessed: no hands document is built"
+    assert "fail closed" in err and "error:" in err
+    assert "Traceback" not in err
+    assert "\nOK:" not in err and "\rOK" not in err
+    assert "\x00" not in err and "\u2028" not in err
+
+
+def test_file_outside_clips_dir_is_refused_even_if_it_exists(tmp_path):
+    """Traversal is refused even when the escaped path exists on disk."""
+    outside = tmp_path / "outside.mp4"
+    outside.write_bytes(b"SYNTHETIC")
+    c = _clip()
+    c["file"] = "../outside.mp4"
+    with pytest.raises(S.ClipInputError, match="fail closed"):
+        S.clip_id_and_file(c)
+    rc, out, err = run_main_subprocess(tmp_path, _segs("regular"), [c])
+    assert rc == 2 and out == ""
+    assert "fail closed" in err and "Traceback" not in err
+    # the outside file must not have been treated as a clip (no document)
+    assert outside.exists()
+
+
+def test_resolved_clip_path_stays_inside_the_clips_dir(tmp_path):
+    clips_dir = tmp_path / "clips"
+    clips_dir.mkdir()
+    (clips_dir / "hl00.mp4").write_bytes(b"SYNTHETIC")
+    got = S.clip_file_in_dir(clips_dir, "hl00.mp4", clip_id="hl00")
+    assert got == (clips_dir / "hl00.mp4").resolve()
+    assert clips_dir.resolve() in got.parents
+
+
+def test_duplicate_ids_are_a_clean_refusal(tmp_path):
+    a, b = _clip(), _clip()
+    b["file"] = "hl01.mp4"
+    # same id, two files
+    rc, out, err = run_main_subprocess(tmp_path, _segs("regular"), [a, b])
+    assert rc == 2 and out == ""
+    assert "duplicate id" in err and "fail closed" in err
+    assert "Traceback" not in err
+
+
+def test_all_clips_are_validated_before_any_decode(tmp_path):
+    """A later refusal must not follow energy_curve / detect on an earlier well-formed clip."""
+    from test_hands_frame_rate import write_sidecar_bundle
+
+    good, bad = _clip(), _set_duration("duration_s abc")
+    bad["id"], bad["file"] = "bad", "bad.mp4"
+    argv = write_sidecar_bundle(tmp_path, _segs("regular"), [good, bad])
+    calls: list = []
+    saved = (V.energy_curve, V.detect, S.build)
+    V.energy_curve = lambda path: (calls.append(path), ([], [], 30.0))[1]
+    V.detect = lambda e, c, fps: (_ for _ in ()).throw(AssertionError("detect called before refusal"))
+    S.build = lambda *a, **kw: (_ for _ in ()).throw(AssertionError("build called before refusal"))
+    out, err = io.StringIO(), io.StringIO()
+    try:
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = S.main(argv)
+    finally:
+        V.energy_curve, V.detect, S.build = saved
+    assert rc == 2 and out.getvalue() == ""
+    assert calls == [], "decode must not run before every clip has been validated"
+    assert "duration_s" in err.getvalue() and "fail closed" in err.getvalue()
