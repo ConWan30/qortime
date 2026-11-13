@@ -11,6 +11,9 @@ import contextlib
 import hashlib
 import io
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -68,6 +71,53 @@ def _run_main(tmp: Path, segs: list[dict], clips: list[dict]) -> tuple[int, str,
     finally:
         V.energy_curve, V.detect, S.build = saved
     return rc, out.getvalue(), err.getvalue(), seen
+
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def write_sidecar_bundle(tmp: Path, segs: list[dict], clips: list) -> list[str]:
+    """Write a synthetic sidecar bundle. Only materializes clip files whose ``file`` is a string."""
+    (tmp / "clips").mkdir(parents=True, exist_ok=True)
+    for c in clips:
+        name = c.get("file") if isinstance(c, dict) else None
+        # Only materialize a single path component inside tmp/clips. Never follow '..',
+        # separators, or control characters (NUL in a path raises ValueError on open).
+        if (
+            not isinstance(name, str)
+            or not name
+            or name != Path(name).name
+            or name in (".", "..")
+            or any(ord(ch) < 32 or ch in "  " for ch in name)
+        ):
+            continue
+        dest = tmp / "clips" / name
+        dest.write_bytes(b"SYNTHETIC")
+    (tmp / "receipt.json").write_text(json.dumps({"match": {"match_id": "SYNTHETIC"}}))
+    (tmp / "inputs.jsonl").write_text("")
+    (tmp / "segments.jsonl").write_text("".join(json.dumps(s) + "\n" for s in segs))
+    (tmp / "clips_manifest.json").write_text(json.dumps({"schema": "qorcap-highlights/v0", "clips": clips}))
+    return [str(tmp / "receipt.json"), str(tmp / "inputs.jsonl"), str(tmp / "clips_manifest.json"),
+            str(tmp / "segments.jsonl"), "--clips", str(tmp / "clips"), "--no-track"]
+
+
+def run_main_subprocess(tmp: Path, segs: list[dict], clips: list) -> tuple[int, str, str]:
+    """Run sidecar.main in a child process so a traceback lands in stderr (QorProof INFO QT2).
+
+    Used only on paths that refuse before video decode / build(), because the clip files are stubs.
+    """
+    argv = write_sidecar_bundle(tmp, segs, clips)
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(_REPO_ROOT) + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+    proc = subprocess.run(
+        [sys.executable, "-m", "qor_receipt.hands.sidecar", *argv],
+        cwd=str(_REPO_ROOT),
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=30,
+    )
+    return proc.returncode, proc.stdout, proc.stderr
 
 
 def hands_golden_text() -> str:
@@ -164,13 +214,20 @@ def test_garbage_frame_rate_fails_closed(tmp_path, bad):
 
 
 def test_huge_numerator_is_a_clean_refusal_not_a_traceback(tmp_path):
-    """QorProof INFO Q1: a 400-digit numerator must exit 2 with ClipRateError, not OverflowError."""
+    """QorProof INFO Q1: a 400-digit numerator must exit 2 with ClipRateError, not OverflowError.
+
+    QorProof INFO QT2: the previous '"Traceback" not in err' check was vacuous because
+    ``_run_main`` calls ``main()`` in-process, so an OverflowError escaped the test instead
+    of landing in ``err``. This run is a child process, so a traceback would fail the assert.
+    """
     bad = "1" * 400 + "/1"
     c = _clips([12.0], bad)[0]
     with pytest.raises(S.ClipRateError, match="fail closed") as ei:
         S.clip_fps(c)
     assert "source.frame_rate" in str(ei.value)
-    rc, out, err, seen = _run_main(tmp_path, _segs("regular"), _clips([0.5, 12.0]) + [dict(c, id="bad", file="bad.mp4")])
-    assert rc == 2 and out == "" and seen == [], "never guessed: no hands document is built"
+    rc, out, err = run_main_subprocess(
+        tmp_path, _segs("regular"), _clips([0.5, 12.0]) + [dict(c, id="bad", file="bad.mp4")]
+    )
+    assert rc == 2 and out == "", "never guessed: no hands document is built"
     assert "source.frame_rate" in err and "fail closed" in err
     assert "Traceback" not in err and "OverflowError" not in err

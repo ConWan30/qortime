@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import math
 import re
 from typing import Any
 
@@ -118,10 +119,202 @@ _RATIONAL = re.compile(r"([0-9]+)/([0-9]+)", re.ASCII)
 # "60000/1001" is 11 characters. A 400-digit numerator used to OverflowError on num/den
 # (QorProof INFO Q1). Bound the field before int() or division so that becomes a clean refusal.
 _MAX_FRAME_RATE_CHARS = 32
+# Highlight clips are ~12 s. 24 h is far above a match and keeps duration_s away from overflow.
+_DEFAULT_DURATION_S = 12.0
+_MAX_DURATION_S = 86_400.0
+_CONTROLS = re.compile(r"[\x00-\x1f\x7f\u2028\u2029]")
+# POSIX NAME_MAX. A longer component used to pass the grammar, then Path.exists()
+# raised OSError (ENAMETOOLONG) outside the ClipInputError handler (QorProof qt131 r2 INFO).
+_MAX_CLIP_COMPONENT_BYTES = 255
+# Ids are not filesystem names, but they are echoed in errors and compared for
+# duplicates. 128 UTF-8 bytes is well above published stems such as hl00-q3-a3-h0.
+_MAX_CLIP_ID_BYTES = 128
+# Bound interpolated labels so a long name cannot flood the error line.
+_MAX_LABEL = 120
 
 
-class ClipRateError(ValueError):
+class ClipInputError(ValueError):
+    """A highlight clip's source, start_s, duration_s, file or id is missing or not usable. Never guessed."""
+
+
+class ClipRateError(ClipInputError):
     """A highlight clip's ``source.frame_rate`` is present but not a usable rate. Never guessed."""
+
+
+def _safe_label(value: object) -> str:
+    """Single-line label for error text. Never interpolates raw control characters."""
+    if isinstance(value, str):
+        value = _CONTROLS.sub("\ufffd", value)
+    text = ascii(value)
+    if len(text) > _MAX_LABEL:
+        return text[: _MAX_LABEL - 3] + "..."
+    return text
+
+
+def _safe_os_error(exc: OSError) -> str:
+    """Short, escaped errno label for a path OSError. Never interpolates raw strerror."""
+    import errno
+
+    code = errno.errorcode.get(exc.errno, "") if exc.errno else ""
+    if code:
+        return code
+    return _safe_label(type(exc).__name__)
+
+
+def _usable_clip_name(value: object, *, kind: str, clip_id: object = "?") -> str:
+    """A single path component: relative, not '.' / '..', no separators or control characters.
+
+    qorcap writes highlights ``file`` as Path.name (a basename) and ``id`` as the stem,
+    e.g. ``hl00-q3-a3-h0.mp4``. Published manifests use the same shape. Subdirectories
+    are not part of the format, so ``/`` and ``\\`` are refused rather than accepted.
+    """
+    from pathlib import Path
+
+    owner = clip_id if kind == "file" else value
+    if not isinstance(value, str) or not value or value.strip() != value or value in (".", ".."):
+        raise ClipInputError(
+            f"clip {_safe_label(owner)}: {kind} is missing or not a usable name; "
+            "refusing to place it on the capture clock (fail closed)"
+        )
+    if (
+        _CONTROLS.search(value)
+        or "/" in value
+        or "\\" in value
+        or ":" in value
+        or Path(value).is_absolute()
+        or Path(value).name != value
+    ):
+        raise ClipInputError(
+            f"clip {_safe_label(owner)}: {kind} is not a safe name; "
+            "refusing to place it on the capture clock (fail closed)"
+        )
+    try:
+        size = len(value.encode("utf-8"))
+    except UnicodeEncodeError:
+        raise ClipInputError(
+            f"clip {_safe_label(owner)}: {kind} is not a safe name; "
+            "refusing to place it on the capture clock (fail closed)"
+        ) from None
+    limit = _MAX_CLIP_ID_BYTES if kind == "id" else _MAX_CLIP_COMPONENT_BYTES
+    if size > limit:
+        raise ClipInputError(
+            f"clip {_safe_label(owner)}: {kind} is longer than {limit} UTF-8 bytes; "
+            "refusing to place it on the capture clock (fail closed)"
+        )
+    return value
+
+
+def clip_id_and_file(clip: Any) -> tuple[str, str]:
+    """Return ``(id, file)``. Both must be present safe names. Never guessed."""
+    if not isinstance(clip, dict):
+        raise ClipInputError(
+            "highlight clip is not an object; refusing to place it on the capture clock (fail closed)"
+        )
+    cid = _usable_clip_name(clip.get("id"), kind="id")
+    fname = _usable_clip_name(clip.get("file"), kind="file", clip_id=cid)
+    return cid, fname
+
+
+def clip_file_in_dir(clips_dir: Any, fname: str, *, clip_id: str = "?") -> Any:
+    """Resolve ``fname`` inside ``clips_dir``. Refuse if the resolved path would leave it."""
+    from pathlib import Path
+
+    try:
+        base = Path(clips_dir).resolve()
+    except OSError as e:
+        raise ClipInputError(
+            f"clip {_safe_label(clip_id)}: clips directory is not usable ({_safe_os_error(e)}); "
+            "refusing to place it on the capture clock (fail closed)"
+        ) from None
+    try:
+        dest = (base / fname).resolve()
+    except OSError as e:
+        raise ClipInputError(
+            f"clip {_safe_label(clip_id)}: file is not usable ({_safe_os_error(e)}); "
+            "refusing to place it on the capture clock (fail closed)"
+        ) from None
+    if dest == base or base not in dest.parents:
+        raise ClipInputError(
+            f"clip {_safe_label(clip_id)}: file is not inside the clips directory; "
+            "refusing to place it on the capture clock (fail closed)"
+        )
+    return dest
+
+
+def clip_file_is_readable(path: Any, *, clip_id: str = "?") -> bool:
+    """True if ``path`` is an existing regular file. An OSError is a refusal, not a skip."""
+    try:
+        return bool(path.exists() and path.is_file())
+    except OSError as e:
+        raise ClipInputError(
+            f"clip {_safe_label(clip_id)}: file is not usable ({_safe_os_error(e)}); "
+            "refusing to place it on the capture clock (fail closed)"
+        ) from None
+
+
+def clip_start_s(clip: dict[str, Any]) -> float:
+    """The clip's ``source.start_s`` as a finite number of seconds ≥ 0. Never guessed.
+
+    ``source`` must be a dict. ``start_s`` must be an ``int`` or ``float`` (not ``bool``,
+    not a string) that is finite and ≥ 0. Anything else raises ClipInputError.
+    """
+    cid = clip.get("id", "?") if isinstance(clip, dict) else "?"
+    src = clip.get("source") if isinstance(clip, dict) else None
+    if not isinstance(src, dict):
+        raise ClipInputError(
+            f"clip {_safe_label(cid)}: source is missing or not an object; "
+            "refusing to place it on the capture clock (fail closed)"
+        )
+    if "start_s" not in src:
+        raise ClipInputError(
+            f"clip {_safe_label(cid)}: source.start_s is missing; "
+            "refusing to place it on the capture clock (fail closed)"
+        )
+    raw = src["start_s"]
+    # bool is a subclass of int, so True/False would otherwise pass as 1 or 0.
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        raise ClipInputError(
+            f"clip {_safe_label(cid)}: source.start_s {_safe_label(raw)} is not a finite start time ≥ 0; "
+            "refusing to place it on the capture clock (fail closed)"
+        )
+    try:
+        start = float(raw)
+    except OverflowError:
+        start = float("inf")
+    if raw < 0 or not math.isfinite(start):
+        raise ClipInputError(
+            f"clip {_safe_label(cid)}: source.start_s {_safe_label(raw)} is not a finite start time ≥ 0; "
+            "refusing to place it on the capture clock (fail closed)"
+        )
+    return start
+
+
+def clip_duration_s(clip: dict[str, Any]) -> float:
+    """The clip's ``duration_s`` as a finite number of seconds > 0 and ≤ 24 h. Never guessed.
+
+    Absent means 12, the historical default. Present, it must be an ``int`` or ``float``
+    (not ``bool``, not a string) that is finite, > 0, and at most ``_MAX_DURATION_S``.
+    Anything else raises ClipInputError.
+    """
+    cid = clip.get("id", "?") if isinstance(clip, dict) else "?"
+    if not isinstance(clip, dict) or "duration_s" not in clip:
+        return _DEFAULT_DURATION_S
+    raw = clip["duration_s"]
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        raise ClipInputError(
+            f"clip {_safe_label(cid)}: duration_s {_safe_label(raw)} is not a finite duration > 0 and ≤ 24 h; "
+            "refusing to place it on the capture clock (fail closed)"
+        )
+    try:
+        dur = float(raw)
+    except OverflowError:
+        dur = float("inf")
+    if dur <= 0 or dur > _MAX_DURATION_S or not math.isfinite(dur):
+        raise ClipInputError(
+            f"clip {_safe_label(cid)}: duration_s {_safe_label(raw)} is not a finite duration > 0 and ≤ 24 h; "
+            "refusing to place it on the capture clock (fail closed)"
+        )
+    return dur
 
 
 def clip_fps(clip: dict[str, Any]) -> float:
@@ -146,12 +339,24 @@ def clip_fps(clip: dict[str, Any]) -> float:
 
 
 def clip_start_mono_ms(clip: dict[str, Any], segments: list[dict[str, Any]]) -> float:
-    """Capture mono ms of the clip's first frame: the manifest frame fit at the clip's own rate."""
+    """Capture mono ms of the clip's first frame: the manifest frame fit at the clip's own rate.
+
+    ``source`` must be a dict and ``start_s`` a finite number ≥ 0 (not a bool). A bad
+    value raises ClipInputError (fail closed). The returned time is finite.
+    """
     from qor_receipt.review.clock import capture_clock
 
+    start_s = clip_start_s(clip)
     fps = clip_fps(clip)
     intercept, ms_per_frame = capture_clock(segments, fps)
-    return intercept + ms_per_frame * float(clip["source"]["start_s"]) * fps
+    t0 = intercept + ms_per_frame * start_s * fps
+    if not math.isfinite(t0):
+        cid = clip.get("id", "?") if isinstance(clip, dict) else "?"
+        raise ClipInputError(
+            f"clip {_safe_label(cid)}: start on the capture clock is not finite for source.start_s {_safe_label(start_s)}; "
+            "refusing to place it on the capture clock (fail closed)"
+        )
+    return t0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -162,6 +367,7 @@ def main(argv: list[str] | None = None) -> int:
     """
     import argparse
     import json
+    import sys
     from pathlib import Path
 
     from qor_receipt.hands.muse_context import MuseContext, filter_actions
@@ -179,22 +385,43 @@ def main(argv: list[str] | None = None) -> int:
     segs = [json.loads(x) for x in Path(a.segments).read_text(encoding="utf-8").splitlines() if x.strip()]
     media = [s for s in segs if s.get("type") == "segment"]
     man = json.loads(Path(a.clips_manifest).read_text(encoding="utf-8"))
-    clips, cands = [], []
-    for c in man.get("clips", []):
-        f = Path(a.clips) / c["file"]
-        if not f.exists():
-            continue
-        try:
+    raw_clips = man.get("clips", [])
+    if not isinstance(raw_clips, list):
+        print(
+            "error: highlights clips is not a list; refusing to place it on the capture clock (fail closed)",
+            file=sys.stderr,
+        )
+        return 2
+    # Validate every clip (id, file, start, duration, rate, and that the path is
+    # usable) before any decode, and refuse a duplicate id, so a later refusal
+    # never follows partial work. exists() / resolve() OSError is mapped here
+    # (QorProof qt131 r2 INFO): a 256-byte name used to traceback after a decode.
+    prepared: list[tuple[str, Path, float, float, bool]] = []
+    seen_ids: set[str] = set()
+    try:
+        for c in raw_clips:
+            cid, fname = clip_id_and_file(c)
+            if cid in seen_ids:
+                raise ClipInputError(
+                    f"clip {_safe_label(cid)}: duplicate id; refusing to place it on the capture clock (fail closed)"
+                )
+            seen_ids.add(cid)
+            f = clip_file_in_dir(a.clips, fname, clip_id=cid)
             t0 = clip_start_mono_ms(c, media)
-        except ClipRateError as e:
-            import sys
-
-            print(f"error: {e}", file=sys.stderr)
-            return 2
+            dur = clip_duration_s(c)
+            present = clip_file_is_readable(f, clip_id=cid)
+            prepared.append((cid, f, t0, dur, present))
+    except ClipInputError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    clips, cands = [], []
+    for cid, f, t0, dur, present in prepared:
+        if not present:
+            continue
         e, cc, fps = energy_curve(str(f))
-        evs = [dict(ev, clip=c["id"], t0=t0, path=str(f)) for ev in detect(e, cc, fps)]
+        evs = [dict(ev, clip=cid, t0=t0, path=str(f)) for ev in detect(e, cc, fps)]
         cands += evs
-        clips.append({"id": c["id"], "start_mono_ms": round(t0), "duration_s": float(c.get("duration_s", 12.0)), "events": evs})
+        clips.append({"id": cid, "start_mono_ms": round(t0), "duration_s": dur, "events": evs})
     report = None
     if a.muse:
         kept, report = filter_actions(cands, _frames_for, MuseContext(), max_calls=a.max_calls)
