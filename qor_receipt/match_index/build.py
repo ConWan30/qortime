@@ -81,7 +81,12 @@ def bitnames(b: int) -> list[str]:
 
 
 class Clock:
-    """wall_ms <-> recording video seconds, from manifest (mono_ms, cumulative frames) points."""
+    """wall_ms <-> recording video seconds, from manifest (mono_ms, cumulative frames) points.
+
+    TODO: per-file clocks (mirror qorcap align.rs ``file_clocks``). Until then, ``video_rate``
+    returns UNMEASURED when more than one file has media segments, so multi-part seeks are not
+    published.
+    """
 
     def __init__(self, manifest: list[dict], fps: float | None = FPS):
         """``fps`` is the recording's frame rate (``frames`` is its encoder counter). None = unknown:
@@ -347,6 +352,16 @@ def counter_fps(manifest: list[dict]) -> float | None:
     return r0
 
 
+def media_file_count(manifest: list[dict]) -> int:
+    """How many distinct files have media (non-init) segments. A missing ``file`` is one unnamed file."""
+    files: set[str] = set()
+    for m in manifest:
+        if m.get("type") != "segment" or m.get("kind") == "init":
+            continue
+        files.add(m["file"] if isinstance(m.get("file"), str) else "")
+    return len(files)
+
+
 def video_rate(bdir: Path, bundle: dict, video: Path | None, manifest: list[dict] | None = None) -> tuple[float | None, str | None]:
     """(fps, label) for the manifest ``frames`` counter. ``label`` is None only for the legacy 30/1.
 
@@ -358,6 +373,9 @@ def video_rate(bdir: Path, bundle: dict, video: Path | None, manifest: list[dict
     """
     from qor_receipt.review.rate import RateError, declared_rate, frame_clock_rates, label, parse_rate, resolve
 
+    # Until Clock is per file (align.rs file_clocks), a multi-part bundle cannot be dated safely.
+    if media_file_count(manifest or []) > 1:
+        return None, "UNMEASURED: multi-part bundle (per-file clock not implemented)"
     try:
         measured = []
         raw = probe_r_frame_rate(video) if video and video.exists() else None

@@ -292,11 +292,13 @@ def test_l3_rate_record_is_omitted_at_30_and_written_otherwise():
     assert Referee._rate_record(RT.Resolved(Fraction(30), "legacy"), segs60) is None
     assert Referee._rate_record(RT.Resolved(Fraction(30), "x fMP4 sample durations"), segs60) is None
     assert Referee._rate_record(RT.Resolved(Fraction(60), "x", Fraction(60)), segs60) == {
-        "rate": "60/1", "unsnapped_mean": "60/1", "source": "x", "clock_fit": "fitted",
+        "rate": "60/1", "unsnapped_mean": "60/1", "source": "x", "clock_fit": "fitted", "gaps": 0,
     }
     assert Referee._rate_record(RT.Resolved(Fraction(60), "x"), segs60) == {
-        "rate": "60/1", "unsnapped_mean": None, "source": "x", "clock_fit": "fitted",
+        "rate": "60/1", "unsnapped_mean": None, "source": "x", "clock_fit": "fitted", "gaps": 0,
     }
+    # a 30/1 rate with a recorded hole still omits the record (goldens stay byte-identical)
+    assert Referee._rate_record(RT.Resolved(Fraction(30), "x", Fraction(30), gaps=1), segs60) is None
     flat = [{"kind": "media", "frames": 120, "mono_ms": i * 2000} for i in range(1, 10)]
     assert Referee._rate_record(RT.Resolved(Fraction(60), "x", Fraction(60)), flat)["clock_fit"] == "fallback"
     rec = Referee._rate_record(RT.RateError("mixed frame rates: a"), flat)
@@ -433,16 +435,146 @@ def test_r2_l4_multipart_counter_is_fit_per_file(tmp_path):
     (b / "manifest.jsonl").write_text("\n".join(__import__("json").dumps(x) for x in man) + "\n")
     assert abs(counter_fps(man) - 60.0) < 0.01
 
+    # r3-L1: more than one file with media segments is UNMEASURED until Clock is per-file,
+    # even when the per-file counters and a measured 60 agree.
     (b / "frame_clock.jsonl").write_text(_frame_clock())
     fps, label = video_rate(b, __import__("json").loads((b / "bundle.json").read_text()), None, man)
-    assert fps == 60.0 and label == "60/1"
-
+    assert fps is None and "multi-part bundle" in label
     idx = build_index(b, tmp_path / "omp", frames=False)
-    assert idx["video"]["frame_rate"] == "60/1"
-    # no measured rate: legacy 30 vs per-file 60 is still marked, not a silent 30
+    assert all(e["recording_s"] is None for e in idx["events"])
+    assert "multi-part bundle" in idx["video"]["frame_rate"]
     (b / "frame_clock.jsonl").unlink()
     idx = build_index(b, tmp_path / "omp-legacy", frames=False)
-    assert idx["video"]["frame_rate"].startswith("UNMEASURED: manifest frames counter runs at 60.00 fps, not legacy 30/1")
+    assert all(e["recording_s"] is None for e in idx["events"])
+    assert "multi-part bundle" in idx["video"]["frame_rate"]
+
+
+# ---------------------------------------------------------------- QorProof #130 r3 M1 / L1 / L2 / L3
+@pytest.mark.parametrize("timescale,d,rate", [
+    (15_360, 256, Fraction(60)),
+    (15_360, 512, Fraction(30)),
+    (90_000, 1500, Fraction(60)),
+    (90_000, 3000, Fraction(30)),
+])
+def test_r3_m1_one_doubled_sample_is_accepted(timescale, d, rate):
+    n = 1000
+    durs = [d] * n
+    durs[n // 2] = 2 * d  # one hole, not the last sample
+    got = RT._fmp4_measure(_init(timescale=timescale), [_frag(durs=durs)])
+    assert got is not None and got.gaps == 1 and RT.snap(got.mean, "t") == rate
+    assert RT.fmp4_rate(_init(timescale=timescale), [_frag(durs=durs)]) == rate
+    res = RT.bundle_rate({}, [("v.mp4", _init(timescale=timescale), [_frag(durs=durs)])])
+    assert res.rate == rate and res.gaps == 1
+    from qor_receipt.review.engine import Referee
+    rec = Referee._rate_record(res, [{"kind": "media", "frames": 120, "mono_ms": i * 2000} for i in range(1, 12)])
+    if rate == 30:
+        assert rec is None  # still omitted at 30/1, goldens unchanged
+    else:
+        assert rec is not None and rec["gaps"] == 1 and rec["rate"] == "60/1"
+
+
+def test_r3_m1_two_percent_doubled_is_refused():
+    n = 1000
+    durs = [256] * n
+    for i in range(20):  # 2 %
+        durs[i] = 512
+    with pytest.raises(RT.RateError, match="gap"):
+        RT.fmp4_rate(_init(), [_frag(durs=durs)])
+
+
+def test_r3_m1_one_and_a_half_d_is_refused():
+    durs = [256] * 1000
+    durs[10] = 384  # 1.5 * d, not within 1 tick of d or k*d
+    with pytest.raises(RT.RateError, match="not constant"):
+        RT.fmp4_rate(_init(), [_frag(durs=durs)])
+
+
+def test_r3_m1_short_last_sample_is_accepted():
+    durs = [256] * 999 + [100]
+    got = RT._fmp4_measure(_init(), [_frag(durs=durs)])
+    assert got is not None and got.gaps == 0 and got.last_dur == 100 and RT.snap(got.mean, "t") == 60
+    assert RT.fmp4_rate(_init(), [_frag(durs=durs)]) == 60
+
+
+def test_r3_l1_multipart_seeks_are_unmeasured(tmp_path):
+    """Same 2-part shape as the r2-L4 test: no seek times until Clock is per file."""
+    from qor_receipt.match_index.build import media_file_count
+
+    b = G.match_index_bundle(tmp_path / "mp", fps=60)
+    man = []
+    for fi, base in enumerate((0, 24)):
+        man.append({"type": "segment", "kind": "init", "file": f"p{fi}.mp4", "seq": base,
+                    "mono_ms": base * 2000, "frames": 0})
+        for i in range(24):
+            seq = base + i
+            man.append({"type": "segment", "kind": "media", "file": f"p{fi}.mp4", "seq": seq,
+                        "mono_ms": seq * 2000 + 37, "wall_ms": G.W0 + seq * 2000 + 37,
+                        "frames": i * 2 * 60})
+    assert media_file_count(man) == 2
+    (b / "manifest.jsonl").write_text("\n".join(json.dumps(x) for x in man) + "\n")
+    (b / "frame_clock.jsonl").write_text(_frame_clock())
+    idx = build_index(b, tmp_path / "o", frames=False)
+    assert all(e["recording_s"] is None for e in idx["events"])
+    assert "multi-part bundle" in idx["video"]["frame_rate"]
+
+
+def test_r3_l2_trun_and_moof_box_caps():
+    tfhd = _full(b"tfhd", 0x020008, _u32(1) + _u32(256))
+    trun = _full(b"trun", 0x000001, _u32(1) + _u32(0))
+    def frag(n_truns: int) -> bytes:
+        traf = _box(b"traf", tfhd + _full(b"tfdt", 0, _u32(0)) + trun * n_truns)
+        return _box(b"moof", _full(b"mfhd", 0, _u32(1)) + traf) + _box(b"mdat", bytes(max(64, n_truns)))
+    with pytest.raises(RT.RateError, match="1024"):
+        RT.fmp4_rate(_init(), [frag(1025)])
+    assert RT.fmp4_rate(_init(), [frag(1024)]) == 60
+
+    # 1025 child boxes in a moof (mfhd + 1024 trafs)
+    one = _box(b"traf", tfhd + _full(b"tfdt", 0, _u32(0)) + trun)
+    too_many = _box(b"moof", _full(b"mfhd", 0, _u32(1)) + one * 1024) + _box(b"mdat", bytes(64))
+    with pytest.raises(RT.RateError, match="1024"):
+        RT.fmp4_rate(_init(), [too_many])
+    # mfhd + 1023 trafs = 1024 boxes, 1023 samples >= MIN_SAMPLES
+    ok = _box(b"moof", _full(b"mfhd", 0, _u32(1)) + one * 1023) + _box(b"mdat", bytes(64))
+    assert RT.fmp4_rate(_init(), [ok]) == 60
+
+
+@pytest.mark.skipif(not HAVE_FFMPEG, reason="ffmpeg needed for the QorCap mpegts then -c copy remux")
+@pytest.mark.parametrize("fps,rate", [(30, Fraction(30)), (60, Fraction(60))])
+def test_r3_l3_qorcap_mpegts_copy_remux_rate(tmp_path, fps, rate):
+    """Encode mpegts at 90 kHz, remux with QorCap's ``-c copy`` frag flags, and read the rate."""
+    from review_fixture import split_fmp4
+
+    ts = tmp_path / f"cap{fps}.ts"
+    out = tmp_path / f"cap{fps}.mp4"
+    # QorCap encodes to mpegts then remuxes with these movflags / min_frag_duration (ffmpeg.rs).
+    subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                    "-f", "lavfi", "-i", f"testsrc=size=160x90:rate={fps}:duration=6",
+                    "-pix_fmt", "yuv420p", "-c:v", "libx264", "-preset", "ultrafast",
+                    "-r", str(fps), "-g", str(fps), "-f", "mpegts", str(ts)], check=True)
+    subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(ts),
+                    "-c", "copy", "-movflags", "+frag_keyframe+empty_moov+default_base_moof",
+                    "-min_frag_duration", "2000000", "-f", "mp4", str(out)], check=True)
+    parts = split_fmp4(out.read_bytes())
+    assert len(parts) >= 2
+    got = RT._fmp4_measure(parts[0], parts[1:])
+    assert got is not None
+    assert got.timescale == 90_000
+    assert RT.snap(got.mean, "t") == rate
+    assert RT.fmp4_rate(parts[0], parts[1:]) == rate
+    # integer -r at 90 kHz: 3000 ticks at 30, 1500 at 60. A short final sample is exempt.
+    d = 3000 if fps == 30 else 1500
+    assert got.base_dur == d
+    assert got.last_dur is not None and (got.last_dur == d or got.last_dur < d)
+    assert got.gaps == 0
+    res = RT.bundle_rate({}, [("video.mp4", parts[0], parts[1:])])
+    assert res.rate == rate and res.mean == got.mean and res.gaps == 0
+    from qor_receipt.review.engine import Referee
+    rec = Referee._rate_record(res, [{"kind": "media", "frames": fps * 2 * i, "mono_ms": i * 2000} for i in range(1, 12)])
+    if fps == 30:
+        assert rec is None  # 30 fps record still omitted
+    else:
+        assert rec == {"rate": "60/1", "unsnapped_mean": "60/1", "source": "video.mp4 fMP4 sample durations",
+                       "clock_fit": "fallback", "gaps": 0}
 
 
 # ---------------------------------------------------------------- referee end to end (synthetic fMP4)
@@ -463,7 +595,7 @@ def test_referee_60fps_rule_v2_and_motion_match_30fps(tmp_path):
         lb = [c["latency_ms"] for c in b["challenges"]]
         assert len(lb) == 3 and all(abs(x - y) <= 1000 / 60 for x, y in zip(la, lb)), (la, lb)
         assert a["frame_rate"] is None
-        assert b["frame_rate"] == {"rate": "60/1", "unsnapped_mean": "60/1",
+        assert b["frame_rate"] == {"rate": "60/1", "unsnapped_mean": "60/1", "gaps": 0,
                                   "source": "video.mp4 fMP4 sample durations", "clock_fit": "fitted"}
         ma, mb = a["checks"]["motion"]["detail"], b["checks"]["motion"]["detail"]
         assert b["checks"]["motion"]["state"] == "pass" and mb["clock_fallbacks"] == 0

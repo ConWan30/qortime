@@ -20,18 +20,25 @@ import math
 from typing import Any
 
 
-def _boxes(data: bytes):
-    i, n = 0, len(data)
+def _boxes(data: bytes | memoryview):
+    """Iterate child boxes as ``(type, payload)`` without copying the payload.
+
+    ``type`` is a 4-byte ``bytes`` key. ``payload`` is a memoryview over the original buffer
+    (or a memoryview slice), so callers do not pay a copy per box. The iterator walks by
+    offsets; it does not build a list.
+    """
+    view = data if isinstance(data, memoryview) else memoryview(data)
+    i, n = 0, len(view)
     while i + 8 <= n:
-        size = int.from_bytes(data[i:i + 4], "big")
-        typ = data[i + 4:i + 8]
+        size = int.from_bytes(view[i:i + 4], "big")
+        typ = bytes(view[i + 4:i + 8])
         hdr = 8
         if size == 1 and i + 16 <= n:
-            size = int.from_bytes(data[i + 8:i + 16], "big")
+            size = int.from_bytes(view[i + 8:i + 16], "big")
             hdr = 16
         if size < hdr or i + size > n:
             return
-        yield typ, data[i + hdr:i + size]
+        yield typ, view[i + hdr:i + size]
         i += size
 
 

@@ -559,6 +559,7 @@ class Referee:
         fitted = capture_clock(segments, fps) != (0.0, 1000.0 / fps)
         rec = {"rate": label(rate.rate), "source": rate.source, "clock_fit": "fitted" if fitted else "fallback"}
         rec["unsnapped_mean"] = label(rate.mean) if rate.mean is not None else None
+        rec["gaps"] = rate.gaps
         return rec
 
     def _challenges(self, sub: Submission, rd, wmm: int, rate: float | RateError = 30.0,
