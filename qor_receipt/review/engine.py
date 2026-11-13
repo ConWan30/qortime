@@ -557,7 +557,9 @@ class Referee:
             return None
         fps = float(rate.rate)
         fitted = capture_clock(segments, fps) != (0.0, 1000.0 / fps)
-        return {"rate": label(rate.rate), "source": rate.source, "clock_fit": "fitted" if fitted else "fallback"}
+        rec = {"rate": label(rate.rate), "source": rate.source, "clock_fit": "fitted" if fitted else "fallback"}
+        rec["unsnapped_mean"] = label(rate.mean) if rate.mean is not None else None
+        return rec
 
     def _challenges(self, sub: Submission, rd, wmm: int, rate: float | RateError = 30.0,
                     ) -> tuple[list[dict], dict[str, Any], list[tuple[int, int]]]:

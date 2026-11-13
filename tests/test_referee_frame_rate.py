@@ -138,7 +138,7 @@ def _frag(durs: list[int] | None = None, default: int | None = None, count: int 
 def test_fmp4_rate_reads_the_video_track_sample_durations():
     assert RT.fmp4_rate(_init(), [_frag(default=256)]) == 60          # tfhd default (ffmpeg's usual form)
     assert RT.fmp4_rate(_init(), [_frag(default=512)]) == 30
-    assert RT.fmp4_rate(_init(), [_frag(durs=[256] * 119 + [257])]) == 60  # per-sample mean, snapped
+    assert RT.fmp4_rate(_init(), [_frag(durs=[256] * 120)]) == 60  # per-sample, exact 60/1
     assert RT.fmp4_rate(_init(trex_dur=256), [_frag()]) == 60           # trex default from the init
     assert RT.fmp4_rate(_init(timescale=60000), [_frag(default=1001)]) == Fraction(60000, 1001)
     assert RT.fmp4_rate(_init(), [_frag(default=256, audio=False)]) == 60
@@ -161,11 +161,15 @@ def test_m1_sizes_without_durations_and_huge_counts_never_crash():
     # (b) a u32 count with a default duration: rejected against the bytes present, nothing materialised
     with pytest.raises(RT.RateError, match="states 4294967295 samples"):
         RT.fmp4_rate(_init(), [_frag(default=256, count=0xFFFFFFFF)])
-    # per-sample count larger than the trun carries
+    # per-sample count larger than the trun carries (still under the per-trun cap)
     f = bytearray(_frag(durs=[256] * 20, audio=False))
     i = f.index(b"trun") + 8
-    f[i:i + 4] = (0xFFFFFFFF).to_bytes(4, "big")
+    f[i:i + 4] = (25).to_bytes(4, "big")
     with pytest.raises(RT.RateError, match="carries fields for 20"):
+        RT.fmp4_rate(_init(), [bytes(f)])
+    # a u32 count on a per-sample trun hits the cap, not a walk of 2^32 rows
+    f[i:i + 4] = (0xFFFFFFFF).to_bytes(4, "big")
+    with pytest.raises(RT.RateError, match="cap 65536"):
         RT.fmp4_rate(_init(), [bytes(f)])
     # truncated / garbage boxes: a RateError or no information, never another exception
     for junk in (b"\x00\x00\x00\x10moof" + b"\xff" * 8, _frag(default=256)[:40], b"\xff" * 64):
@@ -270,7 +274,7 @@ def test_engine_frame_rate_is_measured_legacy_or_an_error():
     from qor_receipt.review.engine import Referee
 
     sub, rd = _sub({}, {0: _init(), 1: _frag(default=256), 2: _frag(default=256)})
-    assert Referee._frame_rate(None, sub, rd) == RT.Resolved(Fraction(60), "video.mp4 fMP4 sample durations")
+    assert Referee._frame_rate(None, sub, rd) == RT.Resolved(Fraction(60), "video.mp4 fMP4 sample durations", Fraction(60))
     sub, rd = _sub({}, {0: _init(), 1: _frag(), 2: _frag()})
     assert Referee._frame_rate(None, sub, rd).legacy
     sub, rd = _sub({"frame_rate": "30/1"}, {0: _init(), 1: _frag(default=256)})
@@ -287,9 +291,14 @@ def test_l3_rate_record_is_omitted_at_30_and_written_otherwise():
     segs60 = [dict(s, type="segment") for s in _counter(60)]
     assert Referee._rate_record(RT.Resolved(Fraction(30), "legacy"), segs60) is None
     assert Referee._rate_record(RT.Resolved(Fraction(30), "x fMP4 sample durations"), segs60) is None
-    assert Referee._rate_record(RT.Resolved(Fraction(60), "x"), segs60) == {"rate": "60/1", "source": "x", "clock_fit": "fitted"}
+    assert Referee._rate_record(RT.Resolved(Fraction(60), "x", Fraction(60)), segs60) == {
+        "rate": "60/1", "unsnapped_mean": "60/1", "source": "x", "clock_fit": "fitted",
+    }
+    assert Referee._rate_record(RT.Resolved(Fraction(60), "x"), segs60) == {
+        "rate": "60/1", "unsnapped_mean": None, "source": "x", "clock_fit": "fitted",
+    }
     flat = [{"kind": "media", "frames": 120, "mono_ms": i * 2000} for i in range(1, 10)]
-    assert Referee._rate_record(RT.Resolved(Fraction(60), "x"), flat)["clock_fit"] == "fallback"
+    assert Referee._rate_record(RT.Resolved(Fraction(60), "x", Fraction(60)), flat)["clock_fit"] == "fallback"
     rec = Referee._rate_record(RT.RateError("mixed frame rates: a"), flat)
     assert rec["rate"] == "UNMEASURED" and "mixed" in rec["reason"] and rec["clock_fit"] == "not_computed"
 
@@ -364,6 +373,78 @@ def test_match_index_probes_a_supplied_60fps_video(tmp_path):
     assert [e["recording_s"] for e in idx["events"]] == [e["recording_s"] for e in i30["events"]]
 
 
+# ---------------------------------------------------------------- QorProof #130 r2 L1 / L2 / L4
+@pytest.mark.parametrize("mean", [Fraction(599941, 10_000), Fraction(60006, 1_000)])  # 59.9941, 60.006
+def test_r2_l1_near_60_means_do_not_snap(mean):
+    with pytest.raises(RT.RateError, match="0.002 %"):
+        RT.snap(mean, "test")
+
+
+@pytest.mark.parametrize("timescale,rate", [(15_360, Fraction(60)), (15_360, Fraction(30)),
+                                            (90_000, Fraction(60000, 1001)), (90_000, Fraction(30000, 1001))])
+def test_r2_l1_exact_60_ntsc_30_rates_are_accepted(timescale, rate):
+    durs = _alternating(timescale, timescale / rate, 240)
+    assert max(durs) - min(durs) <= 1
+    assert RT.fmp4_rate(_init(timescale=timescale), [_frag(durs=durs[:120]), _frag(durs=durs[120:])]) == rate
+
+
+def test_r2_l1_average_but_uneven_near_60_is_refused():
+    """Means that used to snap at 0.01 % (59.9941, 60.006) are refused when durations are not constant."""
+    # Pick a timescale equal to the mean's numerator so 10 samples of equal duration give that mean
+    # exactly, then spread by more than 1 tick, keeping the sum.
+    cases = [
+        (Fraction(599941, 10_000), 599941, 10_000),  # 59.9941: 10 samples of 10000
+        (Fraction(60006, 1_000), 60006, 1_000),      # 60.006: 10 samples of 1000
+    ]
+    for mean, ts, dur in cases:
+        out = [dur] * 10
+        out[0] += 2
+        out[-1] -= 2
+        assert Fraction(ts * 10, sum(out)) == mean and max(out) - min(out) > 1
+        with pytest.raises(RT.RateError, match="not constant"):
+            RT.fmp4_rate(_init(timescale=ts), [_frag(durs=out)])
+        with pytest.raises(RT.RateError, match="0.002 %"):
+            RT.snap(mean, "test")
+
+
+def test_r2_l2_trun_sample_cap():
+    with pytest.raises(RT.RateError, match="cap 65536"):
+        RT.fmp4_rate(_init(), [_frag(default=256, count=65_537, mdat=1)])
+    # the cap is inclusive: 65,536 default-duration samples at 256 ticks is exact 60/1
+    assert RT.fmp4_rate(_init(), [_frag(default=256, count=65_536, mdat=65_536)]) == 60
+
+
+def test_r2_l4_multipart_counter_is_fit_per_file(tmp_path):
+    """QorCap resets the frames counter per file. A whole-bundle fit on two 60 fps parts is ~15 fps
+    (spurious UNMEASURED against a measured 60, or a skipped check). Per-file fits both agree at 60."""
+    from qor_receipt.match_index.build import counter_fps, video_rate
+
+    b = G.match_index_bundle(tmp_path / "mp", fps=60)
+    man = []
+    for fi, base in enumerate((0, 24)):
+        # an init row (and a frames==0 media row) must not join the fit
+        man.append({"type": "segment", "kind": "init", "file": f"p{fi}.mp4", "seq": base,
+                    "mono_ms": base * 2000, "frames": 0})
+        for i in range(24):
+            seq = base + i
+            man.append({"type": "segment", "kind": "media", "file": f"p{fi}.mp4", "seq": seq,
+                        "mono_ms": seq * 2000 + 37, "wall_ms": G.W0 + seq * 2000 + 37,
+                        "frames": i * 2 * 60})
+    (b / "manifest.jsonl").write_text("\n".join(__import__("json").dumps(x) for x in man) + "\n")
+    assert abs(counter_fps(man) - 60.0) < 0.01
+
+    (b / "frame_clock.jsonl").write_text(_frame_clock())
+    fps, label = video_rate(b, __import__("json").loads((b / "bundle.json").read_text()), None, man)
+    assert fps == 60.0 and label == "60/1"
+
+    idx = build_index(b, tmp_path / "omp", frames=False)
+    assert idx["video"]["frame_rate"] == "60/1"
+    # no measured rate: legacy 30 vs per-file 60 is still marked, not a silent 30
+    (b / "frame_clock.jsonl").unlink()
+    idx = build_index(b, tmp_path / "omp-legacy", frames=False)
+    assert idx["video"]["frame_rate"].startswith("UNMEASURED: manifest frames counter runs at 60.00 fps, not legacy 30/1")
+
+
 # ---------------------------------------------------------------- referee end to end (synthetic fMP4)
 def _scenarios(tmp: Path, fps: int, **kw) -> dict:
     return {name: G.referee_projection(out) for name, _e, out in G.referee_scenarios(tmp, fps=fps, **kw) if name != "rule1"}
@@ -382,7 +463,8 @@ def test_referee_60fps_rule_v2_and_motion_match_30fps(tmp_path):
         lb = [c["latency_ms"] for c in b["challenges"]]
         assert len(lb) == 3 and all(abs(x - y) <= 1000 / 60 for x, y in zip(la, lb)), (la, lb)
         assert a["frame_rate"] is None
-        assert b["frame_rate"] == {"rate": "60/1", "source": "video.mp4 fMP4 sample durations", "clock_fit": "fitted"}
+        assert b["frame_rate"] == {"rate": "60/1", "unsnapped_mean": "60/1",
+                                  "source": "video.mp4 fMP4 sample durations", "clock_fit": "fitted"}
         ma, mb = a["checks"]["motion"]["detail"], b["checks"]["motion"]["detail"]
         assert b["checks"]["motion"]["state"] == "pass" and mb["clock_fallbacks"] == 0
         assert mb["bins"] == ma["bins"] and mb["excluded"] == ma["excluded"]

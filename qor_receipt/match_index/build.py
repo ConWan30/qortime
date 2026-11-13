@@ -295,16 +295,11 @@ def probe_r_frame_rate(video: Path) -> str | None:
     return out[0].strip() if r.returncode == 0 and out and out[0].strip() not in ("", "0/0") else None
 
 
-def counter_fps(manifest: list[dict]) -> float | None:
-    """Rate of the manifest ``frames`` counter itself (frames per second of mono time), least squares.
-
-    None when it cannot be estimated (fewer than 5 advancing points or under 10 s), e.g. a constant counter.
-    """
+def _counter_fps_fit(pts: list[tuple[float, float]]) -> float | None:
+    """Least-squares frames-per-second of mono time for one file's advancing ``frames`` points."""
     import math
 
-    pts = sorted((float(m["mono_ms"]), float(m["frames"])) for m in manifest
-                 if m.get("type") == "segment" and isinstance(m.get("frames"), (int, float)) and not isinstance(m.get("frames"), bool)
-                 and isinstance(m.get("mono_ms"), (int, float)) and not isinstance(m.get("mono_ms"), bool))
+    pts = sorted(pts)
     if len(pts) < 5 or pts[-1][0] - pts[0][0] < 10_000 or pts[-1][1] <= pts[0][1]:
         return None
     n = float(len(pts))
@@ -314,6 +309,42 @@ def counter_fps(manifest: list[dict]) -> float | None:
     if sxx <= 0:
         return None
     return math.fsum((p[0] - mx) * (p[1] - my) for p in pts) / sxx * 1000.0
+
+
+def counter_fps(manifest: list[dict]) -> float | None:
+    """Rate of the manifest ``frames`` counter itself (frames per second of mono time), least squares.
+
+    Fitted per file: QorCap resets the counter at each file (``align.rs`` ``file_clocks``). Init
+    segments and ``frames <= 0`` are excluded, matching ``capture_clock``. None when no file can
+    be estimated (fewer than 5 advancing points or under 10 s). Files that can be estimated must
+    agree within 5 %, else RateError.
+    """
+    from qor_receipt.review.rate import RateError
+
+    by_file: dict[str, list[tuple[float, float]]] = {}
+    for m in manifest:
+        if m.get("type") != "segment" or m.get("kind") == "init":
+            continue
+        fr, mono = m.get("frames"), m.get("mono_ms")
+        if isinstance(fr, bool) or isinstance(mono, bool):
+            continue
+        if not (isinstance(fr, (int, float)) and isinstance(mono, (int, float)) and fr > 0):
+            continue
+        key = m["file"] if isinstance(m.get("file"), str) else ""
+        by_file.setdefault(key, []).append((float(mono), float(fr)))
+    rates: list[tuple[str, float]] = []
+    for key, pts in by_file.items():
+        cf = _counter_fps_fit(pts)
+        if cf is not None:
+            rates.append((key or "manifest", cf))
+    if not rates:
+        return None
+    r0 = rates[0][1]
+    for name, r in rates[1:]:
+        if r0 == 0 or abs(r / r0 - 1.0) > 0.05:
+            shown = ", ".join(f"{n} {v:.2f} fps" for n, v in rates)
+            raise RateError(f"manifest frames counters disagree across files ({shown})")
+    return r0
 
 
 def video_rate(bdir: Path, bundle: dict, video: Path | None, manifest: list[dict] | None = None) -> tuple[float | None, str | None]:
@@ -334,10 +365,10 @@ def video_rate(bdir: Path, bundle: dict, video: Path | None, manifest: list[dict
             measured.append((f"{video.name} r_frame_rate", parse_rate(raw, f"{video.name} r_frame_rate")))
         measured += frame_clock_rates(_jsonl(bdir / "frame_clock.jsonl"))
         res = resolve(measured, declared_rate(bundle))
+        cf = counter_fps(manifest or [])
     except RateError as e:
         return None, f"UNMEASURED: {e}"
     fps = float(res.rate)
-    cf = counter_fps(manifest or [])
     if cf is not None and abs(cf / fps - 1.0) > 0.05:
         what = "legacy 30/1 (no measured rate)" if res.legacy else f"{label(res.rate)} from {res.source}"
         return None, f"UNMEASURED: manifest frames counter runs at {cf:.2f} fps, not {what}"
