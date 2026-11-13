@@ -10,9 +10,9 @@ Measured sources (the media itself):
 * the fMP4 the referee holds: video-track ``mdhd`` timescale x sample count / total stated sample
   duration (``trun`` per-sample, else ``tfhd`` default, else ``trex`` default). The base duration
   ``d`` is the most common sample duration. Samples within 1 tick of ``d`` set the rate (snapped to
-  ``N/1`` or ``N*1000/1001`` within 0.002 %). Samples within 1 tick of ``k*d`` for 2 <= k <= 8 are
-  gaps, allowed up to 0.1 % of samples; a shorter final sample per file is exempt. Anything else,
-  or more gaps than that, is a RateError. The mean of the in-rate samples, not the mode, so 59.94
+  ``N/1`` or ``N*1000/1001`` within 0.002 %). Samples within 1 tick of ``k`` times the in-rate mean
+  duration, for 2 <= k <= 8, are gaps, allowed up to ``max(1, total // 1000)`` of the samples; a
+  shorter final sample per file is exempt. Anything else, or more gaps than that, is a RateError. The mean of the in-rate samples, not the mode, so 59.94
   at a 90 kHz timescale (durations alternating 1501/1502) is exactly 60000/1001. The unsnapped mean
   and the gap count are kept alongside the snapped rate;
 * for match_index also ffprobe ``r_frame_rate`` of a supplied video and ``frame_clock.jsonl``
@@ -26,8 +26,8 @@ Rules:
 * ``bundle.json`` ``frame_rate`` is declared, not measured, and is not in the manifest chain. It only
   cross-checks a measured rate (within 1 %). Declared with nothing measured is UNMEASURED (RateError),
   never the rate. QorCap does not write it today.
-* Anything present but unusable, durations that are not in-rate or allowed gaps, too many gaps, a
-  mean that does not snap, or a disagreement raises ``RateError``. Every parse failure is a
+* Anything present but unusable, durations that are not in-rate or allowed gaps, more gaps than
+  ``max(1, total // 1000)``, a mean that does not snap, or a disagreement raises ``RateError``. Every parse failure is a
   RateError. Callers fail closed: the dependent check is not computed and says why. A measured rate
   is never replaced by 30, and an unknown rate is never a pass.
 
@@ -42,6 +42,7 @@ import array
 import re
 import struct
 import sys
+from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
 from fractions import Fraction
@@ -58,8 +59,9 @@ MIN_SAMPLES = 10                   # fewer stated samples than this is not a mea
 MAX_TRUN_SAMPLES = 65_536          # a single trun above this is refused (RateError), not walked
 MAX_TRUNS_PER_TRAF = 1024          # truns in one traf above this is a RateError
 MAX_BOXES_PER_MOOF = 1024          # child boxes in one moof above this is a RateError
-MAX_GAP_FRACTION = Fraction(1, 1000)  # gaps above 0.1 % of samples are a RateError
-MAX_GAP_K = 8                      # a gap is a sample within 1 tick of k*d, 2 <= k <= 8
+MAX_GAP_K = 8                      # a gap is a sample within 1 tick of k * in-rate mean, 2 <= k <= 8
+MAX_NON_TRUN_TRAF_CHILDREN = 1024  # non-trun children in one traf above this is a RateError
+MAX_BOXES_PER_FRAGMENT = 1024      # top-level boxes in one fragment above this is a RateError
 
 
 class RateError(ValueError):
@@ -152,8 +154,11 @@ class _Tally:
         self.last_dur = dur
 
     def add_durs(self, durs: array.array) -> None:
-        for d in durs:
-            self.add_const(1, int(d))
+        if not durs:
+            return
+        self.samples += len(durs)
+        self.counts.update(Counter(durs))
+        self.last_dur = int(durs[-1])
 
 
 def _sample_durations(payload: bytes | memoryview, start: int, count: int, per: int) -> array.array:
@@ -173,12 +178,21 @@ def _sample_durations(payload: bytes | memoryview, start: int, count: int, per: 
     return arr
 
 
-def _is_gap(dur: int, d: int) -> bool:
-    """True when ``dur`` is within 1 tick of ``k*d`` for 2 <= k <= MAX_GAP_K."""
-    if d <= 0:
+def _gap_budget(total: int) -> int:
+    """A short file may have one gap; otherwise at most 0.1 % of samples (integer)."""
+    return max(1, total // 1000)
+
+
+def _is_gap(dur: int, mean: Fraction) -> bool:
+    """True when ``dur`` is within 1 tick of ``k * mean`` for 2 <= k <= MAX_GAP_K.
+
+    ``mean`` is the in-rate mean duration (the average of samples within 1 tick of the modal
+    ``d``), not ``d`` itself, so a k-frame hole at 59.94 / 90 kHz (mean 1501.5) is accepted.
+    """
+    if mean <= 0:
         return False
     for k in range(2, MAX_GAP_K + 1):
-        if abs(dur - k * d) <= 1:
+        if abs(dur - k * mean) <= 1:
             return True
     return False
 
@@ -212,16 +226,21 @@ def _add_fragment(tally: _Tally, fragment: bytes, track: int | None, trex_dur: i
     A sample count larger than the bytes present can carry (per-sample fields in the ``trun``, or one
     byte of media data per sample in the fragment) is a RateError, so a crafted u32 count costs nothing.
     A count above ``MAX_TRUN_SAMPLES`` is a RateError without walking the rows. More than
-    ``MAX_TRUNS_PER_TRAF`` truns in a traf, or more than ``MAX_BOXES_PER_MOOF`` child boxes in a moof,
-    is a RateError. Per-sample durations are read in bulk (``array`` / ``struct``). Truns are parsed
-    on a second walk of the traf so they are not collected into a list (tfhd is first by spec, but a
-    crafted order still sees it).
+    ``MAX_TRUNS_PER_TRAF`` truns in a traf, more than ``MAX_NON_TRUN_TRAF_CHILDREN`` other children
+    in a traf, more than ``MAX_BOXES_PER_MOOF`` child boxes in a moof, or more than
+    ``MAX_BOXES_PER_FRAGMENT`` top-level boxes in a fragment, is a RateError. Per-sample durations
+    are read in bulk (``array`` / ``struct``). Truns are parsed on a second walk of the traf so they
+    are not collected into a list (tfhd is first by spec, but a crafted order still sees it).
 
     Parsing stops at the first ``mdat``, so a segment with several moof/mdat pairs contributes only
     its first moof. For a constant rate the value is unchanged; there are just fewer samples.
     """
     budget = len(fragment)
+    n_top = 0
     for t, moof in _boxes(fragment):
+        n_top += 1
+        if n_top > MAX_BOXES_PER_FRAGMENT:
+            raise RateError(f"fragment has more than {MAX_BOXES_PER_FRAGMENT} boxes")
         if t == b"mdat":
             break
         if t != b"moof":
@@ -234,18 +253,22 @@ def _add_fragment(tally: _Tally, fragment: bytes, track: int | None, trex_dur: i
             if t2 != b"traf":
                 continue
             tid = default = None
-            n_truns = 0
+            n_truns = n_other = 0
             for t3, p in _boxes(traf):
+                if t3 == b"trun":
+                    n_truns += 1
+                    if n_truns > MAX_TRUNS_PER_TRAF:
+                        raise RateError(f"traf has more than {MAX_TRUNS_PER_TRAF} truns")
+                else:
+                    n_other += 1
+                    if n_other > MAX_NON_TRUN_TRAF_CHILDREN:
+                        raise RateError(f"traf has more than {MAX_NON_TRUN_TRAF_CHILDREN} non-trun boxes")
                 if t3 == b"tfhd" and len(p) >= 8:
                     flags = int.from_bytes(p[1:4], "big")
                     tid = _u32(p, 4)
                     i = 8 + (8 if flags & 0x01 else 0) + (4 if flags & 0x02 else 0)
                     if flags & 0x08:
                         default = _u32(p, i)
-                elif t3 == b"trun":
-                    n_truns += 1
-                    if n_truns > MAX_TRUNS_PER_TRAF:
-                        raise RateError(f"traf has more than {MAX_TRUNS_PER_TRAF} truns")
             if track is not None and tid != track:
                 continue
             fallback = default if default is not None else trex_dur
@@ -258,8 +281,9 @@ def _fmp4_measure(init: bytes, fragments: Iterable[bytes | None]) -> Measured | 
     """Unsnapped in-rate mean and accepted gap count, or None when no duration is stated.
 
     RateError when the stated durations are unusable: fewer than MIN_SAMPLES in-rate samples, a zero
-    total, a duration that is not within 1 tick of the base ``d`` or of ``k*d`` (2..8), more than
-    0.1 % gap samples, or any parse failure. A final sample shorter than ``d`` is exempt.
+    total, a duration that is not within 1 tick of the base ``d`` or of ``k`` times the in-rate mean
+    (2..8), more gaps than ``max(1, total // 1000)``, or any parse failure. A final sample shorter
+    than ``d`` is exempt.
     """
     try:
         track, timescale = _video_track(init or b"")
@@ -288,27 +312,35 @@ def _fmp4_measure(init: bytes, fragments: Iterable[bytes | None]) -> Measured | 
             counts[ld] = left
         else:
             counts.pop(ld, None)
-    inrate_n = inrate_dur = gaps = 0
+    inrate_n = inrate_dur = 0
+    leftover: list[tuple[int, int]] = []
     for dur, n in counts.items():
         if abs(dur - d) <= 1:
             inrate_n += n
             inrate_dur += n * dur
-        elif _is_gap(dur, d):
+        else:
+            leftover.append((dur, n))
+    mean_dur = Fraction(inrate_dur, inrate_n) if inrate_n and inrate_dur > 0 else Fraction(d, 1)
+    gaps = 0
+    for dur, n in leftover:
+        if inrate_n and _is_gap(dur, mean_dur):
             gaps += n
         else:
             raise RateError(
                 f"fMP4 sample durations are not constant: duration {dur} ticks is not within 1 tick "
-                f"of base {d} or k*{d} (2..{MAX_GAP_K})"
+                f"of base {d} or k times the in-rate mean {float(mean_dur):.3f} (2..{MAX_GAP_K})"
             )
-    total = tally.samples
-    if total > 0 and Fraction(gaps, total) > MAX_GAP_FRACTION:
-        raise RateError(
-            f"fMP4 has {gaps} gap sample(s) in {total} ({100.0 * gaps / total:.3f} %), above 0.1 %"
-        )
     if inrate_n < MIN_SAMPLES or inrate_dur <= 0:
         raise RateError(
             f"fMP4 states {tally.samples} sample(s) with {inrate_n} in-rate and total duration "
             f"{inrate_dur}: not a measurable rate"
+        )
+    total = tally.samples
+    budget = _gap_budget(total)
+    if gaps > budget:
+        raise RateError(
+            f"fMP4 has {gaps} gap sample(s) in {total} ({100.0 * gaps / total:.3f} %), "
+            f"above the budget of {budget}"
         )
     return Measured(Fraction(timescale * inrate_n, inrate_dur), gaps, tally.last_dur, timescale, d)
 
@@ -319,7 +351,7 @@ def fmp4_rate(init: bytes, fragments: Iterable[bytes | None]) -> Fraction | None
     None when the init has no video timescale or no fragment states a sample duration (no
     information; the legacy default applies upstream). RateError for a stated rate that is unusable:
     fewer than MIN_SAMPLES in-rate samples, a zero total, a duration that is not an allowed gap,
-    too many gaps, a mean that does not snap, or any parse failure.
+    more gaps than ``max(1, total // 1000)``, a mean that does not snap, or any parse failure.
     """
     measured = _fmp4_measure(init, fragments)
     return None if measured is None else snap(measured.mean, "fMP4 video sample durations")

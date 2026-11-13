@@ -264,10 +264,12 @@ def test_frame_clock_rates_mirror_align_rs():
 
 
 # ---------------------------------------------------------------- engine: fail closed, never a 30 guess
-def _sub(meta: dict, files: dict[int, bytes]):
+def _sub(meta: dict, files: dict[int, bytes], *, decode=None, random_sample=(), mode="spot-check"):
     segs = [{"seq": s, "file": "video.mp4", "offset": 0 if s == 0 else s * 100, "mono_ms": s * 2000} for s in sorted(files)]
     b = SimpleNamespace(meta=meta, segments=segs)
-    return SimpleNamespace(bundle=b, received={s: 1 for s in files}, decode=set(files)), files.get
+    return SimpleNamespace(bundle=b, received={s: 1 for s in files},
+                           decode=set(files) if decode is None else set(decode),
+                           random_sample=list(random_sample), mode=mode), files.get
 
 
 def test_engine_frame_rate_is_measured_legacy_or_an_error():
@@ -614,3 +616,226 @@ def test_referee_mixed_or_garbage_rate_fails_closed(tmp_path, meta, why):
         mo = p["checks"]["motion"]
         assert mo["state"] != "pass" and why in mo["detail"]["note"]
         assert p["frame_rate"]["rate"] == "UNMEASURED" and why in p["frame_rate"]["reason"]
+
+
+
+# ---------------------------------------------------------------- QorProof #130 r4 L2 / L3 / L4
+def test_r4_l2_one_gap_in_a_short_file_is_accepted():
+    """A file with fewer than 1000 samples may still have one gap (budget max(1, total//1000))."""
+    n = 300
+    durs = [256] * n
+    durs[n // 2] = 512
+    got = RT._fmp4_measure(_init(), [_frag(durs=durs)])
+    assert got is not None and got.gaps == 1 and RT.snap(got.mean, "t") == 60
+    assert RT.fmp4_rate(_init(), [_frag(durs=durs)]) == 60
+    res = RT.bundle_rate({}, [("v.mp4", _init(), [_frag(durs=durs)])])
+    assert res.rate == 60 and res.gaps == 1
+
+
+def test_r4_l2_spot_sample_does_not_change_the_rate():
+    """The SystemRandom spot sample is not part of the rate measurement, so two seeds agree."""
+    from qor_receipt.review.engine import Referee
+
+    init, always = _init(), _frag(durs=[256] * 120)
+    gapped = _frag(durs=[256] * 299 + [512])  # one hole, only in the spot-sampled segment
+    files = {0: init, 1: always, 2: gapped}
+    ra = Referee._frame_rate(None, *_sub({}, files, decode={0, 1, 2}, random_sample=[2]))
+    rb = Referee._frame_rate(None, *_sub({}, files, decode={0, 1}, random_sample=[]))
+    assert ra == rb and ra.rate == 60 and ra.gaps == 0
+    # if that gapped segment were always-decoded, the hole would be counted
+    rc = Referee._frame_rate(None, *_sub({}, files, decode={0, 1, 2}, random_sample=[]))
+    assert rc.rate == 60 and rc.gaps == 1
+
+
+def test_r4_l3_ntsc_90khz_k3_to_k8_gaps_are_accepted():
+    """At 59.94 / 90 kHz a k-frame hole is k*1501.5, which is >= 2 ticks from k*d for k>=4."""
+    timescale, rate = 90_000, Fraction(60000, 1001)
+    n = 6000  # 6 gaps need total // 1000 >= 6
+    durs = _alternating(timescale, timescale / rate, n)
+    # mid-file holes, not the last sample; use the muxer's floor/ceil of k * 1501.5
+    mean = Fraction(3003, 2)
+    for i, k in enumerate(range(3, 9)):
+        durs[100 + i * 100] = int(round(k * mean))
+    got = RT._fmp4_measure(_init(timescale=timescale), [_frag(durs=durs)])
+    assert got is not None and got.gaps == 6 and RT.snap(got.mean, "t") == rate
+    assert RT.fmp4_rate(_init(timescale=timescale), [_frag(durs=durs)]) == rate
+
+
+def test_r4_ntsc_30000_1001_with_gaps():
+    timescale, rate = 90_000, Fraction(30000, 1001)
+    n = 1000
+    durs = _alternating(timescale, timescale / rate, n)
+    assert set(durs) == {3003}
+    durs[100] = 3 * 3003  # k=3, exact at 29.97 / 90 kHz
+    got = RT._fmp4_measure(_init(timescale=timescale), [_frag(durs=durs)])
+    assert got is not None and got.gaps == 1 and RT.snap(got.mean, "t") == rate
+    assert RT.fmp4_rate(_init(timescale=timescale), [_frag(durs=durs)]) == rate
+
+
+@pytest.mark.parametrize("k,ok", [(8, True), (9, False)])
+def test_r4_eight_vs_nine_frame_gap(k, ok):
+    durs = [256] * 1000
+    durs[10] = k * 256
+    if ok:
+        got = RT._fmp4_measure(_init(), [_frag(durs=durs)])
+        assert got is not None and got.gaps == 1 and RT.snap(got.mean, "t") == 60
+    else:
+        with pytest.raises(RT.RateError, match="not constant"):
+            RT.fmp4_rate(_init(), [_frag(durs=durs)])
+
+
+def test_r4_l4_traf_non_trun_and_fragment_box_caps():
+    tfhd = _full(b"tfhd", 0x020008, _u32(1) + _u32(256))
+    tfdt = _full(b"tfdt", 0, _u32(0))
+    trun = _full(b"trun", 0x000001, _u32(1) + _u32(0))
+    free = _box(b"free", b"")
+
+    def traf_with_other(n_other: int, n_truns: int = 12) -> bytes:
+        # n_other counts every non-trun child (tfhd, tfdt, then free padding)
+        pad = n_other - 2
+        assert pad >= 0
+        traf = _box(b"traf", tfhd + tfdt + free * pad + trun * n_truns)
+        return _box(b"moof", _full(b"mfhd", 0, _u32(1)) + traf) + _box(b"mdat", bytes(64))
+
+    with pytest.raises(RT.RateError, match="non-trun"):
+        RT.fmp4_rate(_init(), [traf_with_other(1025)])
+    assert RT.fmp4_rate(_init(), [traf_with_other(1024)]) == 60
+
+    good = _frag(default=256, audio=False, count=120)
+    with pytest.raises(RT.RateError, match="fragment has more than"):
+        RT.fmp4_rate(_init(), [free * 1023 + good])  # 1023 free + moof + mdat = 1025
+    assert RT.fmp4_rate(_init(), [free * 1022 + good]) == 60  # 1024 top-level boxes
+
+
+def _inject_one_gap(fragment: bytes, k: int = 2) -> bytes:
+    """Rewrite a video trun so one non-last sample duration is k times the base; mdat is unchanged."""
+    def walk(data: bytes) -> list[tuple[bytes, bytes]]:
+        out, i = [], 0
+        while i + 8 <= len(data):
+            size = int.from_bytes(data[i:i + 4], "big")
+            typ = data[i + 4:i + 8]
+            if size < 8 or i + size > len(data):
+                break
+            out.append((typ, data[i + 8:i + size]))
+            i += size
+        return out
+
+    tops = walk(fragment)
+    # rebuild only the first moof; keep any trailing boxes (mdat) as-is after it
+    rebuilt = b""
+    seen_moof = False
+    for typ, payload in tops:
+        box = (8 + len(payload)).to_bytes(4, "big") + typ + payload
+        if typ == b"moof" and not seen_moof:
+            seen_moof = True
+            kids = walk(payload)
+            new_kids = []
+            for t2, p2 in kids:
+                if t2 != b"traf":
+                    new_kids.append(_box(t2, p2))
+                    continue
+                inner = walk(p2)
+                default = tid = None
+                # first pass: tfhd
+                for t3, p3 in inner:
+                    if t3 == b"tfhd" and len(p3) >= 8:
+                        flags = int.from_bytes(p3[1:4], "big")
+                        tid = int.from_bytes(p3[4:8], "big")
+                        j = 8 + (8 if flags & 0x01 else 0) + (4 if flags & 0x02 else 0)
+                        if flags & 0x08 and len(p3) >= j + 4:
+                            default = int.from_bytes(p3[j:j + 4], "big")
+                if tid not in (None, 1):
+                    new_kids.append(_box(t2, p2))
+                    continue
+                new_inner = []
+                for t3, p3 in inner:
+                    if t3 != b"trun" or len(p3) < 8:
+                        new_inner.append(_box(t3, p3))
+                        continue
+                    flags = int.from_bytes(p3[1:4], "big")
+                    count = int.from_bytes(p3[4:8], "big")
+                    j = 8 + (4 if flags & 0x01 else 0) + (4 if flags & 0x04 else 0)
+                    if flags & 0x100:
+                        per = 4 * sum(1 for f in (0x100, 0x200, 0x400, 0x800) if flags & f)
+                        rows = bytearray(p3[j:j + per * count])
+                        mid = (count // 2) * per
+                        base = int.from_bytes(rows[mid:mid + 4], "big")
+                        if base <= 0 and default:
+                            base = default
+                        rows[mid:mid + 4] = (k * base).to_bytes(4, "big")
+                        new_inner.append(_full(b"trun", flags, p3[4:j] + bytes(rows) + p3[j + per * count:]))
+                    elif default:
+                        # promote to per-sample durations (interleaved with existing size rows)
+                        head = bytearray(p3[4:j])  # count + optional data_offset + first flags
+                        if flags & 0x01:
+                            doff = int.from_bytes(head[4:8], "big") + 4 * count
+                            head[4:8] = doff.to_bytes(4, "big")
+                        mid = count // 2
+                        old_per = 4 * sum(1 for f in (0x200, 0x400, 0x800) if flags & f)
+                        rows = bytearray()
+                        for i in range(count):
+                            dur = k * default if i == mid else default
+                            rows += dur.to_bytes(4, "big")
+                            if old_per:
+                                rows += p3[j + i * old_per:j + (i + 1) * old_per]
+                        new_flags = flags | 0x100
+                        new_inner.append(_full(b"trun", new_flags, bytes(head) + bytes(rows)))
+                    else:
+                        new_inner.append(_box(t3, p3))
+                new_kids.append(_box(b"traf", b"".join(new_inner)))
+            moof = _box(b"moof", b"".join(new_kids))
+            rebuilt += moof
+        else:
+            rebuilt += box
+    return rebuilt
+
+
+@pytest.mark.skipif(not HAVE_FFMPEG, reason="ffmpeg needed for the synthetic fMP4 bundle")
+def test_r4_referee_one_gap_is_ok(tmp_path, monkeypatch):
+    """A full referee review of a 60 fps synthetic bundle with one stated PTS hole comes out ok."""
+    import random
+
+    import review_fixture as F
+    from test_referee_service import Env
+
+    orig = F.split_fmp4
+
+    def split(data):
+        segs = orig(data)
+        # a mid-file media fragment (not the last sample of the last segment)
+        segs[2] = _inject_one_gap(segs[2], k=2)
+        return segs
+
+    monkeypatch.setattr(F, "split_fmp4", split)
+    e = Env(tmp_path / "g", tail_ms=8_000, k=4, fps=60, pts_offset_ms=7_000)
+    # live-counter rule v2, same rewrite as the 60 fps e2e
+    lines = []
+    for line in e.fx["files"]["manifest.jsonl"].decode().splitlines():
+        if not line.strip():
+            continue
+        m = json.loads(line)
+        if m.get("kind") != "init":
+            m["frames"] = int(round((int(m["mono_ms"]) + 7_000) * 60 / 1000))
+        lines.append(json.dumps(m))
+    e.fx["files"]["manifest.jsonl"] = ("\n".join(lines) + "\n").encode()
+    meta = json.loads(e.fx["files"]["bundle.json"])
+    meta["challenge_rule"] = 2
+    e.fx["files"]["bundle.json"] = json.dumps(meta).encode()
+
+    outs = []
+    for seed in (1, 99):
+        e.ref.rng = random.Random(seed)
+        sub = e.submit()
+        e.upload_all(sub)
+        out = e.ref.review(sub)
+        outs.append(G.referee_projection(out))
+    a, b = outs
+    for p in (a, b):
+        assert p["checks"]["challenges"]["state"] == "pass" and p["checks"]["challenges"]["detail"]["notes"] == [], p["checks"]
+        assert p["frame_rate"]["rate"] == "60/1" and p["frame_rate"]["gaps"] == 1
+        assert p["checks"]["motion"]["state"] == "pass"
+        assert all((c or {}).get("ok") for c in p["challenges"])
+    # different spot-sample seeds must not change the rate or the verdict
+    assert a["frame_rate"] == b["frame_rate"]
+    assert a["checks"]["challenges"]["state"] == b["checks"]["challenges"]["state"]
+    assert [c.get("ok") for c in a["challenges"]] == [c.get("ok") for c in b["challenges"]]

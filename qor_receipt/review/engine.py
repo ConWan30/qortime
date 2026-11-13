@@ -528,14 +528,18 @@ class Referee:
     def _frame_rate(self, sub: Submission, rd) -> Resolved | RateError:
         """The recording's frame rate from the fMP4 the referee holds (``review.rate``).
 
-        Fragments are read one at a time and only their ``moof`` is parsed. No rate information is the
-        legacy 30/1, so older bundles keep their exact arithmetic. A rate that is present but unusable,
-        mixed across files, or any parse failure comes back as a RateError; the checks that need the
-        capture clock then fail closed with that reason instead of assuming 30.
+        Fragments are read one at a time and only their ``moof`` is parsed. The rate is measured on
+        the always-decoded set only (inits, recorded tail, challenge segments, motion draws), never
+        on the SystemRandom spot sample, so a resubmit of the same bundle cannot change the rate or
+        the verdict. No rate information is the legacy 30/1, so older bundles keep their exact
+        arithmetic. A rate that is present but unusable, mixed across files, or any parse failure
+        comes back as a RateError; the checks that need the capture clock then fail closed with that
+        reason instead of assuming 30.
         """
         b = sub.bundle
         try:
-            seqs = sorted(s for s in sub.received if s in sub.decode)
+            always = set(sub.decode) - set(sub.random_sample or ())
+            seqs = sorted(s for s in sub.received if s in always)
             by_init: dict[int, list[int]] = {}
             for run in M.runs(seqs, b):
                 init = M.init_seq_for(b, run[0])
