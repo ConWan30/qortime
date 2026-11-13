@@ -42,8 +42,25 @@ def test_match_index_30fps_golden_is_byte_identical():
 
 
 @pytest.mark.skipif(not HAVE_FFMPEG, reason="ffmpeg needed for the synthetic fMP4 bundle")
-def test_referee_verdict_and_report_30fps_golden_is_byte_identical():
+def test_referee_verdict_and_report_30fps_golden_is_byte_identical(tmp_path):
     assert G.referee_golden() == (GOLD / "referee_30fps_fda7b51.json").read_text(encoding="utf-8")
+    # The pre-fix projection ignores frame_rate; the 30 fps record is asserted here.
+    # rule1 and rule2_live_counter use the synthetic default clock (fallback);
+    # rule2_close_lag_4s fits.
+    expected_fit = {
+        "rule1": "fallback",
+        "rule2_live_counter": "fallback",
+        "rule2_close_lag_4s": "fitted",
+    }
+    for name, _e, out in G.referee_scenarios(tmp_path / "fr"):
+        rec = (out.get("review") or {}).get("frame_rate")
+        assert rec == {
+            "rate": "30/1",
+            "source": "video.mp4 fMP4 sample durations",
+            "unsnapped_mean": "30/1",
+            "gaps": 0,
+            "clock_fit": expected_fit[name],
+        }, (name, rec)
 
 
 # ---------------------------------------------------------------- capture clock at 60 fps
@@ -287,24 +304,63 @@ def test_engine_frame_rate_is_measured_legacy_or_an_error():
     assert isinstance(Referee._frame_rate(None, sub, rd), RT.RateError)
 
 
-def test_l3_rate_record_is_omitted_at_30_and_written_otherwise():
+def test_l3_rate_record_is_always_emitted():
     from qor_receipt.review.engine import Referee
 
+    segs30 = [dict(s, type="segment") for s in _counter(30)]
     segs60 = [dict(s, type="segment") for s in _counter(60)]
-    assert Referee._rate_record(RT.Resolved(Fraction(30), "legacy"), segs60) is None
-    assert Referee._rate_record(RT.Resolved(Fraction(30), "x fMP4 sample durations"), segs60) is None
+    # 30 fps legacy (no measured source)
+    rec = Referee._rate_record(RT.Resolved(Fraction(30), "legacy"), segs30)
+    assert rec == {
+        "rate": "30/1", "unsnapped_mean": None, "source": "legacy", "clock_fit": "fitted", "gaps": 0,
+    }
+    # 30 fps measured
+    rec = Referee._rate_record(RT.Resolved(Fraction(30), "video.mp4 fMP4 sample durations", Fraction(30)), segs30)
+    assert rec == {
+        "rate": "30/1", "unsnapped_mean": "30/1", "source": "video.mp4 fMP4 sample durations",
+        "clock_fit": "fitted", "gaps": 0,
+    }
+    # 30 fps gap count is shown
+    rec = Referee._rate_record(RT.Resolved(Fraction(30), "x", Fraction(30), gaps=1), segs30)
+    assert rec["rate"] == "30/1" and rec["gaps"] == 1 and rec["source"] == "x"
+    # 60 fps unchanged
     assert Referee._rate_record(RT.Resolved(Fraction(60), "x", Fraction(60)), segs60) == {
         "rate": "60/1", "unsnapped_mean": "60/1", "source": "x", "clock_fit": "fitted", "gaps": 0,
     }
     assert Referee._rate_record(RT.Resolved(Fraction(60), "x"), segs60) == {
         "rate": "60/1", "unsnapped_mean": None, "source": "x", "clock_fit": "fitted", "gaps": 0,
     }
-    # a 30/1 rate with a recorded hole still omits the record (goldens stay byte-identical)
-    assert Referee._rate_record(RT.Resolved(Fraction(30), "x", Fraction(30), gaps=1), segs60) is None
+    # 30000/1001 is emitted
+    ntsc = Fraction(30000, 1001)
+    rec = Referee._rate_record(RT.Resolved(ntsc, "x", ntsc), segs30)
+    assert rec["rate"] == "30000/1001" and rec["unsnapped_mean"] == "30000/1001" and rec["source"] == "x"
     flat = [{"kind": "media", "frames": 120, "mono_ms": i * 2000} for i in range(1, 10)]
     assert Referee._rate_record(RT.Resolved(Fraction(60), "x", Fraction(60)), flat)["clock_fit"] == "fallback"
     rec = Referee._rate_record(RT.RateError("mixed frame rates: a"), flat)
     assert rec["rate"] == "UNMEASURED" and "mixed" in rec["reason"] and rec["clock_fit"] == "not_computed"
+    assert rec.get("source") is None
+
+
+def test_r2_l3_30fps_legacy_bundle_json_only_is_legacy_source():
+    """No sample durations and no declared rate: source is legacy, not UNMEASURED."""
+    from qor_receipt.review.engine import Referee
+
+    sub, rd = _sub({}, {0: _init(), 1: _frag()})  # no duration source; bundle.json only
+    rate = Referee._frame_rate(None, sub, rd)
+    assert rate.legacy and rate.rate == 30
+    rec = Referee._rate_record(rate, [dict(s, type="segment") for s in _counter(30)])
+    assert rec["rate"] == "30/1" and rec["source"] == "legacy" and rec["unsnapped_mean"] is None and rec["gaps"] == 0
+
+
+def test_r2_l3_30fps_declared_only_is_unmeasured():
+    """bundle.json frame_rate alone, with nothing measured, is UNMEASURED."""
+    from qor_receipt.review.engine import Referee
+
+    sub, rd = _sub({"frame_rate": "30/1"}, {0: _init(), 1: _frag()})
+    rate = Referee._frame_rate(None, sub, rd)
+    assert isinstance(rate, RT.RateError)
+    rec = Referee._rate_record(rate, [])
+    assert rec["rate"] == "UNMEASURED" and rec["source"] is None and "declared only" in rec["reason"]
 
 
 def test_motion_with_an_unknown_rate_is_not_computed(monkeypatch):
@@ -336,6 +392,7 @@ def test_match_index_60fps_seek_times_equal_30fps(tmp_path):
     assert i60["video"]["recording_duration_s"] == i30["video"]["recording_duration_s"]
     assert i60["video"]["frame_rate"] == "60/1" and "frames/(60/1)" in i60["video"]["alignment_note"]
     assert "frame_rate" not in i30["video"]
+    assert i30["video"]["legacy_note"].startswith("legacy 30/1 (counter-consistent, cf=")
 
 
 def test_l4_default_60fps_bundle_without_a_rate_source_is_marked(tmp_path):
@@ -469,10 +526,11 @@ def test_r3_m1_one_doubled_sample_is_accepted(timescale, d, rate):
     assert res.rate == rate and res.gaps == 1
     from qor_receipt.review.engine import Referee
     rec = Referee._rate_record(res, [{"kind": "media", "frames": 120, "mono_ms": i * 2000} for i in range(1, 12)])
+    assert rec is not None and rec["gaps"] == 1
     if rate == 30:
-        assert rec is None  # still omitted at 30/1, goldens unchanged
+        assert rec["rate"] == "30/1"
     else:
-        assert rec is not None and rec["gaps"] == 1 and rec["rate"] == "60/1"
+        assert rec["rate"] == "60/1"
 
 
 def test_r3_m1_two_percent_doubled_is_refused():
@@ -573,7 +631,8 @@ def test_r3_l3_qorcap_mpegts_copy_remux_rate(tmp_path, fps, rate):
     from qor_receipt.review.engine import Referee
     rec = Referee._rate_record(res, [{"kind": "media", "frames": fps * 2 * i, "mono_ms": i * 2000} for i in range(1, 12)])
     if fps == 30:
-        assert rec is None  # 30 fps record still omitted
+        assert rec == {"rate": "30/1", "unsnapped_mean": "30/1", "source": "video.mp4 fMP4 sample durations",
+                       "clock_fit": "fallback", "gaps": 0}
     else:
         assert rec == {"rate": "60/1", "unsnapped_mean": "60/1", "source": "video.mp4 fMP4 sample durations",
                        "clock_fit": "fallback", "gaps": 0}
@@ -596,7 +655,8 @@ def test_referee_60fps_rule_v2_and_motion_match_30fps(tmp_path):
         la = [c["latency_ms"] for c in a["challenges"]]
         lb = [c["latency_ms"] for c in b["challenges"]]
         assert len(lb) == 3 and all(abs(x - y) <= 1000 / 60 for x, y in zip(la, lb)), (la, lb)
-        assert a["frame_rate"] is None
+        assert a["frame_rate"] == {"rate": "30/1", "unsnapped_mean": "30/1", "gaps": 0,
+                                  "source": "video.mp4 fMP4 sample durations", "clock_fit": "fitted"}
         assert b["frame_rate"] == {"rate": "60/1", "unsnapped_mean": "60/1", "gaps": 0,
                                   "source": "video.mp4 fMP4 sample durations", "clock_fit": "fitted"}
         ma, mb = a["checks"]["motion"]["detail"], b["checks"]["motion"]["detail"]

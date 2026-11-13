@@ -555,11 +555,13 @@ class Referee:
 
     @staticmethod
     def _rate_record(rate: Resolved | RateError, segments: list[dict[str, Any]]) -> dict[str, Any] | None:
-        """``review.frame_rate``: informational, not a check. Omitted at 30/1 so 30 fps reviews keep their bytes."""
+        """``review.frame_rate``: informational, not a check. Always emitted, including at 30/1.
+
+        Verdicts do not depend on this record. A RateError is still fail-closed in the checks that
+        need the capture clock; this key only reports it.
+        """
         if isinstance(rate, RateError):
             return {"rate": "UNMEASURED", "reason": str(rate), "source": None, "clock_fit": "not_computed"}
-        if rate.rate == 30:
-            return None
         fps = float(rate.rate)
         fitted = capture_clock(segments, fps) != (0.0, 1000.0 / fps)
         rec = {"rate": label(rate.rate), "source": rate.source, "clock_fit": "fitted" if fitted else "fallback"}

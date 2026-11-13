@@ -341,7 +341,6 @@
    }
   },
   "errors": [],
-  "frame_rate": null,
   "result": {
    "away_score": 7,
    "final_basis": "end_menu",
@@ -679,7 +678,6 @@
    }
   },
   "errors": [],
-  "frame_rate": null,
   "result": {
    "away_score": 7,
    "final_basis": "end_menu",
@@ -1017,7 +1015,6 @@
    }
   },
   "errors": [],
-  "frame_rate": null,
   "result": {
    "away_score": 7,
    "final_basis": "end_menu",

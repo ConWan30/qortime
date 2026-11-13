@@ -8,9 +8,11 @@ The committed goldens were generated from pre-fix main fda7b51 with:
 
 The referee golden was regenerated on fda7b51's product code (qor_receipt/ at fda7b51, this tests/
 tree) after encoder-size fields were stripped and ``review.frame_rate`` was added to the projection.
+This follow-up always emits ``review.frame_rate`` (including at 30/1). The pre-fix golden comparison
+ignores that key (dropped from the golden projection) so checks, timing and outcomes stay
+byte-identical; the 30/1 record is asserted separately. ``match_index_golden`` strips ``legacy_note``.
 ``referee`` needs ffmpeg (it builds the synthetic fMP4 bundle in tests/review_fixture.py).
-Only public call shapes that exist on fda7b51 are used, so the same script runs before and after
-the fix. Synthetic data only.
+Synthetic data only.
 """
 from __future__ import annotations
 
@@ -120,7 +122,10 @@ def match_index_golden() -> str:
     with tempfile.TemporaryDirectory() as t:
         b = match_index_bundle(Path(t) / "b")
         build_index(b, Path(t) / "o", frames=False)
-        return (Path(t) / "o" / "match_index.json").read_text(encoding="utf-8")
+        idx = json.loads((Path(t) / "o" / "match_index.json").read_text(encoding="utf-8"))
+        # legacy_note is outside the pre-fix golden projection
+        (idx.get("video") or {}).pop("legacy_note", None)
+        return json.dumps(idx, indent=2)
 
 
 VOLATILE = {"pubkey", "key_id", "sig", "signature", "submission", "id", "nonce", "pattern", "issuer", "hid_sha256", "commit",
@@ -190,7 +195,10 @@ def referee_golden() -> str:
     doc = {}
     with tempfile.TemporaryDirectory() as t:
         for name, e, out in referee_scenarios(Path(t)):
-            doc[name] = referee_projection(out)
+            # Pre-fix comparison ignores frame_rate so checks and outcomes stay byte-identical.
+            proj = referee_projection(out)
+            proj.pop("frame_rate", None)
+            doc[name] = proj
         # Recorder-side re-run (review/local.py) on the rule-1 bundle as written to disk.
         e_dir = Path(t) / "rule1" / "bundle"
         rec = json.loads((e_dir / "receipt.json").read_text())
