@@ -367,8 +367,10 @@ def video_rate(bdir: Path, bundle: dict, video: Path | None, manifest: list[dict
 
     Measured sources (must be equal): ffprobe ``r_frame_rate`` of the supplied video, ``frame_clock.jsonl``
     in the bundle (mean PTS step, snapped). ``bundle.json`` ``frame_rate`` only cross-checks them (1 %).
-    None of them -> legacy 30/1 (every older bundle; output unchanged). Then the manifest counter's own
+    None of them -> legacy 30/1 (every older bundle). Then the manifest counter's own
     rate must be within 5 % of the chosen rate; a 60 fps counter read at the legacy 30 is caught here.
+    The legacy return is still ``(30, None)`` so a 30 fps index keeps its exact ``frame_rate`` /
+    ``alignment_note`` bytes; ``build_index`` adds a separate ``legacy_note``.
     Unusable, mixed or contradicted -> (None, "UNMEASURED: why").
     """
     from qor_receipt.review.rate import RateError, declared_rate, frame_clock_rates, label, parse_rate, resolve
@@ -543,10 +545,17 @@ def _build(bdir: Path, out: Path, video: Path | None, video_tail: bool | None, f
         "missing": missing, "events": events,
     }
     if rate_label is not None:
-        # Only off 30/1, so a 30 fps index keeps its exact bytes.
+        # Only off 30/1, so a 30 fps index keeps its exact bytes for frame_rate / alignment_note.
         idx["video"]["frame_rate"] = rate_label
         idx["video"]["alignment_note"] = (idx["video"]["alignment_note"].replace("frames/30", f"frames/({rate_label})")
                                           if fps else "frame rate unknown: no video time is given (fail closed)")
+    elif fps == FPS:
+        # Legacy 30/1, counter-consistent. A separate note, outside the golden projection.
+        cf = counter_fps(manifest)
+        idx["video"]["legacy_note"] = (
+            f"legacy 30/1 (counter-consistent, cf={cf:.2f} fps)" if cf is not None
+            else "legacy 30/1 (no measured rate)"
+        )
     (out / "match_index.json").write_text(json.dumps(idx, indent=2), encoding="utf-8")
     from qor_receipt.match_index.viewer import write_viewer
 
