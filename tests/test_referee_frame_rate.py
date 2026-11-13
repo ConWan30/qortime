@@ -312,7 +312,7 @@ def test_l3_rate_record_is_always_emitted():
     # 30 fps legacy (no measured source)
     rec = Referee._rate_record(RT.Resolved(Fraction(30), "legacy"), segs30)
     assert rec == {
-        "rate": "30/1", "unsnapped_mean": None, "source": "legacy", "clock_fit": "fitted", "gaps": 0,
+        "rate": "30/1", "unsnapped_mean": None, "source": "legacy", "clock_fit": "fitted", "gaps": None,
     }
     # 30 fps measured
     rec = Referee._rate_record(RT.Resolved(Fraction(30), "video.mp4 fMP4 sample durations", Fraction(30)), segs30)
@@ -341,15 +341,15 @@ def test_l3_rate_record_is_always_emitted():
     assert rec.get("source") is None
 
 
-def test_r2_l3_30fps_legacy_bundle_json_only_is_legacy_source():
-    """No sample durations and no declared rate: source is legacy, not UNMEASURED."""
+def test_r2_l3_30fps_legacy_bundle_declares_no_rate_is_legacy_source():
+    """The bundle declares no rate and has no sample durations: source is legacy, not UNMEASURED."""
     from qor_receipt.review.engine import Referee
 
-    sub, rd = _sub({}, {0: _init(), 1: _frag()})  # no duration source; bundle.json only
+    sub, rd = _sub({}, {0: _init(), 1: _frag()})  # no declared rate, no duration source
     rate = Referee._frame_rate(None, sub, rd)
     assert rate.legacy and rate.rate == 30
     rec = Referee._rate_record(rate, [dict(s, type="segment") for s in _counter(30)])
-    assert rec["rate"] == "30/1" and rec["source"] == "legacy" and rec["unsnapped_mean"] is None and rec["gaps"] == 0
+    assert rec["rate"] == "30/1" and rec["source"] == "legacy" and rec["unsnapped_mean"] is None and rec["gaps"] is None
 
 
 def test_r2_l3_30fps_declared_only_is_unmeasured():

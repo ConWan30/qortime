@@ -563,10 +563,13 @@ class Referee:
         if isinstance(rate, RateError):
             return {"rate": "UNMEASURED", "reason": str(rate), "source": None, "clock_fit": "not_computed"}
         fps = float(rate.rate)
+        # Legacy clock_fit still runs, at an assumed 30 fps basis (the legacy rate).
         fitted = capture_clock(segments, fps) != (0.0, 1000.0 / fps)
         rec = {"rate": label(rate.rate), "source": rate.source, "clock_fit": "fitted" if fitted else "fallback"}
         rec["unsnapped_mean"] = label(rate.mean) if rate.mean is not None else None
-        rec["gaps"] = rate.gaps
+        # A legacy record has no measured durations: do not publish a default gaps: 0.
+        # unsnapped_mean is already None when there is no measured mean.
+        rec["gaps"] = None if rate.legacy else rate.gaps
         return rec
 
     def _challenges(self, sub: Submission, rd, wmm: int, rate: float | RateError = 30.0,
