@@ -530,8 +530,9 @@ class Referee:
 
         Fragments are read one at a time and only their ``moof`` is parsed. The rate is measured on
         the always-decoded set only (inits, recorded tail, challenge segments, motion draws), never
-        on the SystemRandom spot sample, so a resubmit of the same bundle cannot change the rate or
-        the verdict. No rate information is the legacy 30/1, so older bundles keep their exact
+        on the SystemRandom spot sample, so a resubmit of the same bundle cannot change the rate,
+        the gap count, or any rate-dependent check. No rate information is the legacy 30/1, so older
+        bundles keep their exact
         arithmetic. A rate that is present but unusable, mixed across files, or any parse failure
         comes back as a RateError; the checks that need the capture clock then fail closed with that
         reason instead of assuming 30.

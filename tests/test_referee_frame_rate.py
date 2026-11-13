@@ -633,7 +633,8 @@ def test_r4_l2_one_gap_in_a_short_file_is_accepted():
 
 
 def test_r4_l2_spot_sample_does_not_change_the_rate():
-    """The SystemRandom spot sample is not part of the rate measurement, so two seeds agree."""
+    """The SystemRandom spot sample is not part of the rate measurement, so two seeds agree
+    on the rate, the gap count, and any rate-dependent check."""
     from qor_receipt.review.engine import Referee
 
     init, always = _init(), _frag(durs=[256] * 120)
@@ -643,8 +644,12 @@ def test_r4_l2_spot_sample_does_not_change_the_rate():
     rb = Referee._frame_rate(None, *_sub({}, files, decode={0, 1}, random_sample=[]))
     assert ra == rb and ra.rate == 60 and ra.gaps == 0
     # if that gapped segment were always-decoded, the hole would be counted
+    # (120 in-rate from the constant fragment + 299 from the gapped one; a dict.update
+    # overwrite would have left only 299)
     rc = Referee._frame_rate(None, *_sub({}, files, decode={0, 1, 2}, random_sample=[]))
     assert rc.rate == 60 and rc.gaps == 1
+    got = RT._fmp4_measure(init, [always, gapped])
+    assert got is not None and got.inrate_n == 419 and got.gaps == 1
 
 
 def test_r4_l3_ntsc_90khz_k3_to_k8_gaps_are_accepted():
@@ -839,3 +844,61 @@ def test_r4_referee_one_gap_is_ok(tmp_path, monkeypatch):
     assert a["frame_rate"] == b["frame_rate"]
     assert a["checks"]["challenges"]["state"] == b["checks"]["challenges"]["state"]
     assert [c.get("ok") for c in a["challenges"]] == [c.get("ok") for c in b["challenges"]]
+
+
+
+# ---------------------------------------------------------------- QorProof #130 r5 M1 (counts must add, not replace)
+def test_r5_m1_three_one_gap_truns_in_a_short_file_are_refused():
+    """Three per-sample truns, each with one hole, in a file under 1000 samples: 3 > budget 1."""
+    def one_gap() -> bytes:
+        durs = [256] * 120
+        durs[60] = 512
+        return _frag(durs=durs)
+
+    with pytest.raises(RT.RateError, match="budget"):
+        RT.fmp4_rate(_init(), [one_gap(), one_gap(), one_gap()])
+
+
+def test_r5_m1_const_60_then_const_30_then_per_sample_is_refused():
+    """Const 60, then const 30, then a per-sample trun must not be accepted as 60/1."""
+    frags = [
+        _frag(default=256, count=120),
+        _frag(default=256, count=120),
+        _frag(default=512, count=120),
+        _frag(durs=[256] * 119 + [512]),
+    ]
+    with pytest.raises(RT.RateError):
+        RT.fmp4_rate(_init(), frags)
+
+
+def test_r5_m1_multi_trun_ntsc_with_a_short_final_trun_snaps():
+    """A 120-sample 59.94 trun plus a short final trun must still snap to 60000/1001."""
+    timescale, rate = 90_000, Fraction(60000, 1001)
+    durs = _alternating(timescale, timescale / rate, 127)
+    got = RT._fmp4_measure(_init(timescale=timescale), [_frag(durs=durs[:120]), _frag(durs=durs[120:])])
+    assert got is not None and RT.snap(got.mean, "t") == rate
+    assert RT.fmp4_rate(_init(timescale=timescale), [_frag(durs=durs[:120]), _frag(durs=durs[120:])]) == rate
+
+
+@pytest.mark.parametrize("k", [2, 3, 8, 9])
+@pytest.mark.parametrize("kind", ["floor", "ceil", "floor-1", "ceil+1", "floor-2", "ceil+2"])
+def test_r5_ntsc_gap_tick_boundaries(k, kind):
+    """±1 / ±2 tick boundaries around k times the 59.94 / 90 kHz in-rate mean (1501.5)."""
+    import math
+
+    timescale, rate = 90_000, Fraction(60000, 1001)
+    mean = Fraction(3003, 2)
+    target = k * mean
+    flo, cei = int(math.floor(target)), int(math.ceil(target))
+    dur = {"floor": flo, "ceil": cei, "floor-1": flo - 1, "ceil+1": cei + 1,
+           "floor-2": flo - 2, "ceil+2": cei + 2}[kind]
+    ok = k <= 8 and abs(dur - target) <= 1
+    # Append the boundary sample so the in-rate mean stays exactly 1501.5 (overwriting one
+    # 1501/1502 would tilt the mean and push |dur - k*mean| over 1 at the ±1 edge).
+    durs = _alternating(timescale, timescale / rate, 240) + [dur]
+    if ok:
+        got = RT._fmp4_measure(_init(timescale=timescale), [_frag(durs=durs)])
+        assert got is not None and got.gaps == 1 and RT.snap(got.mean, "t") == rate
+    else:
+        with pytest.raises(RT.RateError, match="not constant"):
+            RT.fmp4_rate(_init(timescale=timescale), [_frag(durs=durs)])

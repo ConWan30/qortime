@@ -89,6 +89,7 @@ class Measured:
     last_dur: int | None = None
     timescale: int | None = None
     base_dur: int | None = None
+    inrate_n: int = 0
 
 
 def label(r: Fraction) -> str:
@@ -143,21 +144,21 @@ class _Tally:
 
     def __init__(self) -> None:
         self.samples = 0
-        self.counts: dict[int, int] = {}
+        self.counts: Counter[int] = Counter()
         self.last_dur: int | None = None
 
     def add_const(self, n: int, dur: int) -> None:
         if n <= 0:
             return
         self.samples += n
-        self.counts[dur] = self.counts.get(dur, 0) + n
+        self.counts[dur] += n
         self.last_dur = dur
 
     def add_durs(self, durs: array.array) -> None:
         if not durs:
             return
         self.samples += len(durs)
-        self.counts.update(Counter(durs))
+        self.counts.update(durs)  # Counter.update adds; a plain dict would replace
         self.last_dur = int(durs[-1])
 
 
@@ -342,7 +343,7 @@ def _fmp4_measure(init: bytes, fragments: Iterable[bytes | None]) -> Measured | 
             f"fMP4 has {gaps} gap sample(s) in {total} ({100.0 * gaps / total:.3f} %), "
             f"above the budget of {budget}"
         )
-    return Measured(Fraction(timescale * inrate_n, inrate_dur), gaps, tally.last_dur, timescale, d)
+    return Measured(Fraction(timescale * inrate_n, inrate_dur), gaps, tally.last_dur, timescale, d, inrate_n)
 
 
 def fmp4_rate(init: bytes, fragments: Iterable[bytes | None]) -> Fraction | None:
