@@ -1,4 +1,4 @@
-/* QorTime hub + /cap on the shared Qor design system (qor-ui/, by QorStream).
+/* QorTime hub + /cap on the shared Qor design system (qor-ui/, see qor-ui/SOURCE.md).
    Loaded after style.css on site/index.html and site/cap/index.html only.
    Gold (--qor-verified) is NOT used here: neither page shows a referee-VERIFIED match record. */
 
@@ -32,7 +32,7 @@
 [data-qor-site] a { color: var(--qor-cyan); }
 [data-qor-site] .qor-nav a, [data-qor-site] .qor-footer a { color: inherit; }
 
-/* Type: one family, sentence case, tight tracking (matches the QorStream landing) */
+/* Type: one family, sentence case, tight tracking (matches the shared Qor family look) */
 [data-qor-site] h1,
 [data-qor-site] .page h1,
 [data-qor-site] .scene-copy h2, [data-qor-site] #platforms h2, [data-qor-site] #flow h2,
@@ -92,7 +92,7 @@
 }
 [data-qor-site] .step .n { font-family: var(--qor-font-mono); font-weight: 600; letter-spacing: 0.08em; color: var(--qor-lead); }
 
-/* Buttons: blue primary, navy ghost (same as the QorStream landing) */
+/* Buttons: blue primary, navy ghost (shared Qor family style) */
 [data-qor-site] .btn {
   font-family: var(--qor-font-sans);
   border-radius: var(--qor-radius-md);
@@ -166,3 +166,10 @@
   [data-qor-site] #prove-rails h2, [data-qor-site] .cta h2, [data-qor-site] .limits h2 { font-size: var(--qor-step-3); }
 }
 [data-qor-site] .card .plan-kicker { align-self: flex-start; }
+
+/* No-JS / module-failure fallback: reveal targets stay visible unless JS is running
+   (html.js is set inline; it is removed after 3 s if the motion module never ran). */
+html:not(.js) .qor-reveal { opacity: 1; transform: none; filter: none; }
+
+/* SELF-SIGNED reads below VERIFIED: cool blue-grey, not gold, not amber. PARTIAL stays amber. */
+[data-qor-site] .v.sa { color: var(--qor-text-2); }
