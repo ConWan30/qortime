@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="en"><head>
+<html lang="en" data-qor-site="receipts"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>QorTime — One app. One recording. One receipt.</title>
 <meta name="description" content="One app. One recording. One receipt. QorCap captures and fingerprints your console match on Windows; QorTime then signs the receipt, runs an AI referee and lets anyone verify it. Madden NFL 27 first.">
 <meta name="theme-color" content="#04050a"><meta name="color-scheme" content="dark">
-<link rel="icon" type="image/svg+xml" href="assets/favicon.svg"><link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png"><link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="icon" type="image/svg+xml" href="qor-ui/brand/favicon.svg"><link rel="icon" type="image/png" sizes="32x32" href="qor-ui/brand/favicon-32.png"><link rel="apple-touch-icon" href="qor-ui/brand/apple-touch-icon.png">
 <link rel="canonical" href="https://qortime.com/">
 <meta property="og:type" content="website"><meta property="og:title" content="QorTime — One app. One recording. One receipt.">
 <meta property="og:description" content="Capture with QorCap, prove it after the match, share a receipt anyone can verify. One app. One recording. One receipt.">
@@ -16,14 +16,51 @@
 <script type="application/ld+json">
 {"@context":"https://schema.org","@type":"WebSite","name":"QorTime","url":"https://qortime.com/","description":"Signed Madden match receipts anyone can verify in a browser. Self-verify is free. Verified Match, a hosted referee countersign, is planned."}
 </script>
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="qor-ui/tokens.css"><link rel="stylesheet" href="qor-ui/motion.css"><link rel="stylesheet" href="qor-ui/nav.css"><link rel="stylesheet" href="qor-ui/footer.css">
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="qor-site.css">
 </head><body>
 <div class="grain" aria-hidden="true"></div>
 <div class="cursor" aria-hidden="true"></div>
-<header class="nav glass"><a class="brand" href="./"><img src="assets/logo.svg" alt="" width="30" height="30"><b>Qor<span>Time</span></b></a>
-<nav><a href="cap/" class="keep cap-nav">Capture</a><a href="#flow">Prove · Share</a><a href="matches/" class="keep">Matches</a><a href="challenge/" class="keep">Challenges</a><a href="how-it-works/" class="keep">How it works</a><a href="pricing/" class="keep">Pricing</a><a href="early-access/" class="keep">Early access</a><a href="verify/" class="btn sm mag">Verifier</a></nav></header>
+<header class="qor-nav" data-qor-nav data-active="receipts"
+  data-receipts-href="./"
+  data-capture-href="cap/"
+  data-watch-href="#watch-coming-soon">
+  <nav class="qor-nav__inner" aria-label="Qor product family">
+    <a class="qor-nav__brand" href="./">
+      <span class="qor-nav__mark">
+        <img src="qor-ui/brand/logo-icon.svg" alt="" width="30" height="30">
+        <span class="qor-shimmer" aria-hidden="true"></span>
+      </span>
+      <span class="qor-nav__wordmark">QorTime<span class="qor-nav__wordmark-sub">Receipts</span></span>
+    </a>
+    <div class="qor-nav__track">
+      <a class="qor-nav__link" data-qor-link="receipts" href="./" aria-current="page">Receipts</a>
+      <a class="qor-nav__link" data-qor-link="capture" href="cap/">Capture</a>
+      <a class="qor-nav__link" data-qor-link="watch" href="#watch-coming-soon">Watch</a>
+      <span class="qor-nav__weave" aria-hidden="true">
+        <span class="qor-nav__strand qor-nav__strand--blue"></span>
+        <span class="qor-nav__strand qor-nav__strand--cyan"></span>
+        <span class="qor-nav__strand qor-nav__strand--white"></span>
+        <span class="qor-nav__knot"></span>
+      </span>
+    </div>
+    <div class="qor-nav__actions">
+      <a class="qor-nav__cta" href="verify/">Verifier</a>
+      <button class="qor-nav__toggle" type="button" aria-expanded="false" aria-controls="qor-mobile-sheet" aria-label="Toggle family menu">
+        <span class="qor-nav__toggle-lanes" aria-hidden="true"><span></span><span></span><span></span></span>
+      </button>
+    </div>
+  </nav>
+  <div class="qor-nav__sheet" id="qor-mobile-sheet" hidden>
+    <div class="qor-nav__sheet-panel" role="dialog" aria-label="Qor family navigation">
+      <a class="qor-nav__sheet-link" data-qor-link="receipts" href="./" aria-current="page"><span>Receipts</span></a>
+      <a class="qor-nav__sheet-link" data-qor-link="capture" href="cap/"><span>Capture</span></a>
+      <a class="qor-nav__sheet-link" data-qor-link="watch" href="#watch-coming-soon"><span>Watch</span></a>
+      <a class="qor-nav__cta qor-nav__sheet-cta" href="verify/">Verifier</a>
+    </div>
+  </div>
+</header>
 <main>
 
 <section class="hero" id="top">
@@ -40,6 +77,7 @@
 </section>
 
 
+<div class="qor-section-weave" aria-hidden="true"></div>
 <section class="wrap" id="flow">
  <p class="num">how it works</p>
  <h2 class="split big">Capture. Prove. Share.</h2>
@@ -59,6 +97,7 @@
  </div>
 </section>
 
+<div class="qor-section-weave" aria-hidden="true"></div>
 <section class="wrap" id="prove-rails" aria-label="Prove paths">
  <p class="num">prove · two doors</p>
  <h2 class="split big">Same story. Two doors.</h2>
@@ -199,6 +238,7 @@ receipt_hash</pre>
  </div>
 </section>
 
+<div class="qor-section-weave" aria-hidden="true"></div>
 <section class="wrap" id="platforms">
  <p class="num">for platforms &amp; sponsors</p>
  <h2 class="split big">Release escrow on math, not screenshots.</h2>
@@ -230,9 +270,42 @@ receipt_hash</pre>
  <div class="ctas c"><a class="btn mag" href="verify/"><span>Open the verifier</span></a><a class="btn ghost mag" href="https://github.com/ConWan30/qortime"><span>Star on GitHub</span></a></div>
 </section>
 </main>
-<footer class="wrap foot"><span>QorTime · MIT · early prototype</span><span class="foot-links"><a href="verify/">Verify</a><a href="matches/">Matches</a><a href="challenge/">Challenges</a><a href="how-it-works/">How it works</a><a href="pricing/">Pricing</a><a href="early-access/">Early access</a><a href="cap/">Capture</a><a href="https://github.com/ConWan30/qorcap/releases/latest">QorCap</a><a href="https://github.com/ConWan30/qortime">GitHub</a><a href="https://x.com/QorTimeHQ">@QorTimeHQ</a></span><span>Not affiliated with EA, the NFL or Sony. Madden NFL is a trademark of its owner.</span></footer>
+<p class="qor-watch-note" id="watch-coming-soon"><span class="qor-mono">Watch</span> is QorStream, the third door. It is not public yet.</p>
+<footer class="qor-footer" data-qor-footer data-active="receipts"
+  data-receipts-href="./"
+  data-capture-href="cap/"
+  data-watch-href="#watch-coming-soon">
+  <div class="qor-footer__inner">
+    <div class="qor-footer__top">
+      <div class="qor-footer__brand-col">
+        <a class="qor-footer__brand" href="./">
+          <span class="qor-footer__mark"><img src="qor-ui/brand/logo-icon.svg" alt="" width="26" height="26"></span>
+          <span>QorTime</span>
+        </a>
+        <p class="qor-footer__tagline">Signed match receipts, local capture, and a browser verifier. MIT · early prototype.</p>
+      </div>
+      <nav class="qor-footer__nav" aria-label="Qor family footer">
+        <a class="qor-footer__link" data-qor-link="receipts" href="./" aria-current="page">Receipts</a>
+        <a class="qor-footer__link" data-qor-link="capture" href="cap/">Capture</a>
+        <a class="qor-footer__link" data-qor-link="watch" href="#watch-coming-soon">Watch</a>
+      </nav>
+    </div>
+    <nav class="qor-footer__site" aria-label="QorTime pages"><a href="verify/">Verify</a><a href="#flow">Prove · Share</a><a href="matches/">Matches</a><a href="challenge/">Challenges</a><a href="how-it-works/">How it works</a><a href="pricing/">Pricing</a><a href="early-access/">Early access</a><a href="cap/">Capture</a><a href="https://github.com/ConWan30/qorcap/releases/latest">QorCap</a><a href="https://github.com/ConWan30/qortime">GitHub</a><a href="https://x.com/QorTimeHQ">@QorTimeHQ</a></nav>
+    <div class="qor-footer__bottom">
+      <p class="qor-footer__record-line"><span class="qor-footer__record-dot" aria-hidden="true"></span><span>Fair-proof record format across Receipts, Capture, and Watch</span></p>
+      <div class="qor-footer__legal">Not affiliated with EA, the NFL or Sony. Madden NFL is a trademark of its owner.</div>
+    </div>
+  </div>
+</footer>
 <script src="vendor/gsap.min.js" defer></script>
 <script src="vendor/ScrollTrigger.min.js" defer></script>
 <script src="vendor/lenis.min.js" defer></script>
 <script src="app.js" defer></script>
+<script type="module">
+  import "./qor-ui/nav.js";
+  import "./qor-ui/footer.js";
+  import { initReveal, initSectionTransitions } from "./qor-ui/motion.js";
+  initReveal();
+  initSectionTransitions();
+</script>
 </body></html>
