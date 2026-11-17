@@ -173,3 +173,24 @@ html:not(.js) .qor-reveal { opacity: 1; transform: none; filter: none; }
 
 /* SELF-SIGNED reads below VERIFIED: cool blue-grey, not gold, not amber. PARTIAL stays amber. */
 [data-qor-site] .v.sa { color: var(--qor-text-2); }
+
+/* No-JS mobile nav: without html.js the menu toggle cannot open, so at phone widths
+   show the Receipts / Capture / Watch links on their own row and the Verifier button inline.
+   With JS running (html.js) nothing here applies and the sheet menu works as before. */
+@media (max-width: 760px) {
+  html:not(.js) .qor-nav { height: auto; }
+  html:not(.js) .qor-nav__inner {
+    flex-wrap: wrap;
+    row-gap: var(--qor-space-1);
+    padding-block: var(--qor-space-2);
+  }
+  html:not(.js) .qor-nav__toggle { display: none; }
+  html:not(.js) .qor-nav__actions .qor-nav__cta { display: inline-flex; }
+  html:not(.js) .qor-nav__track {
+    display: flex;
+    order: 3;
+    width: 100%;
+    flex-wrap: wrap;
+  }
+  html:not(.js) .qor-nav__link { min-height: 44px; }
+}
