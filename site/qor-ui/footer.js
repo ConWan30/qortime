@@ -99,7 +99,7 @@ export class QorFooterElement extends HTMLElement {
           <div class="qor-footer__bottom">
             <p class="qor-footer__record-line">
               <span class="qor-footer__record-dot" aria-hidden="true"></span>
-              <span>One signed record format across Receipts and Capture</span>
+              <span>Fair-proof record format across Receipts and Capture</span>
             </p>
             <div class="qor-footer__legal">${slotLegal}</div>
           </div>
