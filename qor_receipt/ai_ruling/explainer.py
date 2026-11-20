@@ -28,7 +28,7 @@ DEVICE_STATUSES = ("tpm_claimed", "software", "invalid")   # strongest is tpm_cl
 MAX_DETAIL = 240
 
 SYSTEM_PROMPT = """You explain QorTime match receipts to players and spectators in plain language.
-QorTime is anti-cheat for console matches: a capture client records the match and a referee checks the evidence.
+QorTime keeps fair match records for console head-to-head results: it checks a match recording against its signed hash chain and the referee's timed challenges, and states its limits. It does not detect cheats.
 Rules you must follow:
 1. The verifier STATUS is given to you and is final. State it exactly once near the start, in capitals, using the
    given word (VERIFIED, PARTIAL, SELF-SIGNED or FAIL). Never use any other status word. Never suggest it should differ.
