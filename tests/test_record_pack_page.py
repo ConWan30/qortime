@@ -1,4 +1,4 @@
-"""site/appeal/: the appeal-pack page states its limits plainly, uses gold only on the referee-VERIFIED example pack, and has no banned claims."""
+"""site/record-pack/: the match record pack page states its limits plainly, uses gold only on the referee-VERIFIED example pack, and has no banned claims."""
 import json
 import re
 from pathlib import Path
@@ -6,7 +6,7 @@ from pathlib import Path
 from qor_receipt.ai_ruling.guardrail import BANNED
 
 ROOT = Path(__file__).resolve().parents[1]
-PAGE = ROOT / "site/appeal/index.html"
+PAGE = ROOT / "site/record-pack/index.html"
 
 
 def _text():
@@ -19,8 +19,8 @@ def test_page_uses_unified_shell_and_is_linked():
     assert 'data-watch-href="#watch-coming-soon"' in html and 'id="watch-coming-soon"' in html
     assert 'classList.add("js")' in html
     assert '<link rel="stylesheet" href="../qor-site.css">' in html
-    assert 'href="appeal/"' in (ROOT / "site/index.html").read_text(encoding="utf-8")
-    assert "<loc>https://qortime.com/appeal/</loc>" in (ROOT / "site/sitemap.xml").read_text(encoding="utf-8")
+    assert 'href="record-pack/"' in (ROOT / "site/index.html").read_text(encoding="utf-8")
+    assert "<loc>https://qortime.com/record-pack/</loc>" in (ROOT / "site/sitemap.xml").read_text(encoding="utf-8")
 
 
 def test_limits_are_stated_plainly():
@@ -80,6 +80,17 @@ def test_gold_only_on_the_verified_sample():
     html = _text()
     sample = html.split('id="sample"', 1)[1].split('id="limits"', 1)[0]
     rest = html.replace(sample, "")
-    assert "appeal-verified" in sample and "appeal-gold" in sample
-    assert "appeal-gold" not in rest and "appeal-verified" not in rest
+    assert "rp-verified" in sample and "rp-gold" in sample
+    assert "rp-gold" not in rest and "rp-verified" not in rest
     assert "e4c56d" not in html.lower()
+
+
+def test_appeal_only_in_the_activision_citation():
+    html = _text()
+    bans = html.split('id="bans"', 1)[1].split('id="where"', 1)[0]
+    citation = [p for p in re.findall(r"<p>.*?</p>", bans, re.S) if "Activision" in p]
+    rest = html
+    for p in citation:
+        rest = rest.replace(p, "")
+    assert "appeal" not in rest.lower()
+    assert any("support.activision.com/ban-appeal" in p for p in citation)
