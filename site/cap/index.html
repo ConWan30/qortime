@@ -2,7 +2,7 @@
 <html lang="en" data-qor-site="capture"><head>
 <meta charset="utf-8"><script>document.documentElement.classList.add("js");setTimeout(function(){var h=document.documentElement;if(!h.classList.contains("qor-motion"))h.classList.remove("js")},3000)</script><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Capture — QorCap · QorTime</title>
-<meta name="description" content="Capture is the QorCap step on QorTime: a Windows app, HDMI in, a segment hash chain, and checkpoints. A fair-proof of the recording and a skill-proof of what the card saw. Madden NFL 27 is the first public path.">
+<meta name="description" content="Capture is the QorCap step on QorTime: a Windows app, HDMI in, a segment hash chain, and checkpoints. A signed record of the recording and of what the capture card saw, with its limits stated. Madden NFL 27 is the first public path.">
 <meta name="theme-color" content="#04050a"><meta name="color-scheme" content="dark">
 <link rel="icon" type="image/svg+xml" href="../qor-ui/brand/favicon.svg"><link rel="icon" type="image/png" sizes="32x32" href="../qor-ui/brand/favicon-32.png"><link rel="apple-touch-icon" href="../qor-ui/brand/apple-touch-icon.png">
 <link rel="canonical" href="https://qortime.com/cap/">
@@ -64,7 +64,7 @@
 <section class="page-hero">
  <p class="kicker"><span class="dot"></span> capture · hdmi in → segment hash chain → checkpoints</p>
  <h1>From the card<br>to the chain.<br><span class="accent">Then Prove.</span></h1>
- <p class="lede">QorCap is the one Windows app in the Capture step. It is a <b>fair-proof</b> of the recording and a <b>skill-proof</b> of the match the capture card saw: the picture, the hash chain, and the pad log beside it. It is not a name, and it is not a claim that the console obeyed the pad. When the match is over, QorTime does the rest.</p>
+ <p class="lede">QorCap is the one Windows app in the Capture step. It makes a signed record of the match the capture card saw: the picture, the hash chain, and the pad log beside it. It does not show who held the pad, or that the console obeyed it. When the match is over, QorTime does the rest.</p>
  <div class="ctas">
   <a class="btn mag" href="https://github.com/ConWan30/qorcap/releases/latest"><span>Download QorCap for Windows</span></a>
   <a class="btn ghost mag" href="../#prove-rails"><span>Continue to Prove</span></a>
@@ -91,7 +91,7 @@
    <span class="n">02</span>
    <div>
     <h2>Segment hash chain</h2>
-    <p>As the recording is written, it is cut into short segments. Each segment is hashed, and each hash is chained to the one before it. Edit or swap a piece afterwards and the later links no longer match. That chain is the fair-proof of the file.</p>
+    <p>As the recording is written, it is cut into short segments. Each segment is hashed, and each hash is chained to the one before it. Change a hashed segment and that link, and every later one, no longer matches the signed chain. The chain is signed with a key on the player's own PC, so the referee's challenges and anchors timestamp it during the match.</p>
    </div>
   </li>
   <li class="step glass qor-reveal">
@@ -174,7 +174,7 @@
     </div>
     <nav class="qor-footer__site" aria-label="QorTime pages"><a href="../">Home</a><a href="../verify/">Verify</a><a href="../#prove-rails">Prove</a><a href="../matches/">Matches</a><a href="../challenge/">Challenges</a><a href="../how-it-works/">How it works</a><a href="../pricing/">Pricing</a><a href="../early-access/">Early access</a><a href="https://github.com/ConWan30/qorcap/releases/latest">QorCap</a><a href="https://github.com/ConWan30/qortime">GitHub</a><a href="https://x.com/QorTimeHQ">@QorTimeHQ</a></nav>
     <div class="qor-footer__bottom">
-      <p class="qor-footer__record-line"><span class="qor-footer__record-dot" aria-hidden="true"></span><span>Fair-proof record format across Receipts and Capture</span></p>
+      <p class="qor-footer__record-line"><span class="qor-footer__record-dot" aria-hidden="true"></span><span>One signed record format across Receipts and Capture</span></p>
       <div class="qor-footer__legal">Not affiliated with EA, the NFL, Activision or Sony. Madden NFL is a trademark of its owner.</div>
     </div>
   </div>

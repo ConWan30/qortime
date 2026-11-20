@@ -73,7 +73,7 @@
  </ol>
  <div class="glass limits" id="limits" style="margin:18px 0 48px">
   <h2>The honest limit</h2>
-  <p>QorTime checks the recording against its signed hash chain, and its timing against the referee's challenges and anchors. Since QorCap v0.3.0 it also logs controller reports from a pad that enumerated on USB in that session. It does <b>not</b> prove who held the controller, or that the console obeyed that pad.</p>
+  <p>QorTime checks the recording against its signed hash chain, and its timing against the referee's challenges and anchors. Since v0.3.0, QorCap also logs controller reports from a pad that enumerated on USB in that session. It does <b>not</b> prove who held the controller, or that the console obeyed that pad.</p>
   <ul>
    <li><b>Account sharing.</b> Who is physically holding the controller. The referee does not check pad identity. A second-pad note in QorCap stays in the local input proof file.</li>
    <li><b>Right-stick injection.</b> An inline passthrough adapter can add right-stick input the console obeys while QorCap logs the real pad. Open. Planned checks are an advisory per-axis stick-versus-camera signal first, and hardware such as a sealed tap before any pad-to-console binding.</li>
