@@ -24,6 +24,9 @@ def test_prompt_never_claims_anti_cheat_or_verified_skill():
 
 def test_attested_and_proven_only_appear_as_rules_against_them():
     rules = SYSTEM_PROMPT.split("Rules you must follow:", 1)[1]
+    # The guard rules themselves must stay: deleting rule 2 or rule 3 fails here.
+    assert '"attested"' in rules
+    assert "not proven" in rules.lower()
     for line in rules.splitlines():
         low = line.lower()
         if "attested" in low:
