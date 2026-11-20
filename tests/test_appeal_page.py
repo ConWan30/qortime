@@ -26,11 +26,14 @@ def test_page_uses_unified_shell_and_is_linked():
 def test_limits_are_stated_plainly():
     text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", _text()))
     for phrase in (
-        "controller input, game clock and screen agree",
+        "it shows the referee's status and every check behind it",
         "See inside a console or a separate gaming PC.",
         "Show who was holding the controller.",
         "We don't promise that any publisher will review a pack, or that any ban will be reversed.",
-        "coming later",
+        "A per-moment input-to-screen timeline is not in packs yet.",
+        "It does not show the footage wasn't faked or edited before it was hashed.",
+        "QorTime does not detect cheats.",
+        "Activision has not reviewed or accepted QorTime packs.",
     ):
         assert phrase in text, phrase
     assert 'href="https://support.activision.com/ban-appeal"' in _text()
@@ -41,8 +44,19 @@ def test_no_banned_claims():
     assert [why for rx, why in BANNED if rx.search(html)] == []
     low = html.lower()
     for word in ("anti-cheat", "anticheat", "proof-of-human", "proof of human", "attested", "verified skill",
-                 "proven", " proves", "guarantee", "endorsed by"):
+                 "proven", " proves", "guarantee", "endorsed by", "skill-proof", "not edited after", "disconnect",
+                 "will never", "controller input, game clock and screen agree"):
         assert word not in low, word
+
+
+def test_timeline_and_setup_cards_are_coming_later():
+    html = _text()
+    cards = re.findall(r"<article.*?</article>", html, re.S)
+    timeline = next(c for c in cards if "<h3>Input-to-screen timeline</h3>" in c)
+    setup = next(c for c in cards if "<h3>Setup snapshot</h3>" in c)
+    for card in (timeline, setup):
+        assert "coming later" in card
+        assert "· today" not in card.lower()
 
 
 def test_sample_figures_match_the_public_verified_match():
@@ -52,9 +66,12 @@ def test_sample_figures_match_the_public_verified_match():
     assert match["final"] == {"away": 7, "home": 21}
     assert match["match_id"] in html and "1d424dc2836f1a8c" in html
     assert 'href="../matches/220105/"' in html
+    sample = html.split('id="sample"', 1)[1].split('id="limits"', 1)[0]
+    assert "end-menu fallback" in sample and "alignment_not_above_chance" in sample
+    assert "270 of 878 segments" in sample and "segments 1–847" in sample
     manifest = json.loads((ROOT / "site/matches/220105/clips/manifest.json").read_text(encoding="utf-8"))
     for clip in manifest["clips"]:
-        s = round(clip["source"]["start_s"] + clip["lock_at_s"])
+        s = int(clip["source"]["start_s"] + clip["lock_at_s"])  # truncated, like the match page
         after = clip["lock"]["score_after"]
         assert f'{s // 60}:{s % 60:02d}</span><b>{after["away"]} – {after["home"]}</b>' in html, clip["id"]
 

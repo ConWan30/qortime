@@ -29,3 +29,5 @@
 .appeal-bans p{margin:6px 0}
 .appeal-end{margin:28px 0 56px}
 @media (max-width:760px){.appeal-sample{padding:16px}.appeal-rail{grid-auto-columns:104px}}
+.appeal-kv .appeal-kv-wide{grid-column:1/-1}
+.appeal-adv-lbl code{font:inherit;text-transform:none;letter-spacing:0}

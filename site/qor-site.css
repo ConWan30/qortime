@@ -1,6 +1,6 @@
 /* QorTime hub + /cap on the shared Qor design system (qor-ui/, see qor-ui/SOURCE.md).
-   Loaded after style.css on site/index.html and site/cap/index.html only.
-   Gold (--qor-verified) is NOT used here: neither page shows a referee-VERIFIED match record. */
+   Loaded after style.css on site/index.html, site/cap/index.html and site/appeal/index.html.
+   Gold (--qor-verified) is NOT used in this file; site/appeal/appeal.css uses it only on the referee-VERIFIED example pack. */
 
 [data-qor-site] {
   --bg: var(--qor-bg-abyss);
