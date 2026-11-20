@@ -1,4 +1,4 @@
-"""site/appeal/: the appeal-pack page states its limits plainly, uses gold only on the referee-VERIFIED sample, and has no banned claims."""
+"""site/appeal/: the appeal-pack page states its limits plainly, uses gold only on the referee-VERIFIED example pack, and has no banned claims."""
 import json
 import re
 from pathlib import Path
@@ -33,7 +33,7 @@ def test_limits_are_stated_plainly():
         "A per-moment input-to-screen timeline is not in packs yet.",
         "It does not show the footage wasn't faked or edited before it was hashed.",
         "QorTime does not detect cheats.",
-        "Activision has not reviewed or accepted QorTime packs.",
+        "Our note, not Activision's: a pack is not part of that process, and as far as we know Activision has not reviewed or accepted QorTime packs.",
     ):
         assert phrase in text, phrase
     assert 'href="https://support.activision.com/ban-appeal"' in _text()
