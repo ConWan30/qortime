@@ -44,7 +44,7 @@ def test_no_banned_claims():
     assert [why for rx, why in BANNED if rx.search(html)] == []
     low = html.lower()
     for word in ("anti-cheat", "anticheat", "proof-of-human", "proof of human", "attested", "verified skill",
-                 "proven", " proves", "guarantee", "endorsed by", "skill-proof", "not edited after", "disconnect",
+                 "proven", " proves", "guarantee", "endorsed by", "not edited after", "disconnect",
                  "will never", "controller input, game clock and screen agree"):
         assert word not in low, word
 

@@ -12,7 +12,7 @@ Meta **Muse Spark** (`muse-spark-1.3`, Standard mode, via the Meta Model API).
 - It never edits the receipt. `schema/receipt.v0.json` is frozen; output is a sidecar, `ai_ruling.json`
   (`qortime.ai_ruling.v0`, `"affects_verdict": false`, bound by `receipt_sha256`).
 - The verdict path (`receipt.py`, `cli.py`, `verify/*.js`) does not import this package (a test checks it).
-- Anti-cheat and verified skill only. It is **not coaching**: the prompt forbids gameplay advice and the guardrail
+- Fair match records only. It is **not coaching**: the prompt forbids gameplay advice and the guardrail
   drops any text that gives it.
 
 ## Fail closed

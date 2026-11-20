@@ -10,7 +10,7 @@ during it.
 
 Built by Contravious Battle, solo founder (QorTime). Contact: [README › Creator & contact](README.md#creator--contact).
 
-QorTime is **anti-cheat and verified gaming skill**: a capture client (QorCap) on the player's PC makes signed match
+QorTime keeps **fair match records**: a capture client (QorCap) on the player's PC makes signed match
 receipts, and the QorTime referee/verifier checks them. It is not a coaching product.
 
 The capture client is a separate public repo: [`ConWan30/qorcap`](https://github.com/ConWan30/qorcap)
