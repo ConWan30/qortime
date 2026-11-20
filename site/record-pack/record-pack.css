@@ -1,0 +1,33 @@
+/* Match record pack page. Gold (--qor-verified) is used only on the referee-VERIFIED example pack. */
+.record-pack .rp-h2{margin:6px 0 18px}
+.record-pack .page-body>.num{margin-top:56px}
+.record-pack .page-body>.num:first-child{margin-top:24px}
+.rp-manifest{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.rp-two{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
+.rp-manifest h3,.rp-two h3{margin:8px 0 6px}
+.rp-later{border-style:dashed}
+.rp-today{margin-top:14px}
+.rp-sample{padding:22px}
+.rp-sample-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:16px;padding-bottom:18px;border-bottom:1px solid rgba(238,243,255,.08)}
+.rp-sample-head .tag{margin-right:6px}
+.rp-actions{display:flex;flex-wrap:wrap;gap:10px}
+.rp-score{font-size:clamp(26px,4vw,40px);margin:12px 0 6px}
+[data-qor-site] .record-pack .tag.rp-verified{color:var(--qor-verified,#e4c56d);border-color:rgba(228,197,109,.55);background:rgba(228,197,109,.08)}
+.record-pack .rp-gold{color:var(--qor-verified,#e4c56d)}
+.rp-kv{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));margin:20px 0}
+.rp-kv dt{font:600 11px var(--mono,monospace);letter-spacing:.08em;text-transform:uppercase;color:#8a93ad}
+.rp-kv dd{margin:6px 0 0;color:#eef3ff}
+.rp-h4{font:600 12px var(--mono,monospace);letter-spacing:.08em;text-transform:uppercase;color:#8a93ad;margin:8px 0 10px}
+.rp-rail{list-style:none;padding:4px 0 10px;margin:0 0 20px;display:grid;grid-auto-flow:column;grid-auto-columns:minmax(112px,1fr);gap:10px;overflow-x:auto}
+.rp-rail li{display:flex;flex-direction:column;gap:3px;padding:12px;border-radius:10px;background:rgba(79,124,255,.06);border:1px solid rgba(46,242,255,.18)}
+.rp-rail .t{color:#2ef2ff;font-size:12px}
+.rp-rail b{font-size:17px;color:#eef3ff}
+.rp-rail li>span:last-child{color:#8a93ad;font-size:12px}
+.rp-advisory{padding:14px 16px;border-radius:10px;border-left:3px solid #ffb020;background:rgba(255,176,32,.06);margin-bottom:16px}
+.rp-advisory p{margin:4px 0}
+.rp-adv-lbl{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#ffb020}
+.rp-bans p{margin:6px 0}
+.rp-end{margin:28px 0 56px}
+@media (max-width:760px){.rp-sample{padding:16px}.rp-rail{grid-auto-columns:104px}}
+.rp-kv .rp-kv-wide{grid-column:1/-1}
+.rp-adv-lbl code{font:inherit;text-transform:none;letter-spacing:0}
