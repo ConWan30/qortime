@@ -129,7 +129,7 @@
  <div class="qor-section-weave" aria-hidden="true"></div>
 <div class="glass limits" id="limits">
   <h2>Honest limits</h2>
-  <p>QorTime proves the footage's integrity and timing. The Capture log is a skill-proof of what the card and the pad report showed. It does <b>not</b> prove:</p>
+  <p>QorTime checks the recording against its signed hash chain, and its timing against the referee's challenges and anchors. The Capture log records what the card and the pad reported. It does <b>not</b> prove:</p>
   <ul>
    <li><b>Account sharing:</b> who is physically holding the controller. The referee does not check pad identity. QorCap’s second-pad note, when it exists, stays in the local <span class="mono">input_proof.json</span>.</li>
    <li><b>Right-stick injection:</b> an inline passthrough adapter can add right-stick input the console obeys while QorCap logs the real pad. Open. Planned checks are an advisory per-axis stick-versus-camera signal first, and hardware such as a sealed tap before any pad-to-console binding.</li>

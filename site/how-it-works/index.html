@@ -25,7 +25,7 @@
 <nav><a href="../matches/" class="keep">Matches</a><a href="../challenge/" class="keep">Challenges</a><a href="./" class="keep" aria-current="page">How it works</a><a href="../pricing/" class="keep">Pricing</a><a href="../early-access/" class="keep">Early access</a><a href="../verify/" class="btn sm mag">Verifier</a></nav></header>
 <main>
 <section class="page-hero">
- <p class="kicker"><span class="dot"></span> qorcap captures · qortime proves · anyone verifies</p>
+ <p class="kicker"><span class="dot"></span> qorcap captures · qortime checks · anyone verifies</p>
  <h1>One app.<br>One recording.<br><span class="accent">One receipt.</span></h1>
  <p class="lede">QorCap is the single lightweight Windows app you run during the match. Everything heavy happens afterwards on the finished recording: the signed receipt, the AI referee verdict, and public verify. A hosted referee countersign, Verified Match, is planned.</p>
  <nav class="page-nav" aria-label="On this page">
@@ -73,7 +73,7 @@
  </ol>
  <div class="glass limits" id="limits" style="margin:18px 0 48px">
   <h2>The honest limit</h2>
-  <p>QorTime proves the footage's integrity and timing. Since QorCap v0.3.0 it also logs controller reports from a pad that enumerated on USB in that session. It does <b>not</b> prove who held the controller, or that the console obeyed that pad.</p>
+  <p>QorTime checks the recording against its signed hash chain, and its timing against the referee's challenges and anchors. Since QorCap v0.3.0 it also logs controller reports from a pad that enumerated on USB in that session. It does <b>not</b> prove who held the controller, or that the console obeyed that pad.</p>
   <ul>
    <li><b>Account sharing.</b> Who is physically holding the controller. The referee does not check pad identity. A second-pad note in QorCap stays in the local input proof file.</li>
    <li><b>Right-stick injection.</b> An inline passthrough adapter can add right-stick input the console obeys while QorCap logs the real pad. Open. Planned checks are an advisory per-axis stick-versus-camera signal first, and hardware such as a sealed tap before any pad-to-console binding.</li>
