@@ -6,7 +6,7 @@ The network guard a test can install around a run is a tripwire. It refuses netw
 
 The AST import ban is best-effort. It does not follow a walrus or tuple alias, functools.partial, map, or a class-attribute holder. It does not see find_spec().loader / exec_module, zipimport, or sys.modules.get passed through another name. It does not read .pyw files, follow a symlinked directory, or notice a new top-level directory. It does not see qorcap sidecar code the referee image downloads.
 
-Harness `redteam-aimbot/v2` for package `qor-receipt==0.1.0`. Harness sha256 `45ea456b256e022788add3270bb045033eb7fb1f4b60e309d67e83fa5abebee4` over 16 files.
+Harness `redteam-aimbot/v2` for package `qor-receipt==0.1.0`. Harness sha256 `010ce12528313c12a6be80d93a1f90ae6f79d11f962ecf024dfd19a1fc733ce2` over 16 files.
 
 The harness sha256 moved because `tests/redteam/scorers.py` and `tests/redteam/aimbot_harness.py` changed. It is still the package version plus the sorted in-repo Python files reachable from the harness. It does not include scorer settings.
 
@@ -75,7 +75,7 @@ Pan bins are `{mono_ms, yaw_rate, pitch_rate, confidence, no_claim}`. Events are
 
 Catch rate is flagged attacks divided by decided attacks. False-alarm rate is flagged benign divided by decided benign. An abstention is neither. The rates below are the honest-seal cohort, which is the traffic input proof would let through. Log-tamper rates are in the JSON block.
 
-Each scorer sha256 is the hash of `qor-receipt==0.1.0`, the scorer and estimator version strings, the canonical JSON of runtime settings (such as `min_confidence` and any thresholds passed at construction), an estimator sha256 only when the class object is OpticalFlowPanEstimator, the instance still has the attributes __init__ wrote, and each PanParams field is an exact int or float, recomputed from that module's source (a copied attribute, property, __module__, or __qualname__ is not trusted, and an int subclass or bool does not record the allowlisted hash; patching a method on the OpticalFlowPanEstimator class itself still reads as known), the sorted repo-relative path plus bytes of the scorer module and its transitive in-repo imports, the source of an injected estimator or `core` (a hash of that class's own source plus the source of each class it inherits, and, outside the repo, a path relative to the module root), and declared non-Python weight, model, or data files hashed by bytes. A file that cannot be read is recorded as `unhashed` and is not dropped. An implementation whose file cannot be resolved or read makes the identity `unhashed`, and an unhashed result is not cached. The hashes in the table moved because that coverage is new and because `tests/redteam/scorers.py` changed.
+Each scorer sha256 is the hash of `qor-receipt==0.1.0`, the scorer and estimator version strings, the canonical JSON of runtime settings (such as `min_confidence` and any thresholds passed at construction), an estimator sha256 only when the class object is OpticalFlowPanEstimator, the instance still has the attributes __init__ wrote, the mask-cache contents still match the digest recorded when the estimator wrote them, and each PanParams field is an exact int or float, recomputed from that module's source (a copied attribute, property, __module__, or __qualname__ is not trusted, and an int subclass or bool does not record the allowlisted hash; replacing or mutating _mask_cache, including an id-updating swap, is not known; patching a method on the OpticalFlowPanEstimator class itself still reads as known), the sorted repo-relative path plus bytes of the scorer module and its transitive in-repo imports, the source of an injected estimator or `core` (a hash of that class's own source plus the source of each class it inherits, and, outside the repo, a path relative to the module root), and declared non-Python weight, model, or data files hashed by bytes. A file that cannot be read is recorded as `unhashed` and is not dropped. An implementation whose file cannot be resolved or read makes the identity `unhashed`, and an unhashed result is not cached. The hashes in the table moved because that coverage is new and because `tests/redteam/scorers.py` changed.
 
 **SYNTHETIC-DATA CAVEAT:** these rates come from synthetic data with only one benign sample (n=1 control) and are NOT real-world or measured detection/false-alarm rates; '0/1 false alarms' is not a false-alarm rate.
 
@@ -83,9 +83,9 @@ The 150 ms event window is valid only on synthetic data with a shared clock. On 
 
 | scorer | version | package | estimator | file set | sha256 | headline catch rate | headline false-alarm rate | abstained |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| motion-rule-v3 | motion-rule/v3 | 0.1.0 | — | 15 files | 3ba087d7f61c480cbfc4f1292188b8efcc2de3482daa85ab81db7fdd6b9ac171 | 1/6 (0.17) | 0/1 (0.00) | 0/7 |
-| pan-agreement | pan-agreement/v0 | 0.1.0 | example-no-claim/v0 | 15 files | 119001260975c37be8356b22896aece1c9435d73a7ae55f20632c96dbcd56574 | n/a (0/6 decided) | n/a (0/1 decided) | 7/7 |
-| event-press-agreement | event-press-agreement/v0 | 0.1.0 | example-no-claim-events/v0 | 15 files | 10424653ae95a88cf72e95d057b3710059cd309dc02c46c4278c9905b074c5eb | n/a (0/6 decided) | n/a (0/1 decided) | 7/7 |
+| motion-rule-v3 | motion-rule/v3 | 0.1.0 | — | 15 files | 70b00b834ef934e55ccb4b2d1a47aa2eafcf2d57ade9e34765452ab372dc154c | 1/6 (0.17) | 0/1 (0.00) | 0/7 |
+| pan-agreement | pan-agreement/v0 | 0.1.0 | example-no-claim/v0 | 15 files | 93f046dae33d49df9507de87891b93ed458f09c4040eced59a5cfd2b80952327 | n/a (0/6 decided) | n/a (0/1 decided) | 7/7 |
+| event-press-agreement | event-press-agreement/v0 | 0.1.0 | example-no-claim-events/v0 | 15 files | 6db8a2895805d187a84bf3afbd61a7096abe25bbb9ba1b8d303a10390b40c533 | n/a (0/6 decided) | n/a (0/1 decided) | 7/7 |
 
 | variant | cohort | motion-rule-v3 | pan-agreement | event-press-agreement |
 | --- | --- | --- | --- | --- |
@@ -142,7 +142,7 @@ report = evaluate(scorers=[PanAgreementScorer(MyPanEstimator()), EventPressAgree
       "tests/redteam/scorers.py"
     ],
     "package_version": "0.1.0",
-    "sha256": "45ea456b256e022788add3270bb045033eb7fb1f4b60e309d67e83fa5abebee4",
+    "sha256": "010ce12528313c12a6be80d93a1f90ae6f79d11f962ecf024dfd19a1fc733ce2",
     "version": "redteam-aimbot/v2"
   },
   "headline_stick_aimbots": {
@@ -186,7 +186,7 @@ report = evaluate(scorers=[PanAgreementScorer(MyPanEstimator()), EventPressAgree
       "log_tamper_true_positives": 1,
       "name": "motion-rule-v3",
       "package_version": "0.1.0",
-      "sha256": "3ba087d7f61c480cbfc4f1292188b8efcc2de3482daa85ab81db7fdd6b9ac171",
+      "sha256": "70b00b834ef934e55ccb4b2d1a47aa2eafcf2d57ade9e34765452ab372dc154c",
       "version": "motion-rule/v3"
     },
     {
@@ -220,7 +220,7 @@ report = evaluate(scorers=[PanAgreementScorer(MyPanEstimator()), EventPressAgree
       "log_tamper_true_positives": 0,
       "name": "pan-agreement",
       "package_version": "0.1.0",
-      "sha256": "119001260975c37be8356b22896aece1c9435d73a7ae55f20632c96dbcd56574",
+      "sha256": "93f046dae33d49df9507de87891b93ed458f09c4040eced59a5cfd2b80952327",
       "version": "pan-agreement/v0"
     },
     {
@@ -254,7 +254,7 @@ report = evaluate(scorers=[PanAgreementScorer(MyPanEstimator()), EventPressAgree
       "log_tamper_true_positives": 0,
       "name": "event-press-agreement",
       "package_version": "0.1.0",
-      "sha256": "10424653ae95a88cf72e95d057b3710059cd309dc02c46c4278c9905b074c5eb",
+      "sha256": "6db8a2895805d187a84bf3afbd61a7096abe25bbb9ba1b8d303a10390b40c533",
       "version": "event-press-agreement/v0"
     }
   ],
