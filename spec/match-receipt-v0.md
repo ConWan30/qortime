@@ -8,6 +8,22 @@ Status: draft v0. Schema: [`schema/receipt.v0.json`](../schema/receipt.v0.json).
 * Signed bytes are **RFC 8785 JCS** of the receipt with the top-level `signatures` member removed.
 * Restricted value profile: strings, integers with |n| ≤ 2^53−1, booleans, null, arrays, objects. **No floats.**
   Ratios are integers per mille. Producers must refuse floats.
+* Verifiers read the receipt **text** and FAIL when it is not canonical. `JSON.parse` / `json.loads` alone are not enough:
+  they erase `10.0`, `10e0` and `-0` into integers and keep the last duplicate key. Canonical input means:
+  * no duplicate object keys (names compared after JSON escape decoding);
+  * every number spelled as a canonical integer in [−(2^53−1), 2^53−1]: digits only, no fraction, no exponent,
+    no leading zero, and zero written `0` rather than `-0`;
+  * no unpaired UTF-16 surrogates in strings;
+  * public keys (64), key ids (16), Ed25519 signatures (128), SHA-256 hashes (64) and challenge nonces (32) are
+    lowercase hex of that fixed length;
+  * `signatures` has exactly `players` and `referee`; each signature object has exactly `key_id` and `sig`;
+    `signatures.players` has no role that `players[]` does not list.
+  * A leading U+FEFF (BOM) is rejected. The page decodes files with the BOM kept, and `qortime verify` opens UTF-8 without stripping it, so both sides FAIL the same text.
+  * These two limits are the same in `qor_receipt/canonical.py` and `verify/canonical.js`. A receipt over either limit is `noncanonical_json` (FAIL), not an exception and not the PARTIAL exit code: at most 4000000 UTF-8 bytes (the same cap `qor_receipt/h2h.py` already applies to a submitted receipt), and at most 64 nested arrays or objects.
+  * Object members named `__proto__`, `constructor`, or `prototype` (after escape decoding) are `noncanonical_json`. The browser parser also builds objects with own properties only, so a member cannot become the prototype.
+  * Lowercase hex of a fixed length is required only on the fields `schema/receipt.v0.json` patterns as hex: player and referee `pubkey` (64), referee and signature `key_id` (16), signature and checkpoint `sig` / `referee_sig` (128), challenge `nonce` (32), checkpoint `frames_hash` / `input_hash` / `prev` / `hash` (64), and challenge `result.hid_sha256` (64). A key of the same name elsewhere is not under this rule.
+  `qor_receipt/receipt.py` and `verify/verify.js` apply these rules to the same text and return the same verdict.
+  `tests/fixtures/adversarial/manifest.json` is the shared parity set, built from the published match 170123 receipt.
 * **Ed25519** (RFC 8032, strict / non-ZIP215). `key_id` = first 16 hex chars of SHA-256(raw 32-byte pubkey).
 * Every entry in `players[]` and the `referee` signs the same bytes:
   `signatures.players[role] = {key_id, sig}` and `signatures.referee = {key_id, sig}`.

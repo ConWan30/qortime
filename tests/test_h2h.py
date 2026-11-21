@@ -251,3 +251,60 @@ def test_compare_name_rules():
     assert H.compare_name(ME, seen("Qortrola31", conf=600))["result"] == "unread"
     assert H.compare_name(ME, None)["result"] == "unread"
     assert H.same_name("Qortrola30", "qortroIa3O") and not H.same_name("Qortrola30", "Qortrola3")
+
+
+def test_h2h_rejects_noncanonical_raw_bytes(tmp_path):
+    from pathlib import Path
+
+    from fastapi.testclient import TestClient
+
+    from qor_receipt.keys import SoftwareKey
+    from qor_receipt.referee_service.app import create_app
+    from qor_receipt.review.engine import Referee
+
+    t170 = 1_792_792_000_000
+    base_bytes = (Path(__file__).resolve().parents[1] / "site" / "matches" / "170123" / "receipt.json").read_bytes()
+
+    ok_store = H.Store(tmp_path / "ok", now=lambda: t170)
+    cid, tok = mk(ok_store)
+    ok_res = ok_store.submit(cid, tok, base_bytes)
+    assert ok_res["submissions"][0]["status"] == "VERIFIED"
+    assert ok_res["submissions"][0]["counts"] is True
+
+    mutations = [
+        ("neg_zero", b'"home_score": 0,', b'"home_score": -0,', "noncanonical_number"),
+        ("dup_key", b'"schema": "qor-receipt/v0",', b'"schema": "qor-receipt/v0", "schema": "qor-receipt/v0",',
+         "noncanonical_duplicate_key"),
+    ]
+    for label, needle, repl, expected_err in mutations:
+        assert base_bytes.count(needle) == 1
+        bad_bytes = base_bytes.replace(needle, repl, 1)
+
+        s_direct = H.Store(tmp_path / f"direct_{label}", now=lambda: t170)
+        d_cid, d_tok = mk(s_direct)
+        d_out = s_direct.submit(d_cid, d_tok, bad_bytes)
+        d_sub = d_out["submissions"][0]
+        assert d_sub["status"] == "FAIL" and expected_err in d_sub["verify_errors"]
+        assert d_sub["counts"] is False
+        assert d_out["settlement"]["status"] == "unverified" and d_out["settlement"]["winner"] is None
+
+        s_http = H.Store(tmp_path / f"http_{label}", now=lambda: t170)
+        client = TestClient(create_app(Referee(SoftwareKey(), workdir=tmp_path / f"w_{label}"), h2h=s_http))
+        created = client.post("/v1/h2h", json={"creator": "@con", "opponent": "@rival", "creator_psn": ME,
+                                              "opponent_psn": OPP, "rules": {"quarter_min": 5}}).json()
+        resp = client.post(f"/v1/h2h/{created['challenge']['id']}/receipts", content=bad_bytes,
+                           headers={"Authorization": f"Bearer {created['creator_token']}"})
+        assert resp.status_code == 200
+        h_out = resp.json()
+        h_sub = h_out["submissions"][0]
+        assert h_sub["status"] == "FAIL" and expected_err in h_sub["verify_errors"]
+        assert h_sub["counts"] is False
+        assert h_out["settlement"]["status"] == "unverified" and h_out["settlement"]["winner"] is None
+
+        s_stub = H.Store(tmp_path / f"stub_{label}", verify=stub({}), now=lambda: t170)
+        sc_cid, sc_tok = mk(s_stub)
+        sc_out = s_stub.submit(sc_cid, sc_tok, bad_bytes)
+        sc_sub = sc_out["submissions"][0]
+        assert sc_sub["status"] == "FAIL" and expected_err in sc_sub["verify_errors"]
+        assert sc_sub["counts"] is False
+        assert sc_out["settlement"]["status"] == "unverified" and sc_out["settlement"]["winner"] is None

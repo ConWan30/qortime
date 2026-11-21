@@ -33,6 +33,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
+from qor_receipt.canonical import parse_canonical
 from qor_receipt.receipt import VERIFIED, verify_receipt
 
 SCHEMA = "qortime-h2h/v1"
@@ -164,16 +165,34 @@ def _sha(s: str | bytes) -> str:
     return hashlib.sha256(s.encode() if isinstance(s, str) else s).hexdigest()
 
 
-def default_verify(r: dict) -> dict:
-    ref = (r.get("referee") or {}) if isinstance(r, dict) else {}
-    pub = ref.get("pubkey") if isinstance(ref.get("pubkey"), str) else None
+def _referee_pub(r: Any) -> str | None:
+    if not isinstance(r, dict):
+        return None
+    ref = r.get("referee")
+    if not isinstance(ref, dict):
+        return None
+    pub = ref.get("pubkey")
+    return pub if isinstance(pub, str) else None
+
+
+def default_verify(r: dict | str | bytes) -> dict:
+    if isinstance(r, (bytes, bytearray)):
+        try:
+            r = bytes(r).decode("utf-8")
+        except UnicodeDecodeError:
+            return verify_receipt(r)
+    if isinstance(r, str):
+        parsed, perr = parse_canonical(r)
+        pub = None if perr else _referee_pub(parsed)
+    else:
+        pub = _referee_pub(r)
     # Trust comes from the allowlist / delegation, never from this pin; pinning the receipt's own key only removes the
     # "not pinned" note so an allowlisted official receipt can reach VERIFIED.
     return verify_receipt(r, referee_pub=pub)
 
 
 class Store:
-    def __init__(self, root: str | Path, verify: Callable[[dict], dict] = default_verify, now: Callable[[], int] | None = None):
+    def __init__(self, root: str | Path, verify: Callable[[Any], dict] = default_verify, now: Callable[[], int] | None = None):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
         self.verify = verify
@@ -295,7 +314,16 @@ class Store:
             if other:
                 raise H2HError(409, "this receipt was already used for a challenge")
             try:
-                v = self.verify(receipt)
+                if self.verify is default_verify:
+                    v = self.verify(raw)
+                else:
+                    try:
+                        text = raw.decode("utf-8")
+                    except UnicodeDecodeError:
+                        v = {"status": "FAIL", "errors": ["noncanonical_json"], "partial": []}
+                    else:
+                        _, perr = parse_canonical(text)
+                        v = {"status": "FAIL", "errors": perr, "partial": []} if perr else self.verify(receipt)
             except Exception as e:  # noqa: BLE001 - a malformed receipt is unverified, not a server error
                 v = {"status": "FAIL", "errors": [f"malformed:{type(e).__name__}"], "partial": []}
             m = receipt.get("match") if isinstance(receipt.get("match"), dict) else {}
