@@ -523,8 +523,10 @@ def _recomputed_pan_sha(obj: Any) -> str | None:
     type, and each field must be an exact ``int`` or ``float`` (the same check
     ``estimator_known`` uses). The digest is ``estimator_sha256(params)`` from the
     module, not ``obj.sha256``. A rejected instance (extra attribute, replaced
-    ``_pair``, replaced ``_mask_cache``, an ``int`` subclass, or a ``bool``) does
-    not record a digest, including the allowlisted hash. The allowlist itself is
+    ``_pair``, replaced or mutated ``_mask_cache`` — including a new dict whose
+    ``_mask_cache_id`` was updated, an in-place edit of one mask, or an added
+    key — an ``int`` subclass, or a ``bool``) does not record a digest,
+    including the allowlisted hash. The allowlist itself is
     not required: non-default ``PanParams`` with exact field types still hash.
     """
     mod = sys.modules.get("qor_receipt.vision.pan_estimator")

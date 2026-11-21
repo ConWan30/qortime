@@ -25,6 +25,6 @@ PINNED_NUMPY_REQUIREMENT = "numpy==2.4.6"
 KNOWN_ESTIMATOR_SHA256: frozenset[str] = frozenset({
     # CPython 3.11 and 3.13, numpy 2.4.6, opencv-python-headless 5.0.0.93.
     # The digest does not include the Python version.
-    # Re-recorded after the hashed source said so.
-    "51e3a92b826719ed7b919cf18dc5344efd9f3d5decf5976ad15b87203f648b69",
+    # Re-recorded after known was bound to a mask-cache content digest.
+    "973f4c066b559770090909f7df2f9ccad11f5f76b53f1fd9f81fb7de089e9c19",
 })
