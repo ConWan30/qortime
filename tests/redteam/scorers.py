@@ -41,7 +41,7 @@ from typing import Any, Protocol, runtime_checkable
 
 import qor_receipt
 from qor_receipt.review.media import input_energy_series
-from qor_receipt.review.motion import score_motion
+from qor_receipt.review.motion import MOTION_BASIS_V3, MOTION_RULE_V3, MOTION_SAMPLE_MAX_SEGMENTS_V3, score_motion
 from qor_receipt.review.policy import PARTIAL_CHECK, PASS
 
 PACKAGE_VERSION = qor_receipt.__version__
@@ -1107,7 +1107,14 @@ class MotionRuleV3Scorer:
 
     def score(self, sample: VariantSample) -> Score:
         energy = input_energy_series(_InputLog(sample.rows))
-        permille, detail = score_motion(energy, sample.motion, sample_segments=list(sample.sample_segments))
+        permille, detail = score_motion(
+            energy,
+            sample.motion,
+            sample_segments=list(sample.sample_segments),
+            rule=MOTION_RULE_V3,
+            basis=MOTION_BASIS_V3,
+            sample_max_segments=MOTION_SAMPLE_MAX_SEGMENTS_V3,
+        )
         state = motion_check_state(permille)
         return Score(flagged=state == PARTIAL_CHECK, detail={
             "motion_permille": permille,

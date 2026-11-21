@@ -3,10 +3,6 @@
   const fine = matchMedia('(pointer: fine)').matches;
   const $ = (s, r = document) => r.querySelector(s), $$ = (s, r = document) => [...r.querySelectorAll(s)];
   if (RM) document.documentElement.classList.add('rm');
-  if (new URLSearchParams(location.search).get('checkout') === 'cancel') {
-    const note = document.getElementById('vm-cancel');
-    if (note) note.hidden = false;
-  }
 
   // digit columns (final value is the resting state)
   $$('.dg').forEach(d => {
@@ -59,7 +55,7 @@
   gsap.timeline({ delay: .2 })
     .from('h1 .ch', { yPercent: 115, rotate: 8, opacity: 0, duration: 1.1, ease: 'expo.out', stagger: .035 })
     .from('.reveal-up', { y: 30, opacity: 0, duration: 1, ease: 'expo.out', stagger: .12 }, .5)
-    .from('.nav', { y: -80, opacity: 0, duration: 1, ease: 'expo.out' }, .3);
+    .from('.qor-nav', { y: -80, opacity: 0, duration: 1, ease: 'expo.out' }, .3);
   gsap.to('.hero-copy', { yPercent: -30, opacity: .2, ease: 'none', scrollTrigger: { trigger: '.hero', start: 'top top', end: 'bottom top', scrub: true } });
 
   // split headings

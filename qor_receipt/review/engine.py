@@ -44,13 +44,14 @@ from qor_receipt.review.corroboration import (
 )
 from qor_receipt.review.device_attest import DEVICE_ATTEST_SCHEMA, device_key_for_bundle
 from qor_receipt.review.motion import (
-    MOTION_BASIS_V3,
+    MOTION_BASIS_V4,
     MOTION_HZ,
+    MOTION_MEDIAN_DRAWS,
     MOTION_RULE,
     MOTION_SAMPLE_MAX_SEGMENTS,
     MOTION_SIZE,
-    motion_sample_seqs,
-    score_motion,
+    motion_sample_draws,
+    score_motion_v4,
 )
 from qor_receipt.review.policy import (
     ANCHOR_TYPE,
@@ -66,6 +67,7 @@ from qor_receipt.review.policy import (
     REVIEW_TYPE,
     TAIL_MS,
 )
+from qor_receipt.review.rate import RateError, Resolved, bundle_rate, label
 
 SPOT, FULL = "spot-check", "full"
 TAIL_HZ = 2.0
@@ -101,6 +103,7 @@ class Submission:
     decode: set[int] = field(default_factory=set)       # segments kept on disk for decoding
     random_sample: list[int] = field(default_factory=list)
     motion_sample: list[int] = field(default_factory=list)
+    motion_draws: list[list[int]] = field(default_factory=list)
     received: dict[int, int] = field(default_factory=dict)  # seq -> bytes verified
     bad: dict[int, str] = field(default_factory=dict)
     review: dict[str, Any] | None = None
@@ -147,6 +150,8 @@ class Referee:
         self.subs: dict[str, Submission] = {}
         # pairing_id -> {nonce, roles: {home|away: submission id}, conflicts: [str]}
         self.pairs: dict[str, dict[str, Any]] = {}
+        # HACKATHON: optional post-verdict advisory hook (qor_receipt.ai_ruling.auto.AutoAdvisor.hook). None = off.
+        self.advisory_hook: Callable[[Any], bool] | None = None
 
     # ------------------------------------------------------------ info / live tokens
     def info(self) -> dict[str, Any]:
@@ -325,11 +330,18 @@ class Referee:
         presses = B.press_events(b)
         for c in b.receipt.get("challenges") or []:
             chal |= set(_challenge_seqs(b, c, presses, wmm))
-        # Both draws happen only now, after the manifest/checkpoints/inputs are committed (sub.commit),
-        # from the referee's RNG. The motion sample is one segment per time stratum, so the client
-        # cannot know which fragments will be scored before this commit.
-        sub.motion_sample = motion_sample_seqs(segs, self.rng)
-        motion = sub.motion_sample
+        # Spot-check random segments still use the referee SystemRandom after commit (below).
+        # Motion rule v4 draws are deterministic from content heads only (never submission id),
+        # so the same bundle always gets the same motion sample across resubmits.
+        sub.motion_draws = motion_sample_draws(
+            segs,
+            chain_head=b.chain_head,
+            checkpoint_head=b.checkpoints[-1]["hash"],
+            input_head=b.input_head,
+            mode=sub.mode,
+        )
+        motion = sorted(set().union(*[set(d) for d in sub.motion_draws])) if sub.motion_draws else []
+        sub.motion_sample = motion
         fixed = inits | tail | chal | set(motion)
         pool = [int(m["seq"]) for m in segs if int(m["seq"]) not in fixed]
         sub.random_sample = sorted(self.rng.sample(pool, min(self.random_segments, len(pool))))
@@ -338,7 +350,7 @@ class Referee:
         (sub.dir / "plan.json").write_text(json.dumps({"commit": sub.commit, "required": sub.required,
                                                        "random": sub.random_sample, "tail": sorted(tail),
                                                        "challenge": sorted(chal), "init": sorted(inits),
-                                                       "motion": motion}))
+                                                       "motion": motion, "motion_draws": sub.motion_draws}))
 
     def put_segment(self, sub: Submission, seq: int, chunks) -> dict[str, Any]:
         """Stream one segment's bytes; hash against the committed manifest. ``chunks`` is an iterable of bytes."""
@@ -443,11 +455,13 @@ class Referee:
                 final = None
                 checks["final_reread"] = {"state": FAIL_CHECK, "detail": f"decode/read error: {type(e).__name__}: {e}"}
         # ---- challenges (official nonce tokens, raw HID re-run, pause seen on the referee's decode)
-        ch_out, ch_check, pause_spans, challenge_reason, challenge_blocking = self._challenges(sub, rd, wmm)
+        resolved = self._frame_rate(sub, rd)
+        rate = resolved if isinstance(resolved, RateError) else float(resolved.rate)
+        ch_out, ch_check, pause_spans, challenge_reason, challenge_blocking = self._challenges(sub, rd, wmm, rate)
         checks["challenges"] = ch_check
         # ---- motion rule v3: a spread across the match, not the final-reread tail
         try:
-            mp, mdetail = self._motion(sub, rd, pause_spans, wmm)
+            mp, mdetail = self._motion(sub, rd, pause_spans, wmm, rate)
         except Exception as e:
             mp, mdetail = None, {"note": f"motion not computed: {type(e).__name__}: {e}"}
         checks["motion"] = {"state": PASS if mp is not None and mp >= R.MOTION_MIN_PERMILLE else PARTIAL_CHECK,
@@ -474,8 +488,9 @@ class Referee:
                   "scope": ("post-hoc review of an uploaded QorCap bundle by the QorTime official referee: "
                             + ("every video byte hashed against the committed manifest" if sub.mode == FULL else
                                f"spot-check of {len(sub.received)}/{len(b.segments)} segments (init, recorded tail, "
-                               f"challenge windows, a stratified random spread of at most {MOTION_SAMPLE_MAX_SEGMENTS} "
-                               f"media segments for motion drawn after commit, {k} random segments drawn after commit)")),
+                               f"challenge windows, motion-rule/v4 median of 3 deterministic stratified draws "
+                               f"(≤{MOTION_SAMPLE_MAX_SEGMENTS} media segments each, content-head seeded), "
+                               f"{k} random segments drawn after commit)")),
                   "not_proven": NOT_PROVEN}
         if challenge_reason:
             # First field a reader sees. A refusal must not live only under post_sign_errors.
@@ -484,6 +499,10 @@ class Referee:
         if device_key is not None:
             # Informational. Not a check, so it cannot pass or fail the review.
             review["device_key"] = device_key
+        rate_record = self._rate_record(resolved, b.segments)
+        if rate_record is not None:
+            # Informational, like device_key. Not a check, so it cannot pass or fail the review.
+            review["frame_rate"] = rate_record
         sub.review = review
         sub.corroboration = corroboration
         if any(c["state"] == FAIL_CHECK for c in checks.values()):
@@ -526,15 +545,65 @@ class Referee:
             out["log_entry"] = sub.log_entry
         return out
 
-    def _challenges(self, sub: Submission, rd, wmm: int
+    def _frame_rate(self, sub: Submission, rd) -> Resolved | RateError:
+        """The recording's frame rate from the fMP4 the referee holds (``review.rate``).
+
+        Fragments are read one at a time and only their ``moof`` is parsed. The rate is measured on
+        the always-decoded set only (inits, recorded tail, challenge segments, motion draws), never
+        on the SystemRandom spot sample, so a resubmit of the same bundle cannot change the rate,
+        the gap count, or any rate-dependent check. No rate information is the legacy 30/1, so older
+        bundles keep their exact
+        arithmetic. A rate that is present but unusable, mixed across files, or any parse failure
+        comes back as a RateError; the checks that need the capture clock then fail closed with that
+        reason instead of assuming 30.
+        """
+        b = sub.bundle
+        try:
+            always = set(sub.decode) - set(sub.random_sample or ())
+            seqs = sorted(s for s in sub.received if s in always)
+            by_init: dict[int, list[int]] = {}
+            for run in M.runs(seqs, b):
+                init = M.init_seq_for(b, run[0])
+                if init is not None:
+                    by_init.setdefault(init, []).extend(run)
+            files = [(str(b.segments[i].get("file")), rd(i) or b"", (rd(s) for s in ss)) for i, ss in sorted(by_init.items())]
+            return bundle_rate(b.meta, files)
+        except RateError as e:
+            return e
+        except Exception as e:  # never a crash: an unreadable rate is UNMEASURED
+            return RateError(f"rate parse error: {type(e).__name__}")
+
+    @staticmethod
+    def _rate_record(rate: Resolved | RateError, segments: list[dict[str, Any]]) -> dict[str, Any] | None:
+        """``review.frame_rate``: informational, not a check. Always emitted, including at 30/1.
+
+        Verdicts do not depend on this record. A RateError is still fail-closed in the checks that
+        need the capture clock; this key only reports it.
+        """
+        if isinstance(rate, RateError):
+            return {"rate": "UNMEASURED", "reason": str(rate), "source": None, "clock_fit": "not_computed"}
+        fps = float(rate.rate)
+        # Legacy clock_fit still runs, at an assumed 30 fps basis (the legacy rate).
+        fitted = capture_clock(segments, fps) != (0.0, 1000.0 / fps)
+        rec = {"rate": label(rate.rate), "source": rate.source, "clock_fit": "fitted" if fitted else "fallback"}
+        rec["unsnapped_mean"] = label(rate.mean) if rate.mean is not None else None
+        # A legacy record has no measured durations: do not publish a default gaps: 0.
+        # unsnapped_mean is already None when there is no measured mean.
+        rec["gaps"] = None if rate.legacy else rate.gaps
+        return rec
+
+    def _challenges(self, sub: Submission, rd, wmm: int, rate: float | RateError = 30.0,
                     ) -> tuple[list[dict], dict[str, Any], list[tuple[int, int]], str | None, list[str]]:
         b = sub.bundle
         toks = {t.get("nonce"): t for t in b.jsonl("official_challenges.jsonl")}
         presses = B.press_events(b)
         rule = challenge_rule_of(b.meta)
-        clock = capture_clock(b.segments) if rule == RULE_V2 else None
+        rate_error = rate if isinstance(rate, RateError) else None
+        fps = None if rate_error else rate
+        # Rule v2 dates frames on the manifest fit, which is in frames of the recording's own rate.
+        clock = capture_clock(b.segments, fps) if rule == RULE_V2 and fps is not None else None
         ceiling = latency_ceiling_ms(rule)
-        hz = 30.0
+        hz = 30.0  # decode (sample) rate of the pause scan, not the recording's rate
         out, notes, bad = [], [], False
         pause_spans: list[tuple[int, int]] = []
         for c in b.receipt.get("challenges") or []:
@@ -574,6 +643,10 @@ class Referee:
             scan = None
             if M.ffmpeg_bin() and not missing:
                 def frames(seqs=list(present)):
+                    if rule == RULE_V2 and rate_error is not None:
+                        # Fail closed: no capture clock without a known rate. scan_pause records the error
+                        # and the challenge result stays pause_not_seen_on_video.
+                        raise RateError(f"frame rate UNMEASURED: {rate_error}")
                     for run in M.runs(seqs, b):
                         pts0 = None
                         if rule == RULE_V2:
@@ -582,7 +655,7 @@ class Referee:
                                 pts0 = fragment_pts0_ms(rd(init) or b"", rd(run[0]) or b"")
                         for n, (t, img) in enumerate(M.decode_run(b, run, rd, hz=hz, size=(640, 360))):
                             # No tfdt: keep the segment_ranges time. That stamp is late, so it fails the ceiling.
-                            mono = t if pts0 is None else frame_mono_ms(clock, pts0, n, hz)
+                            mono = t if pts0 is None else frame_mono_ms(clock, pts0, n, hz, fps)
                             yield mono + wmm, img
                 scan = M.scan_pause(frames() if present else iter(()), det)
             if scan is not None and scan.error is None:
@@ -634,31 +707,42 @@ class Referee:
         return out, {"state": state, "detail": {"count": len(out), "rule": rule, "notes": notes}}, pause_spans, reason, blocking
 
     def _motion(self, sub: Submission, rd, pause_spans_wall: list[tuple[int, int]],
-                wmm: int) -> tuple[int | None, dict[str, Any]]:
-        """Motion rule v3 over the stratified sample drawn in ``_plan``.
+                wmm: int, rate: float | RateError = 30.0) -> tuple[int | None, dict[str, Any]]:
+        """Motion rule v4 over the deterministic stratified draws planned in ``_plan``.
 
-        Decode budget: at most ``MOTION_SAMPLE_MAX_SEGMENTS`` media fragments (about 48 s when a
-        fragment is ~2 s), at ``MOTION_HZ`` and ``MOTION_SIZE``. That is the whole budget for this
-        check. The recorded tail is decoded separately for the final re-read and is not added here.
+        Decode budget: the union of ``MOTION_MEDIAN_DRAWS`` draws of at most
+        ``MOTION_SAMPLE_MAX_SEGMENTS`` media fragments each (~96 s when fragments are ~2 s and the
+        draws overlap heavily; worst case ~3×96 s if disjoint), at ``MOTION_HZ`` and ``MOTION_SIZE``.
+        The recorded tail is decoded separately for the final re-read and is not added here.
         Frame time is the fragment PTS clock. A fragment with no ``tfdt`` keeps ``segment_ranges``.
-        The sample is the one already drawn from the referee RNG after commit. It is not redrawn.
+        Draws are seeded only from content heads; they are not redrawn and do not depend on
+        submission id or the spot-check RNG.
         """
         b = sub.bundle
         if not M.ffmpeg_bin() or not b.inputs:
             return None, {"rule": MOTION_RULE, "note": "not computed (no ffmpeg or no controller log)"}
-        sample = list(sub.motion_sample)
-        present = [s for s in sample if s in sub.received]
+        draws = [list(d) for d in (sub.motion_draws or [sub.motion_sample])]
+        union = sorted(set().union(*[set(d) for d in draws])) if draws else []
+        present = [s for s in union if s in sub.received]
         if not present:
-            return None, {"rule": MOTION_RULE, "basis": MOTION_BASIS_V3, "bins": 0, "sample_segments": sample,
+            return None, {"rule": MOTION_RULE, "basis": MOTION_BASIS_V4, "bins": 0, "sample_segments": union,
+                          "sample_draws": draws, "median_draws": MOTION_MEDIAN_DRAWS,
                           "note": "motion sample was not received"}
+        if isinstance(rate, RateError):
+            # Fail closed: motion bins are dated on the capture clock, which needs the recording's rate.
+            return None, {"rule": MOTION_RULE, "basis": MOTION_BASIS_V4, "bins": 0, "sample_segments": union,
+                          "sample_draws": draws, "median_draws": MOTION_MEDIAN_DRAWS,
+                          "note": f"not computed (frame rate UNMEASURED: {rate})"}
         energy = M.input_energy_series(b)
-        clock = capture_clock(b.segments)
+        clock = capture_clock(b.segments, rate)
+        ranges = B.segment_ranges(b)
         scorebug = M.sidecar_standard_reader(self.sidecar_dir)()
         end_reader, final_fn = M.motion_screen_detectors(self.sidecar_dir)
         reasons: list[tuple[int, str]] = []
         end_hits: list[tuple[int, bool]] = []
         final_hits: list[tuple[int, bool]] = []
         motion: dict[int, int] = {}
+        bin_segs: dict[int, set[int]] = {}
         fallbacks = 0
         for run in M.runs(present, b):
             pts0 = None
@@ -670,7 +754,15 @@ class Referee:
 
             def frames(run=run, pts0=pts0):
                 for n, (t, img) in enumerate(M.decode_run(b, run, rd, hz=MOTION_HZ, size=MOTION_SIZE)):
-                    mono = t if pts0 is None else motion_mono_ms(clock, pts0, n, MOTION_HZ)
+                    mono = t if pts0 is None else motion_mono_ms(clock, pts0, n, MOTION_HZ, rate)
+                    sec = int(mono) // 1000
+                    owner = run[0]
+                    for s in run:
+                        a, z = ranges[s]
+                        if a <= mono < z or (s == run[-1] and a <= mono <= z):
+                            owner = s
+                            break
+                    bin_segs.setdefault(sec, set()).add(owner)
                     reasons.append((mono, _scorebug_reason(scorebug, img)))
                     if end_reader is not None:
                         end_hits.append((mono, _end_menu_hit(end_reader, img)))
@@ -680,9 +772,12 @@ class Referee:
 
             motion.update(M.motion_series(frames()))
         spans_mono = [(a - wmm, z - wmm) for a, z in pause_spans_wall]
-        return score_motion(energy, motion, scorebug_reasons=reasons, end_menu=end_hits, final_screen=final_hits,
-                            pause_spans_mono=spans_mono, sample_segments=sample, clock_fallbacks=fallbacks,
-                            screen_readers=end_reader is not None)
+        return score_motion_v4(
+            energy, motion, bin_segs, draws,
+            scorebug_reasons=reasons, end_menu=end_hits, final_screen=final_hits,
+            pause_spans_mono=spans_mono, clock_fallbacks=fallbacks,
+            screen_readers=end_reader is not None,
+        )
 
     def _anchors(self, sub: Submission) -> dict[str, Any]:
         b = sub.bundle
@@ -729,8 +824,20 @@ class Referee:
         sub.receipt["signatures"]["players"][p["role"]] = {"key_id": kid(p["pubkey"]), "sig": sig}
         sub.verify = R.verify_receipt(sub.receipt, referee_pub=self.key.pubkey_hex)
         sub.state = "complete"
-        self.cleanup_segments(sub)
-        return {"receipt": sub.receipt, "verify": sub.verify}
+        out = {"receipt": sub.receipt, "verify": sub.verify}
+        # HACKATHON (Meta AI Developer Hackathon): optional advisory hook, called only after the verdict is final.
+        # It gets the finished submission, must not raise into us, and can only take over deleting the segments
+        # (it queues a background job that reads them, then deletes them). It never sees or edits ``out``.
+        hook = self.advisory_hook
+        took = False
+        if hook is not None:
+            try:
+                took = bool(hook(sub))
+            except Exception:  # noqa: BLE001  advisory layer must never affect the referee
+                took = False
+        if not took:
+            self.cleanup_segments(sub)
+        return out
 
     def cleanup_segments(self, sub: Submission) -> None:
         shutil.rmtree(sub.dir / "segs", ignore_errors=True)
@@ -851,13 +958,26 @@ def _score_atom(n: Any) -> int | None:
     return None
 
 
-def _reread_value(src: dict[str, Any] | None) -> dict[str, int] | None:
-    """Optional structured score beside final_reread. Absent when away/home are not integers.
+def _reread_value(src: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Optional structured score beside final_reread. Missing required integers abstain.
 
     Learning may compare this object. It is not a verdict, and a missing value does not change ``state``.
     """
     if not isinstance(src, dict):
         return None
+    if src.get("game") == "cod" or src.get("game_set") == "cod":
+        stats = src.get("owner_row", src)
+        if not isinstance(stats, dict):
+            return None
+        kills, deaths = _score_atom(stats.get("kills")), _score_atom(stats.get("deaths"))
+        outcome = stats.get("outcome", stats.get("result"))
+        if kills is None or deaths is None or outcome not in ("victory", "defeat"):
+            return None
+        value = {"game": "cod", "kills": kills, "deaths": deaths, "outcome": outcome}
+        assists = _score_atom(stats.get("assists"))
+        if assists is not None:
+            value["assists"] = assists
+        return value
     away, home = _score_atom(src.get("away")), _score_atom(src.get("home"))
     if away is None or home is None:
         return None
@@ -874,6 +994,24 @@ def _final_check(final: dict, claimed: dict) -> dict[str, Any]:
     src = f or lr
     if src is None:
         return {"state": FAIL_CHECK, "detail": "referee could not read any score from the recorded tail"}
+    if src.get("game") == "cod" or src.get("game_set") == "cod":
+        # Independent reader data only; never derive missing values from the claim.
+        value = _reread_value(src)
+        expected = _reread_value(claimed)
+        if value is None:
+            return {"state": FAIL_CHECK, "detail": "referee could not read a structured CoD final"}
+        if expected is None:
+            row = {"state": PARTIAL_CHECK, "detail": "CoD final read; no structured claim to compare"}
+        elif any(k in value and value[k] != v for k, v in expected.items()):
+            row = {"state": FAIL_CHECK, "detail": "referee CoD final differs from the structured claim"}
+        elif any(k not in value for k in expected):
+            row = {"state": PARTIAL_CHECK, "detail": "CoD final read; requested optional count not read"}
+        elif f and f.get("final_confirmed") is True:
+            row = {"state": PASS, "detail": "referee CoD final matches the structured claim"}
+        else:
+            row = {"state": PARTIAL_CHECK, "detail": "CoD final read; agreement not confirmed"}
+        row["value"] = value
+        return row
     mine = (src["home"], src["away"])
     theirs = (claimed.get("home_score"), claimed.get("away_score"))
     if mine != theirs:

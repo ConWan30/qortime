@@ -41,8 +41,8 @@
   },
   "recorder_versions": {
     "tail_timing_sound_from": "0.3.3",
-    "challenge_mismatch_stored_from": "0.3.34",
-    "current": "0.3.33",
+    "challenge_mismatch_stored_from": "0.3.44",
+    "current": "0.3.38",
     "known_bad_tail": ["0.3.0", "0.3.1", "0.3.2"]
   },
   "challenge_rules": {
@@ -60,7 +60,7 @@
     "max_window_ms": 120000,
     "pattern": "OPTIONS then 4 face/d-pad buttons from sha256(nonce)",
     "menu_leave_buttons": ["CROSS", "CIRCLE"],
-    "menu_safe_issue": "The referee redraws a fresh nonce until CROSS and CIRCLE are only in the last slot or absent. pattern_for is unchanged, so every existing receipt still verifies.",
+    "menu_safe_issue": "The referee redraws a fresh nonce until CROSS and CIRCLE are absent from every body slot after OPTIONS. pattern_for is unchanged, so every existing receipt still verifies.",
     "response": "first OPTIONS press inside [issued_ms, deadline_ms] followed by exactly the pattern",
     "pause_latency_ms": [0, 600],
     "rule_versions": {
@@ -84,38 +84,99 @@
         "dark_menu_bright_frac": [0.005, 0.05]
       }
     },
-    "recorder_result": "QorCap >= 0.3.11 re-runs each challenge on its own bundle at finalize; an ok result is written to the receipt (reverified_by recorder). From recorder 0.3.34 a pattern_mismatch is stored as ok:false (reason pattern_mismatch, reverified_by recorder, no rule field) only when the controller log can support it. Every non-empty line of inputs.jsonl must parse as a JSON object. A JSON value that is not an object, such as 42 or [], is malformed, and so is a second header row. Chunk rows must cover [issued_ms, deadline_ms] with no gap larger than 3000 ms (the 2 s fMP4 fragment plus 1 s slack). Coverage uses the latest chunk at or before issued_ms. That chunk must exist and issued_ms minus its wall time must be <= 3000. Chunks earlier than it are not gap-checked, and a chunk after issued_ms does not close the open. From that chunk each next chunk is at most 3000 ms later until a chunk at or after deadline_ms. A last chunk before the deadline does not cover it, even when deadline_ms minus that chunk is <= 3000. A single chunk after the deadline does not cover the window, and neither does a crash gap followed by rows after the deadline. Wall time is wall_anchor_ms + t_us//1000. Status is connected at issued_ms and remains connected through deadline_ms+2500. Any status other than connected in that span withholds the result, including stalled, unplugged, and missing, and including a drop that reconnects before the deadline. A status row whose t_us is not an integer, or whose state is not a string, withholds it. OPTIONS alone, and OPTIONS inside the window with the rest of the pattern after deadline_ms, are pattern_mismatch and are stored when the log passes this gate. Every other non-ok reason stays null. A withheld mismatch is recorded in challenge_results.jsonl as reason pattern_mismatch with withheld controller_log (bundle metadata, not in receipt.v0). The official referee applies the same gate: a pattern_mismatch on a log that fails it is challenge_unanswered (partial, never VERIFIED, never FAIL). Only a gate-passing mismatch is challenge_failed",
+    "recorder_result": "QorCap >= 0.3.11 re-runs each challenge on its own bundle at finalize; an ok result is written to the receipt (reverified_by recorder). From recorder 0.3.44 a pattern_mismatch is stored as ok:false (reason pattern_mismatch, reverified_by recorder, no rule field) only when the controller log can support it. Store `pattern_mismatch` (`ok` false, `reverified_by` `recorder`) only when the controller log can support it. Every non-empty line of `inputs.jsonl` must parse as a JSON object. A JSON value that is not an object, such as `42` or `[]`, is malformed, and so is a second `header` row. Coverage opens at the latest `chunk` row stamped at or before `issued_ms`; there must be one, and a chunk after `issued_ms` does not open coverage. From it, each next chunk must be at most 3000 ms after the previous one until a chunk stamped at or after `deadline_ms` is reached; a last chunk before `deadline_ms` withholds even when the deadline is within 3000 ms of it. Gaps before the opening chunk and after the closing chunk are not checked. Only `type: \"chunk\"` rows with an integer `t_us` count; others are ignored. That bound is the 2 s fMP4 fragment (`min_frag_duration`) plus 1 s of slack for the one-second GOP. From 0.3.34 a chunk row, including an empty one, is written every segment while the HID reader is alive (it has returned from a read since the previous seal); a hung read writes none, so a hang that spans a whole segment leaves a gap and withholds. A single chunk after the deadline does not cover the window, and neither does a crash gap followed by rows after the deadline. Wall time is the header `wall_anchor_ms` plus `t_us // 1000`. The pad's status must be `connected` at `issued_ms` and remain `connected` through `deadline_ms + 2500` ms. Every status row at the last wall time at or before `issued_ms` must be `connected`; a non-connected row at that same millisecond withholds regardless of order. That 2500 ms is the stall-detection lag: a `stalled` row is written only after 2 s with no HID reports, on the next 100 ms read timeout. A status other than `connected` (for example `stalled`, `unplugged`, or `missing`) anywhere in that span withholds the result, including a drop that reconnects before the deadline. A status row whose `t_us` is not an integer, or whose `state` is not a string, withholds it too. OPTIONS alone, and OPTIONS inside the window with the rest of the pattern after the deadline, are `pattern_mismatch` from `verify_response` and are stored when the log passes this gate. Every other non-ok reason stays null. A withheld mismatch stays in `challenge_results.jsonl` as `reason: pattern_mismatch` with `withheld: \"controller_log\"`. That file is bundle metadata, not a contract file, and `withheld` is not in `receipt.v0`. The official referee applies the same gate: a pattern_mismatch on a log that fails it is challenge_unanswered (partial, never VERIFIED, never FAIL). Only a gate-passing mismatch is challenge_failed",
     "gate_log": "challenge_gates.jsonl: one line per opened window with the gate basis and scorebug state"
   },
   "motion_rules": {
-    "floor_permille": 300,
-    "min_bins": 20,
-    "max_lag_bins": 3,
-    "bin_ms": 1000,
-    "current": 3,
-    "sample_max_segments": 24,
-    "sample_hz": 10,
-    "sample_size": [640, 360],
-    "clock": "fragment_pts",
-    "sample": "stratified random: the media span is split into at most 24 equal mono_ms strata and the referee RNG picks one segment per non-empty stratum, drawn only after the submission commit. The drawn seqs are plan.json motion and review.checks.motion.detail.sample_segments",
-    "decode_budget": "at most 24 media fragments (about 48 s when a fragment is ~2 s), 10 Hz, 640x360; the 240 s tail is the final re-read and is not added to this sample",
-    "signal": "controller report rate (logged input rows per second); a second with no reports stays zero and is not dropped",
-    "exclusions": ["scorebug_absent", "end_menu", "final_screen", "challenge_pause"],
-    "not_exclusions": ["client labels", "timeline.jsonl", "bundle.json fields", "idle controller seconds"],
-    "scorebug_absent": "layout_unknown only, and only after this sample has one ok scorebug read; a second is absent when at least half of its classified frames are layout_unknown; frame_too_small, frame_invalid, and frame_aspect are not absence",
-    "challenge_pause": "the measured pause span from the challenge re-run, not the issue window and not every dark frame in the match",
-    "history": "Reviews before motion rule 3 correlated report rate with frame-difference energy over every decoded segment, including the 240 s tail, on the segment close clock, with no live-play exclusions. Those receipts store that integer. The verifier still only compares the stored integer with 300.",
-    "rule_versions": {
-      "3": {
-        "id": 3,
-        "basis": "motion-rule/v3: controller report rate vs frame-difference energy per second on a stratified random spread of at most 24 media segments drawn after commit, timed with the fragment PTS clock (segment close stamps only when a fragment has no tfdt); bins dropped only for referee-measured scorebug absence, end menu, final screen, or challenge pause",
-        "where": "signals.motion_basis and review.checks.motion.detail. Not result.rule. Challenge result.rule stays 1 or 2.",
-        "detail_keys": ["rule", "bins", "decoded_bins", "motion_permille", "basis", "sample_segments", "sample_max_segments", "clock", "clock_fallbacks", "screen_readers", "excluded"],
-        "excluded_keys": ["scorebug_absent", "end_menu", "final_screen", "challenge_pause", "total"],
-        "receipt_schema": "no new receipt.v0.json fields; excluded-bin counts and the sample live in the review check detail and in this registry"
-      }
+  "floor_permille": 300,
+  "min_bins": 20,
+  "max_lag_bins": 3,
+  "bin_ms": 1000,
+  "current": 4,
+  "sample_max_segments": 48,
+  "median_draws": 3,
+  "sample_hz": 10,
+  "sample_size": [
+    640,
+    360
+  ],
+  "clock": "fragment_pts",
+  "sample": "motion-rule/v4: media span split into at most 48 equal mono_ms strata; three deterministic draws seeded only from chain_head / checkpoint head / inputs chain head / mode (never submission id) each pick one segment per non-empty stratum; review uses the median permille. plan.json stores motion (union) and motion_draws; review.checks.motion.detail mirrors that",
+  "decode_budget": "union of 3 deterministic draws of at most 48 media fragments each (about 96 s when a fragment is ~2 s and draws overlap; worst case ~288 s if disjoint), 10 Hz, 640x360; the 240 s tail is the final re-read and is not added to this sample",
+  "signal": "controller report rate (logged input rows per second); a second with no reports stays zero and is not dropped",
+  "exclusions": [
+    "scorebug_absent",
+    "end_menu",
+    "final_screen",
+    "challenge_pause"
+  ],
+  "not_exclusions": [
+    "client labels",
+    "timeline.jsonl",
+    "bundle.json fields",
+    "idle controller seconds"
+  ],
+  "scorebug_absent": "layout_unknown only, and only after this sample has one ok scorebug read; a second is absent when at least half of its classified frames are layout_unknown; frame_too_small, frame_invalid, and frame_aspect are not absence",
+  "challenge_pause": "the measured pause span from the challenge re-run, not the issue window and not every dark frame in the match",
+  "history": "Reviews before motion rule 3 correlated report rate with frame-difference energy over every decoded segment, including the 240 s tail, on the segment close clock, with no live-play exclusions. Rule 3 used a SystemRandom stratified sample of at most 24 segments after commit (submission-dependent). Rule 4 keeps the floor at 300 and the same exclusions, but seeds sampling from content heads only and takes the median of 3 draws of at most 48 segments. Those receipts store that integer. The verifier still only compares the stored integer with 300.",
+  "rule_versions": {
+    "3": {
+      "id": 3,
+      "basis": "motion-rule/v3: controller report rate vs frame-difference energy per second on a stratified random spread of at most 24 media segments drawn after commit, timed with the fragment PTS clock (segment close stamps only when a fragment has no tfdt); bins dropped only for referee-measured scorebug absence, end menu, final screen, or challenge pause",
+      "where": "signals.motion_basis and review.checks.motion.detail. Not result.rule. Challenge result.rule stays 1 or 2.",
+      "detail_keys": [
+        "rule",
+        "bins",
+        "decoded_bins",
+        "motion_permille",
+        "basis",
+        "sample_segments",
+        "sample_max_segments",
+        "clock",
+        "clock_fallbacks",
+        "screen_readers",
+        "excluded"
+      ],
+      "excluded_keys": [
+        "scorebug_absent",
+        "end_menu",
+        "final_screen",
+        "challenge_pause",
+        "total"
+      ],
+      "receipt_schema": "no new receipt.v0.json fields; excluded-bin counts and the sample live in the review check detail and in this registry"
+    },
+    "4": {
+      "id": 4,
+      "basis": "motion-rule/v4: controller report rate vs frame-difference energy per second; median of 3 deterministic stratified draws of at most 48 media segments each, seeded only from chain_head / checkpoint head / inputs chain head / mode (never submission id), timed with the fragment PTS clock (segment close stamps only when a fragment has no tfdt); bins dropped only for referee-measured scorebug absence, end menu, final screen, or challenge pause",
+      "where": "signals.motion_basis and review.checks.motion.detail. Not result.rule. Challenge result.rule stays 1 or 2.",
+      "detail_keys": [
+        "rule",
+        "bins",
+        "decoded_bins",
+        "motion_permille",
+        "basis",
+        "sample_segments",
+        "sample_draws",
+        "draw_permilles",
+        "median_draws",
+        "sample_max_segments",
+        "clock",
+        "clock_fallbacks",
+        "screen_readers",
+        "excluded"
+      ],
+      "excluded_keys": [
+        "scorebug_absent",
+        "end_menu",
+        "final_screen",
+        "challenge_pause",
+        "total"
+      ],
+      "receipt_schema": "no new receipt.v0.json fields; excluded-bin counts and the sample live in the review check detail and in this registry"
     }
-  },
+  }
+},
   "verdicts": ["VERIFIED", "PARTIAL", "SELF_ATTESTED", "FAIL"],
   "cli_exit_codes": {
     "qortime verify": {"VERIFIED": 0, "SELF_ATTESTED": 0, "PARTIAL": 1, "FAIL": 2},
@@ -170,6 +231,6 @@
   "submit_auth": {"scheme": "install-key-v1", "header": "X-Qor-Submit", "challenge": "/v1/submit/challenge",
                   "request_type": "qortime-submit/v1", "pow_prefix": "qortime-pow/v1|", "min_client": "0.3.10",
                   "legacy_status": 426, "install_key": "the bundle's device (recorder) key"},
-  "referee_image": {"qorcap_sidecar_sha": "1680734b3ffbff3ee0d15c39fbbf702ab931ea91",
+  "referee_image": {"qorcap_sidecar_sha": "cd42d667046103b4b7752e29f08ef56ca13cface",
                     "scorebug_profiles": ["madden27_standard", "madden27_monday_night", "madden27_sunday_night", "madden27_thursday_night"]}
 }

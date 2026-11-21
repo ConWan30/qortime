@@ -1,7 +1,7 @@
 # QorTime — Discovery / Findability Plan
 
 **Date:** 2026-10-15 (CT)  
-**Product:** Signed Madden end-of-game receipts + public verify at https://conwan30.github.io/qortime/  
+**Product:** Signed Madden end-of-game receipts + public verify at https://qortime.com/  
 **Upsell:** Verified Match — $9.99 hosted-referee countersign (**early access / test until Stripe KYC**; do not claim live paid product for real money)
 
 **Constraint:** Research + drafts only. No third-party sends from bots.
@@ -32,7 +32,7 @@ Current site: marketing homepage + `/verify/` only. No pricing, no Verified Matc
 
 **Already present (keep):**
 
-- `<title>`, meta description, canonical `https://conwan30.github.io/qortime/`
+- `<title>`, meta description, canonical `https://qortime.com/`
 - `og:title`, `og:description`, `og:url`, `og:image` → `assets/og.png`
 - `twitter:card` = `summary_large_image`
 
@@ -45,7 +45,7 @@ Current site: marketing homepage + `/verify/` only. No pricing, no Verified Matc
 | `robots.txt` + simple `sitemap.xml` | List `/`, `/verify/`, new pages; submit via Google Search Console when Con owns the property |
 | Structured data | Optional `SoftwareApplication` / `WebApplication` JSON-LD (name QorTime, url, description; **offers** only as early-access / TBD price until live) |
 | OG image refresh | Optional second OG for “Verified Match early access” when pricing page ships |
-| Keywords in body | Natural phrases: “Madden match receipt”, “verify console score”, “money match dispute”, “hosted referee” — not stuffing |
+| Keywords in body | Natural phrases: “Madden match receipt”, “verify console score”, “console match dispute”, “hosted referee” — not stuffing |
 
 **Do not:** Claim EA / NFL partnership, MCS affiliation, or live paid Verified Match.
 
@@ -59,8 +59,8 @@ README already positions QorTime for escrow platforms (Locked, TrustBridge, Arca
 
 ```markdown
 ## Try it
-- Site: https://conwan30.github.io/qortime/
-- Verify in browser: https://conwan30.github.io/qortime/verify/
+- Site: https://qortime.com/
+- Verify in browser: https://qortime.com/verify/
 - **Verified Match** ($9.99 hosted-referee countersign): early access / Stripe test mode until business KYC — not a live paid product yet.
 ```
 
@@ -81,7 +81,7 @@ Also:
 
 > The final whistle, sealed.  
 > QorTime reads the Madden scorebug, logs controller reports from the same session, and seals an Ed25519 receipt a referee co-signs. It does not prove who held the controller, or that the console obeyed that pad. Anyone verifies in-browser — nothing uploaded.  
-> Verify: https://conwan30.github.io/qortime/verify/  
+> Verify: https://qortime.com/verify/  
 > Verified Match (hosted referee countersign, $9.99): **early access / coming soon** until we finish KYC.  
 > Spec + code: github.com/ConWan30/qortime
 
@@ -139,14 +139,14 @@ Platforms where escrow + dispute volume makes a **machine-checkable receipt** va
 
 | Platform | URL | Fit |
 |---|---|---|
-| **Locked** | https://getlckd.com/play/madden-26 | Madden 1v1 money matches; escrow; **both submit screenshot**; human disputes ≤24h. Strongest product fit. |
+| **Locked** | https://getlckd.com/play/madden-26 | Madden 1v1 head-to-head matches; **both submit screenshot**; human disputes ≤24h. Strongest product fit. |
 | **TrustBridge** | https://www.trustbridge.gg/ | PS-focused escrow; AI on screenshots + PSN cross-check. Named in README. (Site fetch flaky — confirm live before outreach.) |
 | **MatchPoint** | https://matchpointgaming.org/ | Lists **Madden NFL 27**; escrow; evidence disputes. Contact: /contact |
 | **ArcadeBet** | https://arcadebet.gg/ | Screen-share + AI winner detection; Madden listed. Complementary / competitive — angle = open verify + offline receipt. X `@ArcadeBet` was suspended (uncertain brand health). |
 | **DuelX** | https://playduelx.com/ | Escrow + dual report + human evidence queue. Games skew CoD/2K/RL today — **ask Madden roadmap** or general receipt API. |
 | **TrenPlay** | https://trenplay.gg/ | On-chain escrow; screenshot disputes 24–48h. Good “cryptographic receipt” angle. |
 | **NeonSportz** | https://www.neonsportz.com/ | Not escrow; **league commissioners** care about disputed scores / imports. Soft tool pitch. |
-| **Compete4ever / ISG** | https://compete4ever.com/maddenleague/ · https://theisgshow.com/madden/ | Weekly Madden money matchups (TV). Organizer outreach, not player spam. |
+| **Compete4ever / ISG** | https://compete4ever.com/maddenleague/ · https://theisgshow.com/madden/ | Weekly Madden head-to-head matchups (TV). Organizer outreach, not player spam. |
 | **Challengermode (MCS)** | https://www.challengermode.com/s/MCS27 | Official MCS ops. Long-shot B2B; contact via challengermode.com/contact |
 | **Wagr** | https://wagr.co/ | Skill-gaming cash app — **uncertain Madden H2H fit**; verify before prioritizing. |
 | **PvP Protocol** | https://pvpprotocol.com/DisputeCenter | Explicit dispute center; admin evidence review. |

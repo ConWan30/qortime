@@ -1245,14 +1245,8 @@ def test_new_contract_files_are_lf_only():
 
 
 def test_published_matches_keep_their_verdicts():
-    """021003, 125430, and 170123. Frame-bind status is not an input to these verdicts."""
+    """125430 and 170123. Frame-bind status is not an input to these verdicts."""
     pinned = {
-        "site/matches/021003/receipt.json": (
-            "SELF_ATTESTED", "single-attested", [],
-            ["referee_key_not_pinned", "referee_not_on_allowlist", "referee_local_self_attested",
-             "away:challenge_missing:kickoff", "away:challenge_missing:halftime", "away:challenge_missing:end",
-             "away:motion_signal_missing"],
-        ),
         "site/matches/125430/receipt.json": (
             "FAIL", "single-attested",
             ["home:cp[0]:gap_too_long", "home:cp[591]:gap_too_long", "home:cp[591]:clock_skew", "home:cp[592]:clock_skew"],

@@ -1,0 +1,141 @@
+{
+ "schema": "qortime.score_crosscheck.v0",
+ "label": "ADVISORY, LOWER-ONLY. Meta Muse Spark re-read the scorebug after each locked score. Agreement keeps the status; a disagreement lowers VERIFIED to PARTIAL. It never raises a status and never FAILs a match.",
+ "built_during": "Meta AI Developer Hackathon, Oct 26 - Nov 4 2026",
+ "affects_verdict": "lower_only",
+ "max_cap": "PARTIAL",
+ "model": "muse-spark-1.3",
+ "receipt_jcs_sha256": "95b9c9961c9dadc06c159329dac1f8cee032bc24ac6f4c631009e051051942e2",
+ "locks": [
+  {
+   "id": "lock864-a7-h21",
+   "expected": {
+    "away": 7,
+    "home": 21
+   },
+   "reads": [
+    {
+     "result": "unchecked",
+     "reason": "no_frame"
+    },
+    {
+     "result": "agree",
+     "read": {
+      "away": 7,
+      "home": 21
+     },
+     "crop_sha256": "d65fcbe93c095114cacbe68ba5cb8b38484ca2f0cd50d8a78a78de406b7a1e9e"
+    }
+   ],
+   "result": "agree"
+  },
+  {
+   "id": "lock865-a7-h21",
+   "expected": {
+    "away": 7,
+    "home": 21
+   },
+   "reads": [
+    {
+     "result": "agree",
+     "read": {
+      "away": 7,
+      "home": 21
+     },
+     "crop_sha256": "25a2d32d1960592efe39559f3fd829cf640d46d73e807841765a171b04565709"
+    },
+    {
+     "result": "agree",
+     "read": {
+      "away": 7,
+      "home": 21
+     },
+     "crop_sha256": "870c1668f675ed4af200f05c09c34b94ddde561d1551e8a2ea48a64f030a2da5"
+    }
+   ],
+   "result": "agree"
+  },
+  {
+   "id": "lock866-a7-h21",
+   "expected": {
+    "away": 7,
+    "home": 21
+   },
+   "reads": [
+    {
+     "result": "agree",
+     "read": {
+      "away": 7,
+      "home": 21
+     },
+     "crop_sha256": "811956d0f7fa25c38119bf69dc285c3908cdb41226d96debe6edf487b510a7e0"
+    },
+    {
+     "result": "unchecked",
+     "reason": "no_frame"
+    }
+   ],
+   "result": "agree"
+  },
+  {
+   "id": "lock868-a7-h21",
+   "expected": {
+    "away": 7,
+    "home": 21
+   },
+   "reads": [
+    {
+     "result": "unchecked",
+     "reason": "no_frame"
+    },
+    {
+     "result": "unsure",
+     "crop_sha256": "72841425b2ddf3b98ff099f5fdaa5b63da06d19157884801baf63605106ca9ca"
+    }
+   ],
+   "result": "unchecked",
+   "reason": "no_confident_read"
+  },
+  {
+   "id": "final",
+   "expected": {
+    "away": 7,
+    "home": 21
+   },
+   "reads": [
+    {
+     "result": "unsure",
+     "crop_sha256": "5d2e03a0729711d496852597dcfa208c60f69098fe7656f2efd11a71d8138a12"
+    },
+    {
+     "result": "unsure",
+     "crop_sha256": "2528c162d906cd2f487107bd6c98aeefc3cdd8278ea339c07870f4323fb129da"
+    },
+    {
+     "result": "unsure",
+     "crop_sha256": "d5e0483851a7a7baabd3b1d83e79c792de51fca2001a62acd491c8ecfbff39dd"
+    }
+   ],
+   "result": "unchecked",
+   "reason": "no_confident_read"
+  }
+ ],
+ "checked": 3,
+ "agree": 3,
+ "disagree": 0,
+ "cap": null,
+ "summary": "Muse Spark agrees with 3 of 3 checked locked scores",
+ "reads": 8,
+ "cost_micro_usd": 10742,
+ "advisory_key": {
+  "pubkey": "a304fc22b5a7c426cbe24e33b9e7602fec39fc1d8dc5958e4cb5faa4ac38bd43",
+  "key_id": "2d5de84a3dcdeaec",
+  "key_kind": "qortime-ai-advisory",
+  "role": "advisory only; not a referee key; cannot make or change a verdict"
+ },
+ "advisory_signature": {
+  "alg": "Ed25519",
+  "key_id": "2d5de84a3dcdeaec",
+  "sig": "3e396d47e6e2ca4d678f743a6282d55ad5bde77185ef6b02456c41355a3fd85c6eb873cb8e20e6ffd523748c2e680e3cd68089352a71aa5a59a1724db3249204"
+ }
+}

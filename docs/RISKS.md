@@ -31,10 +31,10 @@ This is what a VERIFIED receipt does **not** prove. Platforms should price these
    single-attester controls both the video and the input evidence. That's why it's a lower tier.
 4. **Compromised player PC (phase 1 software keys).** Malware or a skilled cheater with the key can *live*-forge
    checkpoints if they also fake capture and HID in real time. Referee timestamps stop *post-hoc* fabrication, not a
-   real-time simulator with a nonce-responding bot. Raising that cost is phase 2 (TPM, sealed dongle).
+   real-time simulator with a nonce-responding bot. Raising that cost is phase 2 (TPM key attestation).
 5. **Video injection in real time.** An HDMI or capture-card MITM that composites a fake scorebug while the real game runs
-   would pass the pause challenge (the pause is real). Cross-checks: dual-mode timelines; motion correlation; later, C2PA or
-   a signed capture path.
+   would pass the pause challenge (the pause is real). Cross-checks: dual-mode timelines; motion correlation; later, C2PA
+   on clips.
 6. **Scorebug misread.** The vendored reader refuses unless frames agree, but a new Madden UI patch can break the
    profile. The fail mode is "no final", not "wrong final". Watch out for profile drift after title updates.
 7. **Disconnects / mercy rules / quits.** v0 detects only a normal 4th-quarter or OT final. Quits produce no receipt,
@@ -57,5 +57,4 @@ This is what a VERIFIED receipt does **not** prove. Platforms should price these
     not FAIL a receipt on its own:
     - Per-axis stick-versus-camera-pan correlation, as an advisory signal first. Compare right-stick `rx`/`ry`
       with camera pan on still-to-motion transitions.
-    - Binding the observed pad to the console needs hardware, such as a sealed tap on a wired pad-to-console
-      path. The PS5 link is Bluetooth and is left alone. A sealed tap is a product decision.
+    - Binding the observed pad to the console is out of scope for now. The PS5 link is Bluetooth and is left alone.

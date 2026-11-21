@@ -1,5 +1,6 @@
 // Verifier page rendering and motion. Builds DOM from receipt-view.js; animates transform and opacity only.
 import { verifyReceipt, receiptBodyHash, verifyInclusion, verifyLogHead, MAX_LATENCY_MS, RULE2_MAX_LATENCY_MS } from "./verify.js";
+import { acceptLowerOnly } from "./lower-only.js";
 import { buildPanels, buildSteps, describeSidecar, explainCode, goldAllowed, verdictLabel } from "./receipt-view.js";
 
 export const RM = matchMedia("(prefers-reduced-motion: reduce)");
@@ -233,7 +234,7 @@ function inputPanel(p, i) {
   if (p.state === "absent") return panelShell(p, i, null);
   return panelShell(p, i, p.state === "info" ? "advisory" : p.state === "partial" ? "advisory · weak" : null,
     h("div", { class: "device-line" }, h("span", { class: "lbl" }, "controller"), p.device ? h("b", null, p.device) : h("span", { class: "np" }, "name not recorded")),
-    h("div", { class: "gauge" }, h("div", { class: "g-h" }, h("b", null, "human-likeness"), h("span", null, p.human == null ? "not provided" : `${p.human} / 1000${p.human_label ? ` · ${p.human_label}` : ""}`)),
+    h("div", { class: "gauge" }, h("div", { class: "g-h" }, h("b", null, "human-likeness"), h("span", null, p.human == null ? "not provided" : `${p.human} / 1000${p.human_label ? ` · ${p.human_label}` : ""}`, p.human != null && p.human_label ? h("span", { class: "label-note" }, " (advisory label only; it does not show who played)") : null)),
       p.human == null ? null : meter(p.human, 1000, { floor: 400, label: `human ${p.human}` })),
     h("div", { class: "gauge" }, h("div", { class: "g-h" }, h("b", null, "alignment to video"), h("span", null, p.align ? `${p.align.match} vs chance ${p.align.chance}` : "not provided")),
       p.align ? h("div", { class: "pair" }, meter(p.align.match, 1000, { label: `match ${p.align.match}` }), meter(p.align.chance, 1000, { tone: "dim", label: `chance ${p.align.chance}` })) : null),
@@ -376,6 +377,11 @@ export async function runVerify(ui, text, pin, extras) {
   try { v = await verifyReceipt(r, pin || null); } catch (e) {
     setError(ui, "CAN'T CHECK", `The verifier stopped: ${e && e.name ? e.name : "error"}.`);
     return { receipt: r, v: null };
+  }
+  // Optional display-layer adjustment (lower-only signals such as the Muse score cross-check). It may only lower the
+  // status: anything that tries to raise it, or throws, is ignored and the verifier's own result is shown.
+  if (extras && typeof extras.adjust === "function") {
+    try { v = acceptLowerOnly(v, await extras.adjust(r, v)); } catch { /* keep v */ }
   }
   const wait = RM.matches ? 0 : Math.max(0, 320 - (performance.now() - started));
   if (wait) await new Promise((res) => setTimeout(res, wait));
