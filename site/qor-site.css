@@ -1,0 +1,196 @@
+/* QorTime hub + /cap on the shared Qor design system (qor-ui/, see qor-ui/SOURCE.md).
+   Loaded after style.css on site/index.html, site/cap/index.html and site/record-pack/index.html.
+   Gold (--qor-verified) is NOT used in this file; site/record-pack/record-pack.css uses it only on the referee-VERIFIED example pack. */
+
+[data-qor-site] {
+  --bg: var(--qor-bg-abyss);
+  --bg2: var(--qor-bg-base);
+  --ink: var(--qor-text-1);
+  --mute: var(--qor-text-2);
+  --cy: var(--qor-cyan);
+  --ac: var(--qor-blue);
+  --ok: var(--qor-cyan);
+  --line: var(--qor-line-subtle);
+  --disp: var(--qor-font-sans);
+  --sans: var(--qor-font-sans);
+  --mono: var(--qor-font-mono);
+  /* style.css gold aliases point at neutral strand white on these two pages */
+  --gold: var(--qor-strand-white);
+  --gold2: var(--qor-strand-white);
+  overflow-x: clip;
+}
+
+[data-qor-site] body {
+  font-family: var(--qor-font-sans);
+  color: var(--qor-text-1);
+  background: radial-gradient(circle at 50% 0%, var(--qor-hero-glow) 0%, transparent 62%),
+    radial-gradient(900px 700px at -10% 40%, var(--qor-lead-dim), transparent 60%),
+    var(--qor-bg-abyss);
+}
+[data-qor-site] body.page { padding-top: 0; }
+[data-qor-site] .grain { display: none; }
+[data-qor-site] a { color: var(--qor-cyan); }
+[data-qor-site] .qor-nav a, [data-qor-site] .qor-footer a { color: inherit; }
+
+/* Type: one family, sentence case, tight tracking (matches the shared Qor family look) */
+[data-qor-site] h1,
+[data-qor-site] .page h1,
+[data-qor-site] .scene-copy h2, [data-qor-site] #platforms h2, [data-qor-site] #flow h2,
+[data-qor-site] #prove-rails h2, [data-qor-site] .cta h2, [data-qor-site] .limits h2,
+[data-qor-site] .plan-panel h2, [data-qor-site] .cap-handoff h2, [data-qor-site] .step h2,
+[data-qor-site] .card h3 {
+  font-family: var(--qor-font-sans);
+  font-weight: 800;
+  text-transform: none;
+  letter-spacing: -0.035em;
+  line-height: 1.02;
+}
+[data-qor-site] h1 { font-size: clamp(2.75rem, 1.9rem + 4.6vw, 6rem); margin: var(--qor-space-5) 0 var(--qor-space-5); }
+[data-qor-site] .page h1 { font-size: clamp(2.6rem, 1.8rem + 4vw, 5rem); }
+[data-qor-site] .scene-copy h2, [data-qor-site] #platforms h2, [data-qor-site] #flow h2,
+[data-qor-site] #prove-rails h2, [data-qor-site] .cta h2, [data-qor-site] .limits h2 { font-size: var(--qor-step-4); }
+[data-qor-site] .plan-panel h2, [data-qor-site] .cap-handoff h2 { font-size: var(--qor-step-3); }
+[data-qor-site] .step h2 { font-size: var(--qor-step-2); }
+[data-qor-site] .card h3 { font-size: var(--qor-step-2); letter-spacing: -0.025em; }
+[data-qor-site] h1 .accent,
+[data-qor-site] .page h1 .accent {
+  background: linear-gradient(90deg, var(--qor-strand-white), var(--qor-cyan) 55%, var(--qor-lead));
+  -webkit-background-clip: text; background-clip: text; color: transparent; filter: none;
+}
+[data-qor-site] .lede, [data-qor-site] .scene-copy p, [data-qor-site] .card p,
+[data-qor-site] .step p, [data-qor-site] .fine, [data-qor-site] .limits p,
+[data-qor-site] .limits li, [data-qor-site] .plan-panel p { color: var(--qor-text-2); }
+[data-qor-site] .num, [data-qor-site] .page-nav a { font-family: var(--qor-font-mono); color: var(--qor-lead); }
+[data-qor-site][data-qor-site="capture"] .page-nav a { color: var(--qor-text-2); }
+[data-qor-site] .page-nav a:hover { color: var(--qor-text-1); }
+[data-qor-site] .note { color: var(--qor-text-3); font-family: var(--qor-font-mono); }
+
+/* Kicker pills */
+[data-qor-site] .kicker, [data-qor-site] .plan-kicker {
+  font-family: var(--qor-font-mono);
+  color: var(--qor-cyan);
+  border: 1px solid var(--qor-line-cyan);
+  background: var(--qor-cyan-dim);
+  border-radius: var(--qor-radius-pill);
+}
+[data-qor-site] .dot { background: var(--qor-cyan); box-shadow: var(--qor-glow-cyan); }
+
+/* Surfaces */
+[data-qor-site] .glass {
+  background: linear-gradient(180deg, rgba(20, 30, 56, 0.72), rgba(14, 21, 40, 0.62));
+  border: 1px solid var(--qor-line-subtle);
+  border-radius: var(--qor-radius-lg);
+  box-shadow: var(--qor-shadow-card);
+}
+[data-qor-site] .card:hover { border-color: var(--qor-line-cyan); }
+[data-qor-site] .limits { border-color: var(--qor-line-strong); }
+[data-qor-site] .tag {
+  font-family: var(--qor-font-mono);
+  color: var(--qor-cyan);
+  border-color: var(--qor-line-cyan);
+  border-radius: var(--qor-radius-xs);
+}
+[data-qor-site] .step .n { font-family: var(--qor-font-mono); font-weight: 600; letter-spacing: 0.08em; color: var(--qor-lead); }
+
+/* Buttons: blue primary, navy ghost (shared Qor family style) */
+[data-qor-site] .btn {
+  font-family: var(--qor-font-sans);
+  border-radius: var(--qor-radius-md);
+  color: var(--qor-strand-white) !important;
+  background: var(--qor-blue);
+  box-shadow: 0 0 0 1px var(--qor-line-blue), var(--qor-glow-blue);
+}
+[data-qor-site] .btn::after { background: linear-gradient(90deg, #3a63e6, var(--qor-blue)); }
+[data-qor-site] .btn:hover { box-shadow: 0 0 0 1px var(--qor-line-cyan), var(--qor-glow-cyan); }
+[data-qor-site] .btn.ghost {
+  background: rgba(14, 21, 40, 0.6);
+  color: var(--qor-text-1) !important;
+  box-shadow: inset 0 0 0 1px var(--qor-line-strong);
+}
+[data-qor-site] .btn.ghost::after { background: var(--qor-bg-surface-2); }
+
+/* Hub hero sits under a sticky (in-flow) nav now */
+[data-qor-site="receipts"] .hero { padding-top: 72px; min-height: calc(100svh - var(--qor-nav-h)); }
+[data-qor-site] .gl-fallback { filter: drop-shadow(0 0 40px rgba(79, 124, 255, 0.35)); }
+[data-qor-site] .marquee { font-family: var(--qor-font-mono); }
+
+/* Illustrative scenes: neutral strands, no gold */
+[data-qor-site] .sb-score { font-variant-numeric: tabular-nums; }
+[data-qor-site] .face.back {
+  border-color: var(--qor-line-cyan);
+  box-shadow: var(--qor-glow-cyan), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+[data-qor-site] .face .big { color: var(--qor-strand-white); text-shadow: 0 0 32px rgba(46, 242, 255, 0.35); }
+[data-qor-site] .v { font-family: var(--qor-font-mono); font-weight: 700; font-size: 15px; }
+[data-qor-site] .v.ok { color: var(--qor-strand-white); }
+
+/* /cap: the Madden "first public path" stamp was gold; it is a path label, not a VERIFIED record */
+[data-qor-site] .stamp,
+[data-qor-site] .stamp.aqua {
+  color: var(--qor-bg-abyss);
+  background: var(--qor-cyan);
+  box-shadow: none;
+}
+
+/* SAMPLE rail keeps its own muted burgundy (never gold, never cyan-primary) */
+[data-qor-site] .rail-sample { border-color: rgba(143, 58, 74, 0.55); }
+[data-qor-site] .plan-kicker.sample { color: #e7cdd2; border-color: rgba(143, 58, 74, 0.6); background: rgba(32, 12, 16, 0.62); }
+[data-qor-site] .plan-kicker.sample .dot { background: #a84a5a; box-shadow: 0 0 10px rgba(168, 74, 90, 0.65); }
+[data-qor-site] .rail-sample .tag { color: #e7cdd2; border-color: rgba(168, 74, 90, 0.55); }
+
+/* Watch placeholder + site links in the family footer */
+.qor-watch-note {
+  width: min(100% - 2rem, var(--qor-max-w));
+  margin: var(--qor-space-8) auto 0;
+  padding: var(--qor-space-3) var(--qor-space-4);
+  border: 1px dashed var(--qor-line-strong);
+  border-radius: var(--qor-radius-md);
+  color: var(--qor-text-2);
+  font-size: var(--qor-step--1);
+  scroll-margin-top: calc(var(--qor-nav-h) + 1rem);
+}
+[data-qor-site] .qor-footer { margin-top: var(--qor-space-7); }
+.qor-footer__site {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--qor-space-2) var(--qor-space-4);
+  font-size: var(--qor-step--1);
+}
+.qor-footer__site a { color: var(--qor-text-3); }
+.qor-footer__site a:hover, .qor-footer__site a:focus-visible { color: var(--qor-text-1); }
+
+[data-qor-site] .page-body [id], [data-qor-site] section[id] { scroll-margin-top: calc(var(--qor-nav-h) + 1rem); }
+
+@media (max-width: 640px) {
+  [data-qor-site] .scene-copy h2, [data-qor-site] #platforms h2, [data-qor-site] #flow h2,
+  [data-qor-site] #prove-rails h2, [data-qor-site] .cta h2, [data-qor-site] .limits h2 { font-size: var(--qor-step-3); }
+}
+[data-qor-site] .card .plan-kicker { align-self: flex-start; }
+
+/* No-JS / module-failure fallback: reveal targets stay visible unless JS is running
+   (html.js is set inline; it is removed after 3 s if the motion module never ran). */
+html:not(.js) .qor-reveal { opacity: 1; transform: none; filter: none; }
+
+/* SELF-SIGNED reads below VERIFIED: cool blue-grey, not gold, not amber. PARTIAL stays amber. */
+[data-qor-site] .v.sa { color: var(--qor-text-2); }
+
+/* No-JS mobile nav: without html.js the menu toggle cannot open, so at phone widths
+   show the Receipts / Capture / Watch links on their own row and the Verifier button inline.
+   With JS running (html.js) nothing here applies and the sheet menu works as before. */
+@media (max-width: 760px) {
+  html:not(.js) .qor-nav { height: auto; }
+  html:not(.js) .qor-nav__inner {
+    flex-wrap: wrap;
+    row-gap: var(--qor-space-1);
+    padding-block: var(--qor-space-2);
+  }
+  html:not(.js) .qor-nav__toggle { display: none; }
+  html:not(.js) .qor-nav__actions .qor-nav__cta { display: inline-flex; }
+  html:not(.js) .qor-nav__track {
+    display: flex;
+    order: 3;
+    width: 100%;
+    flex-wrap: wrap;
+  }
+  html:not(.js) .qor-nav__link { min-height: 44px; }
+}

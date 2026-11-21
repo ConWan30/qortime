@@ -472,8 +472,16 @@ def _card(m: dict) -> str:
         basis = "last scorebug read · not a verified result"
     return (f'<a class="mc glass" href="{e(m["url"])}"><div class="top"><span class="lbl">{e(m.get("game") or "match")} · {e(when)}</span>'
             f'<span class="tag {cls}">{e(tag)}</span></div><div class="sc">{score}</div><div class="sub">away – home · {e(basis)}</div>'
-            f'<div class="meta"><span>{e(str(m.get("events", 0)))} events</span><span>{e(str(m.get("touchdowns", 0)))} TDs</span>'
-            f'<span>{e(str(m.get("clips", 0)))} highlight clips</span></div><div class="id mono">{e(m.get("match_id") or "")}</div></a>')
+            f'<div class="meta">{_meta(m)}</div><div class="id mono">{e(m.get("match_id") or "")}</div></a>')
+
+
+def _meta(m: dict) -> str:
+    """Counts on an index card. A hand-built page without a bundle timeline sets events/touchdowns to null: say so, not 0."""
+    e = html.escape
+    if m.get("events") is None and m.get("touchdowns") is None:
+        return f'<span>footage not published</span><span>{e(str(m.get("clips") or 0))} highlight clips</span>'
+    return (f'<span>{e(str(m.get("events", 0)))} events</span><span>{e(str(m.get("touchdowns", 0)))} TDs</span>'
+            f'<span>{e(str(m.get("clips", 0)))} highlight clips</span>')
 
 
 def write_index(site: str | Path) -> Path:

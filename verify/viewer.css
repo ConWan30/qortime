@@ -16,9 +16,9 @@ a{color:#7df9ff}
 code,kbd,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 .wrap{max-width:1040px;margin:0 auto;padding:0 18px 64px}
 .top{display:flex;flex-wrap:wrap;align-items:center;gap:6px 18px;max-width:1040px;margin:0 auto;padding:18px}
-.brand{font:900 22px/1 "Big Shoulders Display",Impact,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--ink);text-decoration:none}
+.brand{display:inline-flex;align-items:center;min-height:44px;font:800 22px/1 "Big Shoulders Display",Impact,"Arial Narrow",sans-serif;letter-spacing:.04em;text-transform:uppercase;color:var(--ink);text-decoration:none;white-space:nowrap}.brand span{color:#4f7cff}.brand .mark{flex:none;margin-right:10px}
 .top nav{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:14px}
-.top nav a{color:var(--mute);text-decoration:none;padding:10px 0}
+.top nav a{display:inline-flex;align-items:center;justify-content:center;min-height:44px;min-width:44px;color:var(--mute);text-decoration:none;padding:0}
 .top nav a:hover{color:var(--ink)}
 .hero h1{margin:8px 0 6px;font:900 clamp(38px,7vw,64px)/.95 "Big Shoulders Display",Impact,sans-serif;letter-spacing:.04em;text-transform:uppercase}
 .hero p{margin:0 0 18px;color:var(--mute);max-width:720px}
@@ -237,7 +237,8 @@ label.lbl,.lbl{display:block;font-size:13px;color:var(--mute);margin:10px 0 6px}
 .checks .s-pass .mk{color:var(--pass)}.checks .s-partial .mk{color:var(--partial)}.checks .s-fail .mk{color:var(--fail)}
 .checks small{grid-column:2/-1;color:var(--mute);font-size:12px}
 details.np-list,details.raw{margin-top:10px}
-details summary{cursor:pointer;color:#c3cddc;font-size:14px;min-height:28px}
+details summary{cursor:pointer;color:#c3cddc;font-size:14px;min-height:44px;padding:11px 0}
+.row>a{display:inline-flex;align-items:center;min-height:44px}
 details pre,.raw-out pre{background:#070b13;border:1px solid var(--line);padding:10px;border-radius:12px;font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:420px;overflow:auto}
 
 /* handles, sidecars, log */
@@ -296,3 +297,15 @@ details pre,.raw-out pre{background:#070b13;border:1px solid var(--line);padding
   .seal .sheen{display:none}
   .verdict[data-tone=checking]::after{display:none}
 }
+/* Hackathon: advisory AI explanation panel (verify/ai-ruling-view.js). Info tone only, never gold. */
+#aiSlot:empty{display:none}
+.ai-panel{grid-column:1/-1}
+.ai-panel .ai-text{margin-top:10px;max-width:68ch}
+.ai-panel .ai-text p{margin:0 0 8px;font-size:15px;line-height:1.55;color:var(--ink);overflow-wrap:anywhere}
+.ai-panel .ai-text p:last-child{margin-bottom:0}
+@media (max-width:640px){.ai-panel .ai-text p{font-size:14px}}
+/* Hackathon: Muse Spark score cross-check panel (verify/score-crosscheck-view.js). Pass/partial tones only. */
+#xcSlot:empty{display:none}
+.xc-panel{grid-column:1/-1}
+.xc-panel .xc-line{margin:10px 0 0;font-size:15px;line-height:1.5;color:var(--ink);overflow-wrap:anywhere}
+#handsSlot:empty{display:none}

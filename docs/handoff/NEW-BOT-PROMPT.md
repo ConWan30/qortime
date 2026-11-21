@@ -15,5 +15,5 @@ Rules:
 - Never print or commit secrets. Ask Con for any access you lack (GitHub token for both repos, Stripe login, the qoresence@mail.grokbot.com inbox).
 - He's usually on his phone: keep updates short with tappable links. His design bar is very high (cinematic, glass, rich motion).
 
-First task: help Con install QorCap v0.2.1 on laptop MyTurn and run a full Madden game to Q4 0:00 with Start Match, then check the signed receipt on https://conwan30.github.io/qortime/verify/. Then follow ROADMAP.md.
+First task: help Con install QorCap v0.2.1 on laptop MyTurn and run a full Madden game to Q4 0:00 with Start Match, then check the signed receipt on https://qortime.com/verify/. Then follow ROADMAP.md.
 ```

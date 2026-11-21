@@ -181,6 +181,9 @@ def test_http_routes_and_cors(tmp_path):
     assert c.get("/v1/h2h/zzzzzzzzzz").status_code == 404
     bad = c.options("/v1/h2h", headers={"Origin": "https://evil.example", "Access-Control-Request-Method": "POST"})
     assert bad.headers.get("access-control-allow-origin") is None
+    for origin in ("https://qortime.com", "https://www.qortime.com"):
+        ok = c.options("/v1/h2h", headers={"Origin": origin, "Access-Control-Request-Method": "POST"})
+        assert ok.headers.get("access-control-allow-origin") == origin
 
 
 # ---------------------------------------------------------------- PSN name check (on-screen evidence)

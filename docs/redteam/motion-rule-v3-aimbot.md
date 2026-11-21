@@ -6,7 +6,7 @@ The network guard a test can install around a run is a tripwire. It refuses netw
 
 The AST import ban is best-effort. It does not follow a walrus or tuple alias, functools.partial, map, or a class-attribute holder. It does not see find_spec().loader / exec_module, zipimport, or sys.modules.get passed through another name. It does not read .pyw files, follow a symlinked directory, or notice a new top-level directory. It does not see qorcap sidecar code the referee image downloads.
 
-Harness `redteam-aimbot/v2` for package `qor-receipt==0.1.0`. Harness sha256 `4ac9346f9874450b38f2634de2d04b091503faad0e9fae25f267da4015e10001` over 16 files.
+Harness `redteam-aimbot/v2` for package `qor-receipt==0.1.0`. Harness sha256 `45ea456b256e022788add3270bb045033eb7fb1f4b60e309d67e83fa5abebee4` over 16 files.
 
 The harness sha256 moved because `tests/redteam/scorers.py` and `tests/redteam/aimbot_harness.py` changed. It is still the package version plus the sorted in-repo Python files reachable from the harness. It does not include scorer settings.
 
@@ -83,9 +83,9 @@ The 150 ms event window is valid only on synthetic data with a shared clock. On 
 
 | scorer | version | package | estimator | file set | sha256 | headline catch rate | headline false-alarm rate | abstained |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| motion-rule-v3 | motion-rule/v3 | 0.1.0 | — | 15 files | b9c6c394a58041e5f93716e490d392c112cc11715fb519701a159c252e7b7eb8 | 1/6 (0.17) | 0/1 (0.00) | 0/7 |
-| pan-agreement | pan-agreement/v0 | 0.1.0 | example-no-claim/v0 | 15 files | ec886f4eedd7e9206d00a30ead56e2787d17114ea77a9474d811c233c4f38b7f | n/a (0/6 decided) | n/a (0/1 decided) | 7/7 |
-| event-press-agreement | event-press-agreement/v0 | 0.1.0 | example-no-claim-events/v0 | 15 files | 0c60852d2e53823fd7ffed9b9e067d0e2047315e1f0b192dd1c1073b9838b616 | n/a (0/6 decided) | n/a (0/1 decided) | 7/7 |
+| motion-rule-v3 | motion-rule/v3 | 0.1.0 | — | 15 files | 3ba087d7f61c480cbfc4f1292188b8efcc2de3482daa85ab81db7fdd6b9ac171 | 1/6 (0.17) | 0/1 (0.00) | 0/7 |
+| pan-agreement | pan-agreement/v0 | 0.1.0 | example-no-claim/v0 | 15 files | 119001260975c37be8356b22896aece1c9435d73a7ae55f20632c96dbcd56574 | n/a (0/6 decided) | n/a (0/1 decided) | 7/7 |
+| event-press-agreement | event-press-agreement/v0 | 0.1.0 | example-no-claim-events/v0 | 15 files | 10424653ae95a88cf72e95d057b3710059cd309dc02c46c4278c9905b074c5eb | n/a (0/6 decided) | n/a (0/1 decided) | 7/7 |
 
 | variant | cohort | motion-rule-v3 | pan-agreement | event-press-agreement |
 | --- | --- | --- | --- | --- |
@@ -142,7 +142,7 @@ report = evaluate(scorers=[PanAgreementScorer(MyPanEstimator()), EventPressAgree
       "tests/redteam/scorers.py"
     ],
     "package_version": "0.1.0",
-    "sha256": "4ac9346f9874450b38f2634de2d04b091503faad0e9fae25f267da4015e10001",
+    "sha256": "45ea456b256e022788add3270bb045033eb7fb1f4b60e309d67e83fa5abebee4",
     "version": "redteam-aimbot/v2"
   },
   "headline_stick_aimbots": {
@@ -186,7 +186,7 @@ report = evaluate(scorers=[PanAgreementScorer(MyPanEstimator()), EventPressAgree
       "log_tamper_true_positives": 1,
       "name": "motion-rule-v3",
       "package_version": "0.1.0",
-      "sha256": "b9c6c394a58041e5f93716e490d392c112cc11715fb519701a159c252e7b7eb8",
+      "sha256": "3ba087d7f61c480cbfc4f1292188b8efcc2de3482daa85ab81db7fdd6b9ac171",
       "version": "motion-rule/v3"
     },
     {
@@ -220,7 +220,7 @@ report = evaluate(scorers=[PanAgreementScorer(MyPanEstimator()), EventPressAgree
       "log_tamper_true_positives": 0,
       "name": "pan-agreement",
       "package_version": "0.1.0",
-      "sha256": "ec886f4eedd7e9206d00a30ead56e2787d17114ea77a9474d811c233c4f38b7f",
+      "sha256": "119001260975c37be8356b22896aece1c9435d73a7ae55f20632c96dbcd56574",
       "version": "pan-agreement/v0"
     },
     {
@@ -254,7 +254,7 @@ report = evaluate(scorers=[PanAgreementScorer(MyPanEstimator()), EventPressAgree
       "log_tamper_true_positives": 0,
       "name": "event-press-agreement",
       "package_version": "0.1.0",
-      "sha256": "0c60852d2e53823fd7ffed9b9e067d0e2047315e1f0b192dd1c1073b9838b616",
+      "sha256": "10424653ae95a88cf72e95d057b3710059cd309dc02c46c4278c9905b074c5eb",
       "version": "event-press-agreement/v0"
     }
   ],

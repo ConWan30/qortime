@@ -1,0 +1,107 @@
+{
+ "schema": "qortime.hands.v0",
+ "label": "ADVISORY, LOWER-ONLY. Show Your Hands overlays the verified controller inputs on the clip and checks that on-screen actions have a press behind them. It can only lower VERIFIED to PARTIAL, never raise a status or fail a match.",
+ "built_during": "Meta AI Developer Hackathon, Oct 26 - Nov 4 2026",
+ "affects_verdict": "lower_only",
+ "max_cap": "PARTIAL",
+ "receipt_jcs_sha256": "95b9c9961c9dadc06c159329dac1f8cee032bc24ac6f4c631009e051051942e2",
+ "role": "home",
+ "inputs_verified": true,
+ "clips": [
+  {
+   "id": "hl00-q1-a0-h6",
+   "actions": 0,
+   "match_anchors": 0,
+   "lag_ms": null,
+   "resid_ms": null,
+   "scorable": false,
+   "flags": [],
+   "press_interval_cv_permille": null,
+   "why": "too_few_anchors"
+  },
+  {
+   "id": "hl01-q1-a0-h7",
+   "actions": 0,
+   "match_anchors": 0,
+   "lag_ms": null,
+   "resid_ms": null,
+   "scorable": false,
+   "flags": [],
+   "press_interval_cv_permille": null,
+   "why": "too_few_anchors"
+  },
+  {
+   "id": "hl02-q2-a6-h7",
+   "actions": 0,
+   "match_anchors": 0,
+   "lag_ms": null,
+   "resid_ms": null,
+   "scorable": false,
+   "flags": [],
+   "press_interval_cv_permille": null,
+   "why": "too_few_anchors"
+  },
+  {
+   "id": "hl03-q2-a7-h7",
+   "actions": 0,
+   "match_anchors": 0,
+   "lag_ms": null,
+   "resid_ms": null,
+   "scorable": false,
+   "flags": [],
+   "press_interval_cv_permille": 1027,
+   "why": "too_few_anchors"
+  },
+  {
+   "id": "hl04-q2-a7-h13",
+   "actions": 0,
+   "match_anchors": 0,
+   "lag_ms": null,
+   "resid_ms": null,
+   "scorable": false,
+   "flags": [],
+   "press_interval_cv_permille": null,
+   "why": "too_few_anchors"
+  },
+  {
+   "id": "hl05-q2-a7-h14",
+   "actions": 0,
+   "match_anchors": 0,
+   "lag_ms": null,
+   "resid_ms": null,
+   "scorable": false,
+   "flags": [],
+   "press_interval_cv_permille": null,
+   "why": "too_few_anchors"
+  },
+  {
+   "id": "hl06-q3-a7-h20",
+   "actions": 0,
+   "match_anchors": 0,
+   "lag_ms": null,
+   "resid_ms": null,
+   "scorable": false,
+   "flags": [],
+   "press_interval_cv_permille": null,
+   "why": "too_few_anchors"
+  },
+  {
+   "id": "hl07-q3-a7-h21",
+   "actions": 0,
+   "match_anchors": 0,
+   "lag_ms": null,
+   "resid_ms": null,
+   "scorable": false,
+   "flags": [],
+   "press_interval_cv_permille": null,
+   "why": "too_few_anchors"
+  }
+ ],
+ "cap": null,
+ "inputs": {
+  "reports": 136734,
+  "chunks": 640,
+  "all_chunks_committed": true
+ },
+ "summary": "No clip could be aligned to the inputs: nothing scored, no penalty."
+}

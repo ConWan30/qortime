@@ -1,0 +1,196 @@
+:root {
+  /* Navy Scale & Surfaces */
+  --qor-bg-abyss: #060913;
+  --qor-bg-base: #090e1c;
+  --qor-bg-surface-1: #0e1528;
+  --qor-bg-surface-2: #141e38;
+  --qor-bg-glass: rgba(14, 21, 40, 0.78);
+
+  /* Brand Strand Accents */
+  --qor-blue: #4f7cff;
+  --qor-blue-dim: rgba(79, 124, 255, 0.16);
+  --qor-cyan: #2ef2ff;
+  --qor-cyan-dim: rgba(46, 242, 255, 0.14);
+  --qor-strand-white: #f0f4ff;
+
+  /* SEMANTIC ONLY: May ONLY mark a referee-VERIFIED match record.
+     NEVER use as decoration, gradients, nav, footer, or buttons. */
+  --qor-verified: #e4c56d;
+  --qor-verified-dim: rgba(228, 197, 109, 0.14);
+
+  /* Text Hierarchy */
+  --qor-text-1: #f0f4ff;
+  --qor-text-2: #9ba8c7;
+  --qor-text-3: #617094;
+
+  /* Hairlines & Focus */
+  --qor-line-subtle: rgba(155, 168, 199, 0.12);
+  --qor-line-strong: rgba(155, 168, 199, 0.26);
+  --qor-line-blue: rgba(79, 124, 255, 0.42);
+  --qor-line-cyan: rgba(46, 242, 255, 0.45);
+  --qor-focus-ring: #2ef2ff;
+
+  /* Default Lead Lane (Receipts / Hub leads with crisp white-blue balance) */
+  --qor-lead: var(--qor-blue);
+  --qor-lead-secondary: var(--qor-cyan);
+  --qor-lead-dim: var(--qor-blue-dim);
+  --qor-hero-glow: rgba(79, 124, 255, 0.14);
+
+  /* Assets (relative default for static hosting) */
+  --qor-logo-url: url("brand/logo-icon.svg");
+
+  /* System Typography (Zero Webfont Dependency) */
+  --qor-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  --qor-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+
+  /* Fluid Type Scale */
+  --qor-step--1: clamp(0.78rem, 0.74rem + 0.18vw, 0.875rem);
+  --qor-step-0: clamp(0.94rem, 0.9rem + 0.22vw, 1.0625rem);
+  --qor-step-1: clamp(1.15rem, 1.06rem + 0.45vw, 1.375rem);
+  --qor-step-2: clamp(1.45rem, 1.28rem + 0.85vw, 1.95rem);
+  --qor-step-3: clamp(2rem, 1.62rem + 1.9vw, 3.15rem);
+  --qor-step-4: clamp(2.5rem, 2rem + 2.6vw, 4.1rem);
+
+  /* Spacing & Layout */
+  --qor-space-1: 0.25rem;
+  --qor-space-2: 0.5rem;
+  --qor-space-3: 0.75rem;
+  --qor-space-4: 1rem;
+  --qor-space-5: 1.5rem;
+  --qor-space-6: 2rem;
+  --qor-space-7: 3rem;
+  --qor-space-8: 4.5rem;
+  --qor-space-9: clamp(4rem, 8vw, 7.5rem);
+  --qor-max-w: 74rem;
+  --qor-nav-h: 4.25rem;
+
+  /* Radii */
+  --qor-radius-xs: 4px;
+  --qor-radius-sm: 8px;
+  --qor-radius-md: 12px;
+  --qor-radius-lg: 18px;
+  --qor-radius-pill: 999px;
+
+  /* Shadows & Glows */
+  --qor-shadow-card: 0 18px 40px -16px rgba(2, 5, 14, 0.85);
+  --qor-glow-cyan: 0 0 28px -4px rgba(46, 242, 255, 0.28);
+  --qor-glow-blue: 0 0 32px -6px rgba(79, 124, 255, 0.32);
+
+  /* Motion */
+  --qor-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --qor-ease-knot: cubic-bezier(0.16, 1, 0.3, 1);
+  --qor-ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --qor-dur-fast: 180ms;
+  --qor-dur-med: 420ms;
+  --qor-dur-slow: 720ms;
+
+  /* Z-index */
+  --qor-z-canvas: 0;
+  --qor-z-base: 1;
+  --qor-z-nav: 50;
+  --qor-z-sheet: 80;
+}
+
+/* Per-site subtle lane lead (same family palette) */
+[data-qor-site="receipts"] {
+  --qor-lead: var(--qor-blue);
+  --qor-lead-secondary: var(--qor-strand-white);
+  --qor-lead-dim: var(--qor-blue-dim);
+  --qor-hero-glow: rgba(79, 124, 255, 0.13);
+}
+
+[data-qor-site="capture"] {
+  --qor-lead: var(--qor-cyan);
+  --qor-lead-secondary: var(--qor-blue);
+  --qor-lead-dim: var(--qor-cyan-dim);
+  --qor-hero-glow: rgba(46, 242, 255, 0.12);
+}
+
+[data-qor-site="watch"] {
+  --qor-lead: var(--qor-cyan);
+  --qor-lead-secondary: var(--qor-strand-white);
+  --qor-lead-dim: rgba(46, 242, 255, 0.16);
+  --qor-hero-glow: rgba(79, 124, 255, 0.16);
+}
+
+/* Minimal Base */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  background-color: var(--qor-bg-abyss);
+  color: var(--qor-text-1);
+  font-family: var(--qor-font-sans);
+  font-size: 16px;
+  line-height: 1.55;
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  background: radial-gradient(circle at 50% 0%, var(--qor-hero-glow) 0%, var(--qor-bg-abyss) 62%);
+  min-height: 100dvh;
+  overflow-x: hidden;
+}
+
+img, video, canvas, svg {
+  display: block;
+  max-width: 100%;
+}
+
+button, input {
+  font: inherit;
+  color: inherit;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--qor-focus-ring);
+  outline-offset: 3px;
+  border-radius: var(--qor-radius-xs);
+}
+
+.qor-container {
+  width: min(100% - 2rem, var(--qor-max-w));
+  margin-inline: auto;
+}
+
+.qor-mono {
+  font-family: var(--qor-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.qor-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Referee-VERIFIED match badge utility (only valid consumer of --qor-verified) */
+.qor-verified-record {
+  color: var(--qor-verified);
+  background: var(--qor-verified-dim);
+  border: 1px solid rgba(228, 197, 109, 0.36);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

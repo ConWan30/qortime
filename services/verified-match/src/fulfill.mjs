@@ -14,7 +14,7 @@ export const FULFILL_EVENTS = new Set([
   "checkout.session.async_payment_succeeded",
 ]);
 
-const SITE_DEFAULT = "https://conwan30.github.io/qortime";
+const SITE_DEFAULT = "https://qortime.com";
 
 export function keyClass(key) {
   if (!key) return "missing";

@@ -117,6 +117,8 @@ def challenge_results(d: str | Path, challenges: list[dict[str, Any]], *, decode
 
         def frames():
             for run in M.runs(seqs, b):
+                # 30.0 is the decode (sample) rate, not the recording's rate: decode_run dates frames on
+                # segment_ranges + n/hz in media time, so a 60 fps recording is sampled, not mis-timed.
                 for t, img in M.decode_run(b, run, rd, hz=30.0, size=(640, 360)):
                     yield t + wmm, img
         scan = M.scan_pause(frames(), detector_for_challenge_rule(rule))

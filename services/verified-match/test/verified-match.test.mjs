@@ -250,6 +250,12 @@ test("checkout and receipt routes stay in test mode", async () => {
     });
     assert.equal(created.status, 200);
     assert.equal(created.headers.get("access-control-allow-origin"), "https://conwan30.github.io");
+    for (const origin of ["https://qortime.com", "https://www.qortime.com"]) {
+      const pre = await fetch(`${base}/v1/checkout`, { method: "OPTIONS", headers: { origin } });
+      assert.equal(pre.headers.get("access-control-allow-origin"), origin);
+    }
+    const evil = await fetch(`${base}/v1/checkout`, { method: "OPTIONS", headers: { origin: "https://evil.example" } });
+    assert.equal(evil.headers.get("access-control-allow-origin"), null);
     const createdBody = await created.json();
     assert.equal(createdBody.url, "https://checkout.stripe.com/c/pay/cs_test_mock");
     assert.equal(stripe.created[0].metadata.receipt_id, "match_42");
@@ -385,15 +391,19 @@ test("live keys and live events never mark a receipt paid", async () => {
   });
 });
 
-test("launch page and verifier mention the test payment link", async () => {
+test("public pages show Verified Match as planned, with no checkout until KYC", async () => {
   const home = await readFile(join(ROOT, "site/index.html"), "utf8");
   const verify = await readFile(join(ROOT, "verify/index.html"), "utf8");
   const config = await readFile(join(ROOT, "verify/verified-match.js"), "utf8");
-  assert.match(home, /Buy Verified Match \(test\)/);
-  assert.match(home, /https:\/\/buy\.stripe\.com\/test_3cI4gy7he9Uuarqczl00000/);
+  const pages = await Promise.all(["site/pricing/index.html", "site/how-it-works/index.html", "site/early-access/index.html"]
+    .map((p) => readFile(join(ROOT, p), "utf8")));
+  for (const page of [home, verify, config, ...pages]) {
+    assert.doesNotMatch(page, /buy\.stripe\.com|4242 4242|Buy Verified Match|test checkout/i);
+  }
+  assert.match(home, /Verified Match, a hosted referee countersign, is planned at \$9\.99\. Self-verify is free today\./);
+  assert.match(verify, /const VM_CHECKOUT_LIVE = false;/);
   assert.match(verify, /Verified Match/);
   assert.match(verify, /verified-match\.js/);
-  assert.match(config, /buy\.stripe\.com\/test_3cI4gy7he9Uuarqczl00000/);
   assert.doesNotMatch(home + verify + config, /sk_live_|sk_test_|whsec_/);
   assert.match(verify, /const gold = paid && sigStatus === "VERIFIED"/);
   assert.match(verify, /was refunded/);

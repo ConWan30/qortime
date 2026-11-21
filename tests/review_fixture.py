@@ -43,26 +43,27 @@ def in_pause(ms: int) -> bool:
     return any(on <= ms < off for _, _, _, on, off in CHALLENGES)
 
 
-def make_video(path: Path) -> None:
+def make_video(path: Path, fps: int = FPS) -> None:
     import numpy as np
 
     w, h = 640, 360
     p = subprocess.Popen(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "rawvideo", "-pix_fmt", "gray",
-                          "-s", f"{w}x{h}", "-r", str(FPS), "-i", "pipe:0", "-c:v", "libx264", "-preset", "ultrafast",
-                          "-pix_fmt", "yuv420p", "-g", str(FPS * SEG_S), "-keyint_min", str(FPS * SEG_S), "-sc_threshold", "0",
+                          "-s", f"{w}x{h}", "-r", str(fps), "-i", "pipe:0", "-c:v", "libx264", "-preset", "ultrafast",
+                          "-pix_fmt", "yuv420p", "-g", str(fps * SEG_S), "-keyint_min", str(fps * SEG_S), "-sc_threshold", "0",
                           "-movflags", "frag_keyframe+empty_moov+default_base_moof", "-f", "mp4", str(path)],
                          stdin=subprocess.PIPE)
     base = np.tile(np.linspace(60, 140, w, dtype=np.uint8), (h, 1))
-    for n in range(FPS * SECS):
-        ms = n * 1000 // FPS
+    for n in range(fps * SECS):
+        ms = n * 1000 // fps
         if in_pause(ms):
             f = np.zeros((h, w), np.uint8)
             f[40:58, 280:420] = 235  # small white menu text block on black
         else:
             f = base.copy()
             if busy(ms // 1000):
-                x = (n * 37) % (w - 120)
-                y = (n * 23) % (h - 120)
+                k = n * FPS // fps  # same picture at the same media time whatever the rate
+                x = (k * 37) % (w - 120)
+                y = (k * 23) % (h - 120)
                 f[y:y + 120, x:x + 120] = 250
         p.stdin.write(f.tobytes())
     p.stdin.close()
@@ -88,21 +89,61 @@ def split_fmp4(data: bytes) -> list[bytes]:
     return segs
 
 
+def shift_tfdt(fragment: bytes, add_ms: int) -> bytes:
+    """Add ``add_ms`` to every ``tfdt`` base media decode time in a fragment (in place, same size).
+
+    The video's PTS then starts at ``add_ms`` instead of 0, as a real capture's does, while the picture
+    stays at the same media time. The fixture has one video track at ``TIMESCALE`` (checked by the caller).
+    """
+    out = bytearray(fragment)
+
+    def walk(lo: int, hi: int) -> None:
+        i = lo
+        while i + 8 <= hi:
+            size = int.from_bytes(out[i:i + 4], "big")
+            typ = bytes(out[i + 4:i + 8])
+            if size < 8 or i + size > hi:
+                return
+            if typ in (b"moof", b"traf"):
+                walk(i + 8, i + size)
+            elif typ == b"tfdt":
+                ver = out[i + 8]
+                n = 8 if ver == 1 else 4
+                v = int.from_bytes(out[i + 12:i + 12 + n], "big") + add_ms * TIMESCALE // 1000
+                out[i + 12:i + 12 + n] = v.to_bytes(n, "big")
+            i += size
+    walk(0, len(out))
+    return bytes(out)
+
+
+TIMESCALE = 15360
+
+
 def link(prev: str, seq: int, sha: str) -> str:
     return sha256_hex({"prev": prev, "seq": seq, "sha256": sha})
 
 
 def build(out: Path, *, capture: SoftwareKey | None = None, device: SoftwareKey | None = None,
-          challenge_tokens: list[dict] | None = None, claim=(14, 7)) -> dict:
-    """Write a bundle into ``out``. ``challenge_tokens`` = official tokens (from Referee.issue_challenge) to embed."""
+          challenge_tokens: list[dict] | None = None, claim=(14, 7), fps: int = FPS, pts_offset_ms: int = 0) -> dict:
+    """Write a bundle into ``out``. ``challenge_tokens`` = official tokens (from Referee.issue_challenge) to embed.
+
+    ``fps`` is the video's frame rate; the manifest ``frames`` counter stays ``fps * SEG_S`` per fragment.
+    ``pts_offset_ms`` moves the video's PTS origin (tfdt) without moving its content. Defaults give the
+    same bytes as before these parameters existed.
+    """
     import hashlib
 
     out.mkdir(parents=True, exist_ok=True)
     capture = capture or SoftwareKey()
     device = device or SoftwareKey()
-    make_video(out / "video.mp4")
+    make_video(out / "video.mp4", fps)
     data = (out / "video.mp4").read_bytes()
     segs = split_fmp4(data)
+    if pts_offset_ms:
+        from qor_receipt.review.clock import _video_track
+
+        assert _video_track(segs[0])[1] == TIMESCALE
+        segs = [segs[0]] + [shift_tfdt(s, pts_offset_ms) for s in segs[1:]]
     match_id = "local-test-review"
     role = "home"
     # manifest
@@ -114,7 +155,7 @@ def build(out: Path, *, capture: SoftwareKey | None = None, device: SoftwareKey 
         mono = 0 if i == 0 else i * SEG_S * 1000
         man.append({"type": "segment", "seq": i, "file": "video.mp4", "offset": off, "bytes": len(s), "sha256": sha,
                     "prev": prev, "chain_head": head, "mono_ms": mono, "wall_ms": W0 + mono,
-                    "kind": "init" if i == 0 else "media", "frames": FPS * SEG_S})
+                    "kind": "init" if i == 0 else "media", "frames": fps * SEG_S})
         off += len(s)
     # inputs: busy seconds -> 40 reports, still -> 3; challenge presses
     tokens = {t["phase"]: t for t in (challenge_tokens or [])}

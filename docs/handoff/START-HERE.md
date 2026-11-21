@@ -15,18 +15,18 @@ Written 2026-10-14 (America/Chicago).
 - **Never print secrets** (tokens, passwords, keys) in chat, logs, commits or docs.
 
 ## Product vision (one paragraph)
-Money matches and ladder games in Madden run on trust. **QorTime** turns a game into a **signed end-of-game receipt**: the final score and evidence, signed with Ed25519, hash-chained, and checkable by anyone on a public verify page with no account. **QorCap** is the Windows capture-card recorder that produces the tamper-evident video evidence (segment hash chain plus checkpoints) and runs QorTime's score reader. The goal is "VERIFIED" receipts co-signed by a hosted referee. Later: paid Verified Match receipts, tournament licenses, and an AI Referee that writes an explanatory ruling which never overrides the math.
+Head-to-head and ladder games in Madden run on trust. **QorTime** turns a game into a **signed end-of-game receipt**: the final score and evidence, signed with Ed25519, hash-chained, and checkable by anyone on a public verify page with no account. **QorCap** is the Windows capture-card recorder that produces the tamper-evident video evidence (segment hash chain plus checkpoints) and runs QorTime's score reader. The goal is "VERIFIED" receipts co-signed by a hosted referee. Later: paid Verified Match receipts, tournament licenses, and an AI Referee that writes an explanatory ruling which never overrides the math.
 
 ## Current state at a glance (2026-10-14)
 | Area | State |
 |---|---|
-| QorTime repo | PRs #1–#9 merged, CI green. Site live: https://conwan30.github.io/qortime/ and verifier at /verify/ |
+| QorTime repo | PRs #1–#9 merged, CI green. Site live: https://qortime.com/ and verifier at /verify/ |
 | Score reader | 236 hand-labeled frames: **0 wrong reads**. Clocks 40 correct / 122 refused / 0 wrong. Red clock 14/16 |
 | QorCap | v0.1.0, v0.2.0, v0.2.1 released. Site: https://conwan30.github.io/qorcap/ |
 | First real test | 2026-10-14 on laptop **MyTurn**: about 14.5 min recorded, 439 segments, verify-bundle OK. Game didn't reach Q4 0:00, so **no signed receipt** yet |
 | v0.2.1 on MyTurn | **Not installed yet** (v0.2.0 is at `C:\QorCap\qorcap-v0.2.0-windows-x64`) |
 | Trust tier | Tops out at **PARTIAL / self-attested**. There is no hosted referee server yet |
-| Meta hackathon | Applied (Pending). Oct 26 – Nov 4 2026, Indie track |
+| Meta hackathon | Accepted; building. Oct 26 – Nov 4 2026 (submissions close Wed Nov 4, 8:00 PM CT), **Startup** track. See `HACKATHON.md` |
 | X | @QorTimeHQ, launch post pinned, posts 2–5 queued. Account "Under review" |
 | Stripe | Test-mode account created. KYC not done. Connector not connected |
 

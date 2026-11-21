@@ -140,26 +140,39 @@ def test_v0311_challenge_fixtures_partials():
     motion = COMPAT["motion_rules"]
     from qor_receipt.review.motion import (
         MOTION_BASIS_V3,
+        MOTION_BASIS_V4,
         MOTION_BIN_MS,
         MOTION_HZ,
         MOTION_MAX_LAG,
+        MOTION_MEDIAN_DRAWS,
         MOTION_MIN_BINS,
         MOTION_RULE,
+        MOTION_RULE_V3,
         MOTION_SAMPLE_MAX_SEGMENTS,
+        MOTION_SAMPLE_MAX_SEGMENTS_V3,
         MOTION_SIZE,
     )
-    assert motion["current"] == MOTION_RULE == 3
+    assert motion["current"] == MOTION_RULE == 4
+    assert MOTION_RULE_V3 == 3
     assert motion["floor_permille"] == R.MOTION_MIN_PERMILLE == 300
     assert motion["min_bins"] == MOTION_MIN_BINS == 20
     assert motion["max_lag_bins"] == MOTION_MAX_LAG == 3
     assert motion["bin_ms"] == MOTION_BIN_MS == 1000
-    assert motion["sample_max_segments"] == MOTION_SAMPLE_MAX_SEGMENTS == 24
+    assert motion["sample_max_segments"] == MOTION_SAMPLE_MAX_SEGMENTS == 48
+    assert motion["median_draws"] == MOTION_MEDIAN_DRAWS == 3
+    assert MOTION_SAMPLE_MAX_SEGMENTS_V3 == 24
     assert motion["sample_hz"] == MOTION_HZ == 10
     assert motion["sample_size"] == list(MOTION_SIZE) == [640, 360]
     assert motion["clock"] == "fragment_pts"
+    assert set(motion["rule_versions"]) == {"3", "4"}
     assert motion["rule_versions"]["3"]["basis"] == MOTION_BASIS_V3
+    assert motion["rule_versions"]["4"]["basis"] == MOTION_BASIS_V4
     assert "stratified random spread of at most 24 media segments drawn after commit" in MOTION_BASIS_V3
+    assert "never submission id" in MOTION_BASIS_V4
+    assert "median of 3" in MOTION_BASIS_V4
     assert set(motion["rule_versions"]["3"]["excluded_keys"]) == {
+        "scorebug_absent", "end_menu", "final_screen", "challenge_pause", "total"}
+    assert set(motion["rule_versions"]["4"]["excluded_keys"]) == {
         "scorebug_absent", "end_menu", "final_screen", "challenge_pause", "total"}
     js = (ROOT / "verify" / "verify.js").read_text(encoding="utf-8")
     assert "MOTION_MIN = 300" in js
