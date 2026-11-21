@@ -53,9 +53,14 @@ known: a content digest is recorded when this module writes the cache, and a
 known-check recomputes it over keys and values. A non-dict cache, a foreign key
 or value type, or a digest mismatch fails closed. The digest is stored in a
 module-level map, not on the instance, so writing a matching digest into
-``__dict__`` is an extra attribute and is not known. Writing a new digest into
-that map after mutating the cache, or patching the digest function, still reads
-as known; that is the same family as patching a method on the
+``__dict__`` is an extra attribute and is not known. A later module write
+(``_mask`` at a new size, including a new downscaled work-size key mid-estimate)
+verifies the recorded digest against the cache as it stands *before* that write
+and only then re-records. A mismatch does not re-bless poisoned entries: it
+warns, leaves no digest recorded, and the instance stays unknown. The first
+record, in ``__init__``, has nothing to verify. Writing a new digest into the
+module map after mutating the cache, or patching the digest function, still
+reads as known; that is the same family as patching a method on the
 ``OpticalFlowPanEstimator`` class itself, which also still reads as known, and
 is not a seal.
 
@@ -354,14 +359,39 @@ def _mask_cache_digest(cache: object) -> bytes | None:
     return acc.digest()
 
 
-def _record_mask_cache_digest(estimator: object) -> None:
-    """Record the digest of a cache this module just wrote. A failed digest drops the record."""
-    cache = getattr(estimator, "_mask_cache", None)
-    digest = _mask_cache_digest(cache)
+def _mask_cache_matches_record(estimator: object) -> bool:
+    """True when a digest is on record and still matches the current cache."""
+    recorded = _MASK_CACHE_DIGESTS.get(estimator)
+    current = _mask_cache_digest(getattr(estimator, "_mask_cache", None))
+    return recorded is not None and current is not None and current == recorded
+
+
+def _store_mask_cache_digest(estimator: object) -> bool:
+    """Store a digest of the current cache, or drop the record if it cannot be hashed."""
+    digest = _mask_cache_digest(getattr(estimator, "_mask_cache", None))
     if digest is None:
         _MASK_CACHE_DIGESTS.pop(estimator, None)
-        return
+        return False
     _MASK_CACHE_DIGESTS[estimator] = digest
+    return True
+
+
+def _record_mask_cache_digest(estimator: object, *, initial: bool = False) -> bool:
+    """Record a digest of the current cache, after verifying any existing record.
+
+    The first record (``initial=True``, from ``__init__``) has nothing to
+    verify. Every later call must see a matching recorded digest before a new
+    digest is stored. A mismatch warns, leaves no digest recorded, and returns
+    False so the caller does not re-bless a mutated cache.
+
+    Write paths must call this *before* mutating the cache. After a True
+    result they may write a new entry and then ``_store_mask_cache_digest``.
+    """
+    if not initial and not _mask_cache_matches_record(estimator):
+        warnings.warn("pan estimator _mask_cache contents changed", RuntimeWarning, stacklevel=2)
+        _MASK_CACHE_DIGESTS.pop(estimator, None)
+        return False
+    return _store_mask_cache_digest(estimator)
 
 
 def _estimator_instance_ok(estimator: object) -> bool:
@@ -370,8 +400,10 @@ def _estimator_instance_ok(estimator: object) -> bool:
     Does not consult the allowlist. A rejected instance must not be hashed as if
     it were the known estimator. Replacing ``_mask_cache``, even when
     ``_mask_cache_id`` is updated to ``id(new_dict)``, mutating a cached mask, or
-    adding a key, warns and is not known. A non-dict cache or a foreign key or
-    value type also fails closed.
+    adding a key, warns and is not known. A later ``_mask`` write at a new size
+    does not re-bless a mutated cache: the recorded digest is checked against
+    the pre-write contents, and a mismatch leaves no digest recorded. A non-dict
+    cache or a foreign key or value type also fails closed.
     """
     cls = OpticalFlowPanEstimator
     if type(estimator) is not cls:
@@ -402,7 +434,7 @@ def _running_estimator_known(estimator: object) -> bool:
     ``_mask_cache_id``, so assigning ``estimator._pair`` (or any other attribute)
     is not known. Replacing ``_mask_cache`` (with or without updating
     ``_mask_cache_id``), mutating a cached mask, or adding a key warns and is
-    not known.
+    not known. A later module cache write does not re-bless a mutated cache.
     """
     if not _estimator_instance_ok(estimator):
         return False
@@ -435,7 +467,7 @@ class OpticalFlowPanEstimator:
         self.params = params
         self._mask_cache: dict[tuple[int, int], Any] = {}
         self._mask_cache_id = id(self._mask_cache)
-        _record_mask_cache_digest(self)
+        _record_mask_cache_digest(self, initial=True)
 
     @property
     def sha256(self) -> str:
@@ -468,8 +500,10 @@ class OpticalFlowPanEstimator:
             xa, xb = int(math.floor(x0 * w)), int(math.ceil(x1 * w))
             ya, yb = int(math.floor(y0 * h)), int(math.ceil(y1 * h))
             mask[max(ya, 0):min(yb, h), max(xa, 0):min(xb, w)] = 0
+        if not _record_mask_cache_digest(self):
+            return mask
         self._mask_cache[key] = mask
-        _record_mask_cache_digest(self)
+        _store_mask_cache_digest(self)
         return mask
 
     def _prepare(self, frame) -> _Prepared:
