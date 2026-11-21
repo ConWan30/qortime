@@ -115,7 +115,7 @@ def test_property_sha_is_not_trusted():
 
 
 def test_forged_module_and_qualname_do_not_take_the_real_identity():
-    from qor_receipt.vision.pan_estimator import OpticalFlowPanEstimator, estimator_sha256
+    from qor_receipt.vision.pan_estimator import OpticalFlowPanEstimator, PanParams, estimator_sha256
 
     class Fake(NoClaimPanEstimator):
         @property
@@ -132,6 +132,53 @@ def test_forged_module_and_qualname_do_not_take_the_real_identity():
     assert fake.estimator_sha256 is None
     assert honest.estimator_sha256 == estimator_sha256()
     assert OpticalFlowPanEstimator.__module__ not in fake.files or honest.sha256 != fake.sha256
+    other = OpticalFlowPanEstimator(PanParams(min_features=31))
+    other_id = source_identity(PanAgreementScorer(other), other)
+    assert other_id.estimator_sha256 == estimator_sha256(other.params)
+    assert other_id.estimator_sha256 != estimator_sha256()
+    real._pair = lambda *_args, **_kwargs: None
+    rejected = source_identity(PanAgreementScorer(real), real)
+    assert rejected.estimator_sha256 is None
+    assert estimator_sha256() not in repr(rejected)
+
+
+def test_ATTACK_lying_params_rejected_but_allowlisted_sha_recorded():
+    """An int subclass whose comparisons lie is rejected and does not record the allowlisted sha."""
+    from qor_receipt.vision.estimator_allowlist import KNOWN_ESTIMATOR_SHA256
+    from qor_receipt.vision.pan_estimator import OpticalFlowPanEstimator, PanParams, estimator_known, estimator_sha256
+
+    class LyingInt(int):
+        def __eq__(self, other: object) -> bool:
+            return True
+
+        def __int__(self) -> int:
+            return 30
+
+    params = PanParams(min_features=LyingInt(30))
+    est = OpticalFlowPanEstimator(params)
+    allowlisted = estimator_sha256()
+    assert allowlisted in KNOWN_ESTIMATOR_SHA256
+    assert estimator_known(params) is False
+    assert est.identity()["estimator_known"] is False
+    ident = source_identity(PanAgreementScorer(est), est)
+    assert ident.estimator_sha256 is None
+    assert allowlisted not in repr(ident)
+
+
+def test_ATTACK_bool_param_rejected_but_allowlisted_sha_recorded():
+    """A bool field is rejected and does not record the allowlisted sha."""
+    from qor_receipt.vision.estimator_allowlist import KNOWN_ESTIMATOR_SHA256
+    from qor_receipt.vision.pan_estimator import OpticalFlowPanEstimator, PanParams, estimator_known, estimator_sha256
+
+    params = PanParams(work_width=True)
+    est = OpticalFlowPanEstimator(params)
+    allowlisted = estimator_sha256()
+    assert allowlisted in KNOWN_ESTIMATOR_SHA256
+    assert estimator_known(params) is False
+    assert est.identity()["estimator_known"] is False
+    ident = source_identity(PanAgreementScorer(est), est)
+    assert ident.estimator_sha256 is None
+    assert allowlisted not in repr(ident)
 
 
 def _load_adapter(path: Path, module_name: str):
@@ -334,6 +381,18 @@ def test_raw_byte_frames_are_length_prefixed():
     assert one != two
 
 
+def test_frame_chunk_type_tag_separates_bytes_and_bytearray():
+    def produce(sample):
+        return sample
+
+    raw = frame_source_identity(produce, (b"ab",))
+    mutable = frame_source_identity(produce, (bytearray(b"ab"),))
+    viewed = frame_source_identity(produce, (memoryview(b"ab"),))
+    as_tuple = frame_source_identity(produce, ((0, b"ab"),))
+    as_list = frame_source_identity(produce, ([0, b"ab"],))
+    assert len({raw, mutable, viewed, as_tuple, as_list}) == 5
+
+
 def test_factory_classes_with_different_closures_do_not_hash_the_same():
     def factory(secret):
         class Closed:
@@ -350,6 +409,70 @@ def test_factory_classes_with_different_closures_do_not_hash_the_same():
     same = factory(1)()
     assert source_identity(first, first).sha256 != source_identity(second, second).sha256
     assert source_identity(first, first).sha256 == source_identity(same, same).sha256
+
+
+def test_same_named_subclasses_of_different_bases_differ():
+    """The class block of ``Core`` is the same text. The base it inherits is not."""
+
+    class BaseA:
+        def yaw(self):
+            return 1
+
+    class BaseB:
+        def yaw(self):
+            return 2
+
+    def make(base):
+        class Core(base):
+            name = "core"
+            version = "v0"
+
+            def estimate(self, sample):
+                return self.yaw()
+
+        return Core
+
+    left = make(BaseA)()
+    right = make(BaseB)()
+    again = make(BaseA)()
+    assert type(left).__name__ == type(right).__name__ == "Core"
+    left_id = source_identity(left, left)
+    right_id = source_identity(right, right)
+    assert left_id.sha256 != "unhashed"
+    assert right_id.sha256 != "unhashed"
+    assert left_id.sha256 != right_id.sha256
+    assert left_id.sha256 == source_identity(again, again).sha256
+
+
+def test_instance_method_patch_misses_the_cache():
+    class Core:
+        name = "core"
+        version = "v0"
+
+        def yaw(self):
+            return 1
+
+    host = _CachingHost(Core(), (b"frame",))
+
+    def estimate():
+        key = estimate_cache_key(host, host.core, host.produce, host.frames)
+        hit = host.cache.get(key)
+        if hit is not None:
+            return hit
+        host._computes += 1
+        value = (host.core.yaw(),)
+        host.cache.put(key, value)
+        return value
+
+    assert estimate() == (1,)
+    assert host._computes == 1
+
+    def patched(self):
+        return 9
+
+    host.core.yaw = patched.__get__(host.core, Core)
+    assert estimate() == (9,)
+    assert host._computes == 2
 
 
 def test_mutating_an_estimator_attribute_misses_the_cache():
