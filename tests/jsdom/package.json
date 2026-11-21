@@ -1,0 +1,8 @@
+{
+  "name": "qortime-viewer-jsdom",
+  "private": true,
+  "description": "Pinned jsdom for rendered match-page tests. Install with npm ci in this directory.",
+  "dependencies": {
+    "jsdom": "25.0.1"
+  }
+}

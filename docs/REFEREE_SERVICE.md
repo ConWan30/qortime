@@ -113,11 +113,14 @@ receipt still verifies. 1632/4096 nonces already qualify. The most likely patter
 8/4096 (1/512) to 8/1632 (1/204).
 
 An outlier is flipped to `ok: false`, reason `latency_inconsistent`, before the phase-pass check,
-so it does not count toward VERIFIED. The challenges check stays `partial` (not a structural
-`fail`). The signed result carries `result.rule`, which is what the verifiers trust. A claimed
-success at 1700 ms with no rule is still `challenge_latency_out_of_range`. A claimed rule-2 success
-whose latencies disagree is `challenge_latency_inconsistent` (PARTIAL). Mixed rule ids on one role
-are `challenge_rule_mixed`.
+so it does not count toward VERIFIED. `result.ok` false blocks signing (`challenge_failed`), and the
+challenges check is `fail` for that refusal. The reason is `review.reason` and the top-level `reason`
+on the public submission, not only `post_sign_errors`. A receipt that still claims those challenges
+ok stays PARTIAL via `challenge_latency_inconsistent`. The signed result carries `result.rule`, which
+is what the verifiers trust. A claimed success at 1700 ms with no rule is still
+`challenge_latency_out_of_range`. A claimed rule-2 success whose latencies disagree, while `ok` stays
+true, is `challenge_latency_inconsistent` (PARTIAL). Mixed rule ids on one role are
+`challenge_rule_mixed`. A missing or unofficial phase stays `partial`. A pattern mismatch does not.
 
 What v2 still rejects: a pause before the press, a missing pause, a replayed or early pattern, and
 a delay past 2500 ms. What a constant-delay relay under 2500 ms can still do: show the menu at the

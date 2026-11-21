@@ -187,6 +187,40 @@ def test_v0311_challenge_fixtures_partials():
     assert f"MAX_WINDOW_MS = {CH.MAX_WINDOW_MS};" in js
 
 
+def test_pattern_mismatch_stored_from_does_not_bump_current():
+    """Informational: recorder 0.3.44 will store a pattern_mismatch. current stays the checked release."""
+    versions = COMPAT["recorder_versions"]
+    assert versions["current"] == "0.3.38"
+    assert versions["challenge_mismatch_stored_from"] == "0.3.44"
+    text = COMPAT["challenge_rules"]["recorder_result"]
+    assert "From recorder 0.3.44 a pattern_mismatch is stored as ok:false" in text
+    # Word-for-word QorCap #97 gate paragraph (SHA-256 1f478720…5c3f, no trailing newline).
+    verbatim = (
+        "Store `pattern_mismatch` (`ok` false, `reverified_by` `recorder`) only when the controller log can support it. "
+        "Every non-empty line of `inputs.jsonl` must parse as a JSON object. A JSON value that is not an object, such as `42` or `[]`, is malformed, and so is a second `header` row. "
+        "Coverage opens at the latest `chunk` row stamped at or before `issued_ms`; there must be one, and a chunk after `issued_ms` does not open coverage. "
+        "From it, each next chunk must be at most 3000 ms after the previous one until a chunk stamped at or after `deadline_ms` is reached; a last chunk before `deadline_ms` withholds even when the deadline is within 3000 ms of it. "
+        "Gaps before the opening chunk and after the closing chunk are not checked. Only `type: \"chunk\"` rows with an integer `t_us` count; others are ignored. "
+        "That bound is the 2 s fMP4 fragment (`min_frag_duration`) plus 1 s of slack for the one-second GOP. "
+        "From 0.3.34 a chunk row, including an empty one, is written every segment while the HID reader is alive (it has returned from a read since the previous seal); a hung read writes none, so a hang that spans a whole segment leaves a gap and withholds. "
+        "A single chunk after the deadline does not cover the window, and neither does a crash gap followed by rows after the deadline. "
+        "Wall time is the header `wall_anchor_ms` plus `t_us // 1000`. The pad's status must be `connected` at `issued_ms` and remain `connected` through `deadline_ms + 2500` ms. "
+        "Every status row at the last wall time at or before `issued_ms` must be `connected`; a non-connected row at that same millisecond withholds regardless of order. "
+        "That 2500 ms is the stall-detection lag: a `stalled` row is written only after 2 s with no HID reports, on the next 100 ms read timeout. "
+        "A status other than `connected` (for example `stalled`, `unplugged`, or `missing`) anywhere in that span withholds the result, including a drop that reconnects before the deadline. "
+        "A status row whose `t_us` is not an integer, or whose `state` is not a string, withholds it too. "
+        "OPTIONS alone, and OPTIONS inside the window with the rest of the pattern after the deadline, are `pattern_mismatch` from `verify_response` and are stored when the log passes this gate. "
+        "Every other non-ok reason stays null. A withheld mismatch stays in `challenge_results.jsonl` as `reason: pattern_mismatch` with `withheld: \"controller_log\"`. "
+        "That file is bundle metadata, not a contract file, and `withheld` is not in `receipt.v0`."
+    )
+    import hashlib
+    assert hashlib.sha256(verbatim.encode("utf-8")).hexdigest() == "1f4787204cc7cae70d319ffe48210d54f9d4d3b63d64f2fd27cddfdeb2565c3f"
+    assert verbatim in text
+    assert "The official referee applies the same gate" in text
+    assert "Only a gate-passing mismatch is challenge_failed" in text
+    assert "challenge_unanswered" in text
+
+
 def test_stop_tail_rule_is_the_verifier_rule():
     """The real-match failure signature (cp[n-2] gap+skew, cp[n-1] skew) is exactly a late-stamped stop tail."""
     e = json.loads((ROOT / "tests/fixtures/contract/v032_late_stop_tail.json").read_text())["expect"]["errors"]
