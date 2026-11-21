@@ -1,29 +1,66 @@
 <!doctype html>
-<html lang="en"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="en" data-qor-site="receipts"><head>
+<meta charset="utf-8"><script>document.documentElement.classList.add("js");setTimeout(function(){var h=document.documentElement;if(!h.classList.contains("qor-motion"))h.classList.remove("js")},3000)</script><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>QorTime — One app. One recording. One receipt.</title>
 <meta name="description" content="One app. One recording. One receipt. QorCap captures and fingerprints your console match on Windows; QorTime then signs the receipt, runs an AI referee and lets anyone verify it. Madden NFL 27 first.">
 <meta name="theme-color" content="#04050a"><meta name="color-scheme" content="dark">
-<link rel="icon" type="image/svg+xml" href="assets/favicon.svg"><link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png"><link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
-<link rel="canonical" href="https://conwan30.github.io/qortime/">
+<link rel="icon" type="image/svg+xml" href="qor-ui/brand/favicon.svg"><link rel="icon" type="image/png" sizes="32x32" href="qor-ui/brand/favicon-32.png"><link rel="apple-touch-icon" href="qor-ui/brand/apple-touch-icon.png">
+<link rel="canonical" href="https://qortime.com/">
 <meta property="og:type" content="website"><meta property="og:title" content="QorTime — One app. One recording. One receipt.">
-<meta property="og:description" content="Capture with QorCap, prove it after the match, share a receipt anyone can verify. One app. One recording. One receipt.">
-<meta property="og:url" content="https://conwan30.github.io/qortime/"><meta property="og:image" content="https://conwan30.github.io/qortime/assets/og.png">
-<meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="https://conwan30.github.io/qortime/assets/og.png">
+<meta property="og:description" content="Capture with QorCap, check it after the match, share a receipt anyone can verify. One app. One recording. One receipt.">
+<meta property="og:url" content="https://qortime.com/"><meta property="og:image" content="https://qortime.com/assets/og.png">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="https://qortime.com/assets/og.png">
 <meta name="twitter:title" content="QorTime — One app. One recording. One receipt.">
-<meta name="twitter:description" content="Signed, verifiable console match results. Verified Match is early access and Stripe test mode until KYC — not a live paid product.">
+<meta name="twitter:description" content="Signed, verifiable console match results. Self-verify is free in the browser. Verified Match, a hosted referee countersign, is planned.">
 <meta name="twitter:site" content="@QorTimeHQ">
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"WebSite","name":"QorTime","url":"https://conwan30.github.io/qortime/","description":"Signed Madden match receipts anyone can verify in a browser. Verified Match hosted-referee countersign is early access and Stripe test mode until business KYC."}
+{"@context":"https://schema.org","@type":"WebSite","name":"QorTime","url":"https://qortime.com/","description":"Signed Madden match receipts anyone can verify in a browser. Self-verify is free. Verified Match, a hosted referee countersign, is planned."}
 </script>
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="qor-ui/tokens.css"><link rel="stylesheet" href="qor-ui/motion.css"><link rel="stylesheet" href="qor-ui/nav.css"><link rel="stylesheet" href="qor-ui/footer.css">
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="qor-site.css">
 </head><body>
 <div class="grain" aria-hidden="true"></div>
 <div class="cursor" aria-hidden="true"></div>
-<header class="nav glass"><a class="brand" href="./"><img src="assets/logo.svg" alt="" width="30" height="30"><b>Qor<span>Time</span></b></a>
-<nav><a href="#flow">Capture · Prove · Share</a><a href="matches/" class="keep">Matches</a><a href="challenge/" class="keep">Challenges</a><a href="how-it-works/" class="keep">How it works</a><a href="pricing/" class="keep">Pricing</a><a href="early-access/" class="keep">Early access</a><a href="verify/" class="btn sm mag">Verifier</a></nav></header>
+<header class="qor-nav" data-qor-nav data-active="receipts"
+  data-receipts-href="./"
+  data-capture-href="cap/"
+  data-watch-href="#watch-coming-soon">
+  <nav class="qor-nav__inner" aria-label="Qor product family">
+    <a class="qor-nav__brand" href="./">
+      <span class="qor-nav__mark">
+        <img src="qor-ui/brand/logo-icon.svg" alt="" width="30" height="30">
+        <span class="qor-shimmer" aria-hidden="true"></span>
+      </span>
+      <span class="qor-nav__wordmark">QorTime<span class="qor-nav__wordmark-sub">Receipts</span></span>
+    </a>
+    <div class="qor-nav__track">
+      <a class="qor-nav__link" data-qor-link="receipts" href="./" aria-current="page">Receipts</a>
+      <a class="qor-nav__link" data-qor-link="capture" href="cap/">Capture</a>
+      <a class="qor-nav__link" data-qor-link="watch" href="#watch-coming-soon">Watch</a>
+      <span class="qor-nav__weave" aria-hidden="true">
+        <span class="qor-nav__strand qor-nav__strand--blue"></span>
+        <span class="qor-nav__strand qor-nav__strand--cyan"></span>
+        <span class="qor-nav__strand qor-nav__strand--white"></span>
+        <span class="qor-nav__knot"></span>
+      </span>
+    </div>
+    <div class="qor-nav__actions">
+      <a class="qor-nav__cta" href="verify/">Verifier</a>
+      <button class="qor-nav__toggle" type="button" aria-expanded="false" aria-controls="qor-mobile-sheet" aria-label="Toggle family menu">
+        <span class="qor-nav__toggle-lanes" aria-hidden="true"><span></span><span></span><span></span></span>
+      </button>
+    </div>
+  </nav>
+  <div class="qor-nav__sheet" id="qor-mobile-sheet" hidden>
+    <div class="qor-nav__sheet-panel" role="dialog" aria-label="Qor family navigation">
+      <a class="qor-nav__sheet-link" data-qor-link="receipts" href="./" aria-current="page"><span>Receipts</span></a>
+      <a class="qor-nav__sheet-link" data-qor-link="capture" href="cap/"><span>Capture</span></a>
+      <a class="qor-nav__sheet-link" data-qor-link="watch" href="#watch-coming-soon"><span>Watch</span></a>
+      <a class="qor-nav__cta qor-nav__sheet-cta" href="verify/">Verifier</a>
+    </div>
+  </div>
+</header>
 <main>
 
 <section class="hero" id="top">
@@ -31,33 +68,56 @@
  <div class="hero-copy">
   <p class="kicker reveal-up"><span class="dot"></span> capture · prove · share · Madden NFL 27 first</p>
   <h1 class="kinetic"><span class="line">One app.</span><span class="line">One recording.</span><span class="line accent">One receipt.</span></h1>
-  <p class="lede reveal-up">Play your match with <b>QorCap</b>, one lightweight Windows app that records the capture card and fingerprints every second of video. When the match is over, QorTime does the heavy lifting on the finished recording: a signed receipt, an AI referee verdict, and a public verify link. Nothing heavy runs while you play.</p>
-  <div class="ctas reveal-up"><a class="btn mag" href="verify/"><span>Verify a receipt</span></a><a class="btn ghost mag" href="https://github.com/ConWan30/qorcap/releases/latest"><span>Download QorCap</span></a><a class="btn ghost mag" href="early-access/"><span>Verified Match — early access</span></a></div>
-  <div class="ctas reveal-up vm-hero"><a class="btn vm mag" href="https://buy.stripe.com/test_3cI4gy7he9Uuarqczl00000" target="_blank" rel="noopener noreferrer"><span>Buy Verified Match (test)</span></a></div>
-  <p class="vm-hero-note reveal-up">Stripe test mode · $9.99 USD · not a live charge · early access until KYC</p>
+  <p class="lede reveal-up">Play your match with <b><a href="cap/">QorCap</a></b>, one lightweight Windows app that records the capture card and fingerprints every second of video. When the match is over, QorTime does the heavy lifting on the finished recording: a signed receipt, an AI referee verdict, and a public verify link. Nothing heavy runs while you play.</p>
+  <div class="ctas reveal-up"><a class="btn mag" href="verify/"><span>Verify a receipt</span></a><a class="btn ghost mag" href="https://github.com/ConWan30/qorcap/releases/latest"><span>Download QorCap</span></a></div>
+  <p class="plan-note reveal-up">Verified Match, a hosted referee countersign, is planned at $9.99. Self-verify is free today.</p>
  </div>
  <div class="hero-foot reveal-up"><span>scroll to seal a match</span><i></i></div>
  <div class="marquee" aria-hidden="true"><div class="mq-track"><span>ONE APP ◆ ONE RECORDING ◆ ONE RECEIPT ◆ CAPTURE ◆ PROVE ◆ SHARE ◆ </span><span>ONE APP ◆ ONE RECORDING ◆ ONE RECEIPT ◆ CAPTURE ◆ PROVE ◆ SHARE ◆ </span></div></div>
 </section>
 
 
+<div class="qor-section-weave" aria-hidden="true"></div>
 <section class="wrap" id="flow">
  <p class="num">how it works</p>
  <h2 class="split big">Capture. Prove. Share.</h2>
  <div class="cards">
-  <div class="card glass"><h3>1 · Capture</h3><p><b>QorCap</b> is the one app you run, on Windows, during the match. It records the capture card and fingerprints the video as it is written: every segment is hashed and chained, with timestamped checkpoints. It stays light, so it doesn't strain your laptop.</p><span class="tag">controller button log in the same session · since v0.3.0</span></div>
+  <div class="card glass"><h3>1 · Capture</h3><p><b>QorCap</b> is the one app you run, on Windows, during the match. It records the capture card and fingerprints the video as it is written: every segment is hashed and chained, with timestamped checkpoints. It stays light, so it doesn't strain your laptop.</p><span class="tag">controller button log in the same session · since v0.3.0</span><div class="ctas"><a class="btn ghost mag" href="cap/"><span>Open Capture</span></a></div></div>
   <div class="card glass"><h3>2 · Prove</h3><p>After the final whistle, QorTime works on the finished recording. It re-checks the fingerprints, reads the score, and seals a signed receipt. The <b>AI referee</b> reviews the evidence and signs a verdict: <b>accept</b>, <b>dispute</b>, or <b>abstain</b>, with plain reasons and the evidence frames.</p></div>
-  <div class="card glass"><h3>3 · Share</h3><p>Send the receipt to your opponent, a tournament, or a platform. Anyone can check it in the free <a href="verify/">browser verifier</a>, and nothing is uploaded. A hosted referee countersign, Verified Match, is in test-mode early access.</p></div>
+  <div class="card glass"><h3>3 · Share</h3><p>Send the receipt to your opponent, a tournament, or a platform. Anyone can check it in the free <a href="verify/">browser verifier</a>, and nothing is uploaded. A hosted referee countersign, Verified Match, is planned.</p></div>
  </div>
  <div class="glass limits" style="margin-top:22px">
   <h2>Inside the Prove step</h2>
   <ul>
    <li><b>Integrity checks in code:</b> video fingerprints, checkpoint chain, and signatures. Scores can only move in legal football steps, never backwards. The clock only runs down within a quarter. The final screen must match the last score.</li>
    <li><b>AI referee:</b> reads frames to confirm the score. It only accepts a reading when it is confident and the reading agrees across several frames, and it <b>abstains</b> rather than guessing. Tampering is caught by the integrity checks, not by trusting a model.</li>
-   <li><b>Honest limit:</b> QorTime proves the footage's integrity and timing. Since QorCap v0.3.0 it also logs controller reports from a pad that enumerated on USB in that session. It does <b>not</b> prove who held the controller, or that the console obeyed that pad.</li>
+   <li><b>Honest limit:</b> QorTime checks the recording against its signed hash chain, and its timing against the referee's challenges and anchors. Since v0.3.0, QorCap also logs controller reports from a pad that enumerated on USB in that session. It does <b>not</b> prove who held the controller, or that the console obeyed that pad.</li>
   </ul>
   <a class="btn ghost mag" href="how-it-works/"><span>How it works</span></a>
  </div>
+</section>
+
+<div class="qor-section-weave" aria-hidden="true"></div>
+<section class="wrap" id="prove-rails" aria-label="Prove paths">
+ <p class="num">prove · two doors</p>
+ <h2 class="split big">Same story. Two doors.</h2>
+ <p class="lede">Self-verify checks a real receipt in your browser. The SAMPLE path is a practice lab: a demo, not a real match.</p>
+ <div class="cards dual-rail">
+  <div class="card glass rail-real">
+   <p class="plan-kicker"><span class="dot"></span> real path</p>
+   <h3>Self-verify</h3>
+   <p>Paste a sealed receipt. Signatures, the chain, and the challenges run locally. Nothing is uploaded. Gold <b>VERIFIED</b> only when the live verifier says so.</p>
+   <a class="btn mag" href="verify/"><span>Open the verifier</span></a>
+  </div>
+  <div class="card glass rail-sample">
+   <p class="plan-kicker sample"><span class="dot"></span> SAMPLE · demo</p>
+   <h3>Try the SAMPLE path</h3>
+   <p>Walk Capture → Prove → Share on a redacted practice fixture. You get a clearly labeled <b>SAMPLE</b> receipt: a demo, not a real match. This door does not show a gold seal. A CoD HUD lock in the lab is correlated illustration only. It is not a seal of the Madden SAMPLE JSON, and it is not the same as sealing those CoD frames.</p>
+   <a class="btn ghost mag" href="https://cursor.com/agents/bc-4a3891c2-7098-58c8-98e5-9a84634c68bf" rel="noopener noreferrer" target="_blank"><span>Open SAMPLE lab (Preview)</span></a>
+   <span class="tag">SAMPLE · demo · not a real match · blank referee key</span>
+  </div>
+ </div>
+ <p class="note"><a href="record-pack/">Match record pack</a>: your sealed match record in one link, with its limits stated, for a league admin, a creator or a support ticket.</p>
 </section>
 
 <!-- 01 capture -->
@@ -68,6 +128,7 @@
    <h2 class="split">The scorebug, read off the screen.</h2>
    <p>QorTime's scorebug reader reads the final score from the recording, digit by digit, and only locks when consecutive frames agree.</p>
    <ul class="ticks"><li>frames read from the capture card</li><li>score locked on frame agreement</li><li>Madden NFL 27 first, more titles <span class="tag">roadmap</span></li></ul>
+   <p class="note"><a href="cap/">QorCap, the Capture step</a></p>
   </div>
   <div class="scene-art">
    <div class="scorebug glass" id="scorebug">
@@ -91,7 +152,7 @@
  <div class="pin">
   <div class="scene-copy">
    <p class="num">02 / challenge</p>
-   <h2 class="split">Prove a human is on the sticks.</h2>
+   <h2 class="split">Referee challenges, answered mid-match.</h2>
    <p>Three referee challenges per match: game start, the second half, and the fourth quarter. The player pauses and enters the pattern. On QorCap rule v2 that pause has to show up within 2.5&nbsp;seconds. A relay under 2.5&nbsp;seconds is not reliably caught.</p><p class="note">QorCap logs the controller since v0.3.0. Since v0.3.11 a challenge only opens when Madden lets you pause: after the kickoff and a play call, never during a kickoff. Receipts with no rule id still use the older 600&nbsp;ms ceiling.</p>
   </div>
   <div class="scene-art">
@@ -164,7 +225,7 @@ receipt_hash</pre>
    <div class="tiers">
     <div class="tier"><b class="v ok">VERIFIED</b><span>Every signature, checkpoint, and challenge holds against a referee key on QorTime’s trusted list.</span></div>
     <div class="tier"><b class="v pa">PARTIAL</b><span>Signatures check out against a trusted QorTime referee, but something is missing (a challenge, motion, …). An untrusted key is not PARTIAL.</span></div>
-    <div class="tier"><b class="v sa">SELF_ATTESTED</b><span>Cryptography holds, but the referee key is not on QorTime’s built-in trusted list (local Start Match key, home-made key, or revoked). Never shown as VERIFIED.</span></div>
+    <div class="tier"><b class="v sa">SELF-SIGNED</b><span>Cryptography holds, but the referee key is not on QorTime’s built-in trusted list (local Start Match key, home-made key, or revoked). Never shown as VERIFIED.</span></div>
     <div class="tier"><b class="v fa">FAIL</b><span>A signature, the chain, or a challenge does not hold.</span></div>
    </div>
   </div>
@@ -178,6 +239,7 @@ receipt_hash</pre>
  </div>
 </section>
 
+<div class="qor-section-weave" aria-hidden="true"></div>
 <section class="wrap" id="platforms">
  <p class="num">for platforms &amp; sponsors</p>
  <h2 class="split big">Release escrow on math, not screenshots.</h2>
@@ -190,32 +252,17 @@ receipt_hash</pre>
 
 <section class="wrap" id="limits">
  <div class="glass limits"><h2>Honest limits</h2>
- <p>QorTime proves the footage's integrity and timing. Controller reports from a USB-enumerated pad in the same session are logged by QorCap <span class="tag">since v0.3.0</span>. It does <b>not</b> prove:</p>
+ <p>QorTime checks the recording against its signed hash chain, and its timing against the referee's challenges and anchors. Controller reports from a USB-enumerated pad in the same session are logged by QorCap <span class="tag">since v0.3.0</span>. It does <b>not</b> prove:</p>
  <ul><li><b>Account sharing:</b> who is physically holding the controller. The referee does not check pad identity. QorCap’s second-pad note, when it exists, stays in the local <span class="mono">input_proof.json</span>.</li><li><b>Right-stick injection:</b> an inline passthrough adapter can add right-stick input the console obeys while QorCap logs the real pad. Open. Planned checks are an advisory per-axis stick-versus-camera signal first, and hardware such as a sealed tap before any pad-to-console binding.</li><li><b>Collusion:</b> both players agreeing to throw or fake a match.</li><li>Anything outside what the capture card saw.</li><li><b>Red team:</b> a virtual capture device was missed. Relays under about 2.5–3&nbsp;seconds, and a splice that is rehashed and resigned, came out weak. <a href="https://github.com/ConWan30/qorcap/blob/main/docs/REDTEAM.md">QorCap red-team notes</a>.</li></ul>
  <a class="btn ghost mag" href="https://github.com/ConWan30/qortime/blob/main/docs/RISKS.md"><span>Read RISKS.md</span></a></div>
 </section>
 
-<section class="wrap vm" id="verified-match">
- <div class="vm-panel glass">
-  <div class="vm-grid">
-   <div>
-    <p class="vm-kicker"><span class="dot"></span> test · early access until KYC</p>
-    <h2 class="split">Buy the seal. Test money only.</h2>
-    <p>Verified Match is a $9.99 hosted-referee countersign after a completed match. It is early access. The button opens a Stripe <b>test</b> Payment Link. Business KYC is still open, so this is not a live paid product and it does not charge real money.</p>
-    <ul class="ticks"><li>$9.99 USD list price · one-time · test checkout</li><li>test card 4242 4242 4242 4242</li><li>free self-verify stays in the browser</li></ul>
-    <div class="ctas"><a class="btn vm mag" href="https://buy.stripe.com/test_3cI4gy7he9Uuarqczl00000" target="_blank" rel="noopener noreferrer"><span>Buy Verified Match (test)</span></a><a class="btn ghost mag" href="early-access/"><span>Early access</span></a><a class="btn ghost mag" href="pricing/"><span>Pricing</span></a></div>
-    <p class="vm-cancel" id="vm-cancel" hidden>Test checkout canceled. Nothing was recorded as paid.</p>
-    <p class="note">A test payment shows a neutral “paid, test mode” tag. Gold appears only after the verifier reports VERIFIED for that receipt. A Payment Link purchase alone has no receipt id.</p>
-   </div>
-   <div class="vm-seal" aria-hidden="true">
-    <div class="vm-coin">
-     <img src="assets/logo.svg" alt="" width="64" height="64">
-     <b>Verified Match</b>
-     <span>TEST MODE</span>
-     <small>$9.99</small>
-    </div>
-   </div>
-  </div>
+<section class="wrap plan-sec" id="verified-match">
+ <div class="plan-panel glass">
+  <p class="plan-kicker"><span class="dot"></span> planned</p>
+  <h2>Verified Match</h2>
+  <p>Verified Match, a hosted referee countersign, is planned at $9.99. Self-verify is free today. Payments are not open yet, so there is nothing to buy on this site.</p>
+  <div class="ctas"><a class="btn mag" href="verify/"><span>Self-verify, free</span></a><a class="btn ghost mag" href="early-access/"><span>Early access</span></a><a class="btn ghost mag" href="pricing/"><span>Pricing</span></a></div>
  </div>
 </section>
 
@@ -224,9 +271,43 @@ receipt_hash</pre>
  <div class="ctas c"><a class="btn mag" href="verify/"><span>Open the verifier</span></a><a class="btn ghost mag" href="https://github.com/ConWan30/qortime"><span>Star on GitHub</span></a></div>
 </section>
 </main>
-<footer class="wrap foot"><span>QorTime · MIT · early prototype</span><span class="foot-links"><a href="verify/">Verify</a><a href="matches/">Matches</a><a href="challenge/">Challenges</a><a href="how-it-works/">How it works</a><a href="pricing/">Pricing</a><a href="early-access/">Early access</a><a href="https://github.com/ConWan30/qorcap/releases/latest">QorCap</a><a href="https://github.com/ConWan30/qortime">GitHub</a><a href="https://x.com/QorTimeHQ">@QorTimeHQ</a></span><span>Not affiliated with EA, the NFL or Sony. Madden NFL is a trademark of its owner.</span></footer>
+<p class="qor-watch-note" id="watch-coming-soon">Watch is the third Qor product. It is not public yet.</p>
+<footer class="qor-footer" data-qor-footer data-active="receipts"
+  data-receipts-href="./"
+  data-capture-href="cap/"
+  data-watch-href="#watch-coming-soon">
+  <div class="qor-footer__inner">
+    <div class="qor-footer__top">
+      <div class="qor-footer__brand-col">
+        <a class="qor-footer__brand" href="./">
+          <span class="qor-footer__mark"><img src="qor-ui/brand/logo-icon.svg" alt="" width="26" height="26"></span>
+          <span>QorTime</span>
+        </a>
+        <p class="qor-footer__tagline">Signed match receipts, local capture, and a browser verifier. MIT · early prototype.</p>
+      </div>
+      <nav class="qor-footer__nav" aria-label="Qor family footer">
+        <a class="qor-footer__link" data-qor-link="receipts" href="./" aria-current="page">Receipts</a>
+        <a class="qor-footer__link" data-qor-link="capture" href="cap/">Capture</a>
+        <a class="qor-footer__link" data-qor-link="watch" href="#watch-coming-soon">Watch</a>
+      </nav>
+    </div>
+    <nav class="qor-footer__site" aria-label="QorTime pages"><a href="verify/">Verify</a><a href="#flow">Prove · Share</a><a href="matches/">Matches</a><a href="challenge/">Challenges</a><a href="how-it-works/">How it works</a><a href="pricing/">Pricing</a><a href="early-access/">Early access</a><a href="cap/">Capture</a><a href="https://github.com/ConWan30/qorcap/releases/latest">QorCap</a><a href="https://github.com/ConWan30/qortime">GitHub</a><a href="https://x.com/QorTimeHQ">@QorTimeHQ</a></nav>
+    <div class="qor-footer__bottom">
+      <p class="qor-footer__record-line"><span class="qor-footer__record-dot" aria-hidden="true"></span><span>Fair-proof record format across Receipts and Capture</span></p>
+      <div class="qor-footer__legal">Not affiliated with EA, the NFL or Sony. Madden NFL is a trademark of its owner.</div>
+    </div>
+  </div>
+</footer>
 <script src="vendor/gsap.min.js" defer></script>
 <script src="vendor/ScrollTrigger.min.js" defer></script>
 <script src="vendor/lenis.min.js" defer></script>
 <script src="app.js" defer></script>
+<script type="module">
+  import "./qor-ui/nav.js";
+  import "./qor-ui/footer.js";
+  import { initReveal, initSectionTransitions } from "./qor-ui/motion.js";
+  initReveal();
+  initSectionTransitions();
+  document.documentElement.classList.add("qor-motion");
+</script>
 </body></html>

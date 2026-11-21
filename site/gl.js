@@ -1,5 +1,5 @@
 import * as THREE from './vendor/three.module.min.js';
-const CY = new THREE.Color('#2ef2ff'), PK = new THREE.Color('#ff2e88');
+const CY = new THREE.Color('#2ef2ff'), AC = new THREE.Color('#4f7cff');
 const ease = t => 1 - Math.pow(1 - Math.min(Math.max(t, 0), 1), 4);
 const clamp01 = t => Math.min(Math.max(t, 0), 1);
 
@@ -39,16 +39,16 @@ export function init(canvas, { fine }) {
   const mkHand = (len, w, col) => { const p = new THREE.Group(); const h = new THREE.Mesh(new THREE.PlaneGeometry(w, len), new THREE.MeshBasicMaterial({ color: col, transparent: true })); h.position.y = len / 2; p.add(h);
     const glow = new THREE.Sprite(add(new THREE.SpriteMaterial({ map: glowTex, color: col, opacity: .5 }))); glow.scale.set(w * 6, len * 1.4, 1); glow.position.y = len / 2; p.add(glow); return p; };
   const white = mkHand(R * .62, .2, new THREE.Color('#ffffff')); white.position.z = .02; seal.add(white);
-  const pink = mkHand(R * 1.22, .26, PK); pink.position.z = .04; seal.add(pink);
-  const hub = new THREE.Mesh(new THREE.CircleGeometry(.24, 32), new THREE.MeshBasicMaterial({ color: PK })); hub.position.z = .06; seal.add(hub);
+  const accentHand = mkHand(R * 1.22, .26, AC); accentHand.position.z = .04; seal.add(accentHand);
+  const hub = new THREE.Mesh(new THREE.CircleGeometry(.24, 32), new THREE.MeshBasicMaterial({ color: AC })); hub.position.z = .06; seal.add(hub);
   // flash + shockwaves
-  const flash = new THREE.Sprite(add(new THREE.SpriteMaterial({ map: glowTex, color: new THREE.Color('#ffd6ea'), opacity: 0 }))); flash.position.z = .1; seal.add(flash);
-  const shocks = [0, 1, 2].map(i => { const m = new THREE.Mesh(new THREE.RingGeometry(.96, 1, 128), add(new THREE.MeshBasicMaterial({ color: i ? CY : PK, opacity: 0, side: THREE.DoubleSide }))); seal.add(m); return m; });
+  const flash = new THREE.Sprite(add(new THREE.SpriteMaterial({ map: glowTex, color: new THREE.Color('#d6e2ff'), opacity: 0 }))); flash.position.z = .1; seal.add(flash);
+  const shocks = [0, 1, 2].map(i => { const m = new THREE.Mesh(new THREE.RingGeometry(.96, 1, 128), add(new THREE.MeshBasicMaterial({ color: i ? CY : AC, opacity: 0, side: THREE.DoubleSide }))); seal.add(m); return m; });
   const backGlow = new THREE.Sprite(add(new THREE.SpriteMaterial({ map: glowTex, color: CY, opacity: .18 }))); backGlow.scale.set(11, 11, 1); backGlow.position.z = -1; seal.add(backGlow);
 
   // particle waveform (input chain)
   const P = 2600, pos = new Float32Array(P * 3), seed = new Float32Array(P), col = new Float32Array(P * 3);
-  for (let i = 0; i < P; i++) { seed[i] = Math.random(); const c = CY.clone().lerp(PK, Math.random() ** 2); col.set([c.r, c.g, c.b], i * 3); }
+  for (let i = 0; i < P; i++) { seed[i] = Math.random(); const c = CY.clone().lerp(AC, Math.random() ** 2); col.set([c.r, c.g, c.b], i * 3); }
   const pg = new THREE.BufferGeometry(); pg.setAttribute('position', new THREE.BufferAttribute(pos, 3)); pg.setAttribute('color', new THREE.BufferAttribute(col, 3)); pg.setAttribute('seed', new THREE.BufferAttribute(seed, 1));
   const pm = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, vertexColors: true,
     uniforms: { uT: { value: 0 }, uAmp: { value: 0 }, uPx: { value: renderer.getPixelRatio() } },
@@ -71,7 +71,7 @@ export function init(canvas, { fine }) {
   addEventListener('scroll', () => { scrollK = clamp01(scrollY / innerHeight); }, { passive: true });
   new IntersectionObserver(([e]) => { visible = e.isIntersecting; if (visible && !raf) { last = performance.now(); raf = requestAnimationFrame(loop); } }).observe(canvas);
 
-  const LOCK = Math.PI * .75; // pink hand points to the lower-right corner, like a Q tail
+  const LOCK = Math.PI * .75; // accent hand points to the lower-right corner, like a Q tail
   let t0 = performance.now(), last = t0, cycleStart = 0;
   function loop(now) {
     raf = 0; if (!visible) return;
@@ -86,7 +86,7 @@ export function init(canvas, { fine }) {
     let ang = -(sweepE * (Math.PI * 4 + LOCK));
     const lt = c - 4.0;
     if (lt > 0) ang = -LOCK + Math.sin(lt * 26) * Math.exp(-lt * 7) * .09; // overshoot snap
-    pink.rotation.z = ang; pink.children.forEach(ch => ch.material.opacity = ease((c - 1.8) / .4) * (ch.isSprite ? .5 : 1));
+    accentHand.rotation.z = ang; accentHand.children.forEach(ch => ch.material.opacity = ease((c - 1.8) / .4) * (ch.isSprite ? .5 : 1));
     white.rotation.z = -sweepE * Math.PI * 2; white.children.forEach(ch => ch.material.opacity = ease((c - 1.6) / .4) * (ch.isSprite ? .5 : 1));
     hub.scale.setScalar(ease((c - 1.6) / .3) + (lt > 0 ? Math.exp(-lt * 6) * .6 : 0));
     // flash + shockwave

@@ -193,10 +193,14 @@ def test_reader_core_pause_follows_the_rule():
 
 
 def test_issued_patterns_are_menu_safe_and_derivation_is_unchanged():
-    """CROSS/CIRCLE only in the last slot. Guessing the mode goes from 1/512 to 1/204."""
+    """CROSS/CIRCLE nowhere in the body. Guessing the mode goes from 1/512 to ~1/162."""
     unsafe = pattern_for(NONCE)
     assert unsafe == ["OPTIONS", "CROSS", "SQUARE", "DOWN", "SQUARE"]
     assert not pattern_menu_safe(unsafe)
+    # Last-slot-only used to pass; it must not under the resume-safe rule.
+    assert not pattern_menu_safe(["OPTIONS", "SQUARE", "UP", "TRIANGLE", "CIRCLE"])
+    assert not pattern_menu_safe(["OPTIONS", "DOWN", "SQUARE", "RIGHT", "CROSS"])
+    assert pattern_menu_safe(["OPTIONS", "SQUARE", "UP", "TRIANGLE", "DOWN"])
     counts: dict[tuple[str, ...], int] = {}
     safe_counts: dict[tuple[str, ...], int] = {}
     for a in range(8):
@@ -209,15 +213,15 @@ def test_issued_patterns_are_menu_safe_and_derivation_is_unchanged():
                         safe_counts[body] = safe_counts.get(body, 0) + 1
     safe_draws = sum(safe_counts.values())
     assert sum(counts.values()) == 4096
-    assert safe_draws == 1632 and safe_draws / 4096 == 0.3984375
+    assert safe_draws == 1189  # 6^4=1296 minus no-immediate-repeat collisions that still hit MENU_LEAVE
     assert max(counts.values()) == 8 and max(safe_counts.values()) == 8
     assert max(counts.values()) / 4096 == 1 / 512
-    assert max(safe_counts.values()) / safe_draws == 1 / 204
+    assert max(safe_counts.values()) / safe_draws == 8 / 1189
     for _ in range(30):
         nonce = menu_safe_nonce()
         pat = pattern_for(nonce)
         assert pattern_menu_safe(pat) and pat == pattern_for(nonce)
-        assert all(b not in MENU_LEAVE for b in pat[1:-1])
+        assert all(b not in MENU_LEAVE for b in pat[1:])
     with pytest.raises(RuntimeError):
         menu_safe_nonce(draws=0)
 

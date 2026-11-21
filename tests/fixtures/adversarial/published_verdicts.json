@@ -1,38 +1,4 @@
 {
-  "021003": {
-    "unpinned": {
-      "status": "SELF_ATTESTED",
-      "trust_tier": "single-attested",
-      "errors": [],
-      "partial": [
-        "referee_key_not_pinned",
-        "referee_not_on_allowlist",
-        "referee_local_self_attested",
-        "away:challenge_missing:kickoff",
-        "away:challenge_missing:halftime",
-        "away:challenge_missing:end",
-        "away:motion_signal_missing"
-      ],
-      "referee_trust": "untrusted",
-      "referee_id": null
-    },
-    "pinned": {
-      "status": "SELF_ATTESTED",
-      "trust_tier": "single-attested",
-      "errors": [],
-      "partial": [
-        "referee_not_on_allowlist",
-        "referee_local_self_attested",
-        "referee_pin_not_allowlisted",
-        "away:challenge_missing:kickoff",
-        "away:challenge_missing:halftime",
-        "away:challenge_missing:end",
-        "away:motion_signal_missing"
-      ],
-      "referee_trust": "untrusted",
-      "referee_id": null
-    }
-  },
   "125430": {
     "unpinned": {
       "status": "FAIL",
@@ -82,7 +48,29 @@
       "status": "PARTIAL",
       "trust_tier": "single-attested",
       "errors": [],
-      "partial": ["referee_key_not_pinned"],
+      "partial": [
+        "referee_key_not_pinned"
+      ],
+      "referee_trust": "active",
+      "referee_id": "qortime-online-s2"
+    },
+    "pinned": {
+      "status": "VERIFIED",
+      "trust_tier": "single-attested",
+      "errors": [],
+      "partial": [],
+      "referee_trust": "active",
+      "referee_id": "qortime-online-s2"
+    }
+  },
+  "220105": {
+    "unpinned": {
+      "status": "PARTIAL",
+      "trust_tier": "single-attested",
+      "errors": [],
+      "partial": [
+        "referee_key_not_pinned"
+      ],
       "referee_trust": "active",
       "referee_id": "qortime-online-s2"
     },

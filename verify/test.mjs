@@ -261,5 +261,24 @@ const liveCtrl = panelOf(livePanels, "capture").facts.find((row) => row[0] === "
 ok(liveCtrl && liveCtrl[1] === "DualSense Edge (USB)" && !String(liveCtrl[1]).includes("HID#") && !String(liveCtrl[1]).includes("\\"),
    "match 170123 capture panel does not show the instance id");
 await runAdversarial(ok);
+// Hackathon (Meta AI Developer Hackathon, Oct 26 - Nov 4 2026): verifier auto-pin checks, run from here so CI picks them up.
+{
+  const { spawnSync } = await import("node:child_process");
+  const { fileURLToPath } = await import("node:url");
+  const run = spawnSync(process.execPath, [fileURLToPath(new URL("./auto-pin.test.mjs", import.meta.url))], { encoding: "utf8" });
+  process.stdout.write(run.stdout || ""); process.stderr.write(run.stderr || "");
+  ok(run.status === 0, "verify/auto-pin.test.mjs passes");
+  const ai = spawnSync(process.execPath, [fileURLToPath(new URL("./ai-ruling.test.mjs", import.meta.url))], { encoding: "utf8" });
+  process.stdout.write(ai.stdout || ""); process.stderr.write(ai.stderr || "");
+  ok(ai.status === 0, "verify/ai-ruling.test.mjs passes");
+  const xc = spawnSync(process.execPath, [fileURLToPath(new URL("./score-crosscheck.test.mjs", import.meta.url))], { encoding: "utf8" });
+  process.stdout.write(xc.stdout || ""); process.stderr.write(xc.stderr || "");
+  ok(xc.status === 0, "verify/score-crosscheck.test.mjs passes");
+  const hd = spawnSync(process.execPath, [fileURLToPath(new URL("./hands.test.mjs", import.meta.url))], { encoding: "utf8" });
+  process.stdout.write(hd.stdout || ""); process.stderr.write(hd.stderr || "");
+  ok(hd.status === 0, "verify/hands.test.mjs passes");
+  const af = spawnSync(process.execPath, [fileURLToPath(new URL("./advisory-fetch.test.mjs", import.meta.url))], { encoding: "utf8" });
+  process.stdout.write(af.stdout || ""); process.stderr.write(af.stderr || "");
+  ok(af.status === 0, "verify/advisory-fetch.test.mjs passes");
+}
 process.exit(fails ? 1 : 0);
-

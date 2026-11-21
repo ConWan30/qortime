@@ -13,6 +13,14 @@
     "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "referee_ts_ms": {"type": "integer", "minimum": 0},
     "referee_sig": {"type": "string", "pattern": "^[0-9a-f]{128}$"},
-    "qorcap": {"type": "object", "properties": {"trigger": {"enum": ["start", "startup", "segment", "challenge", "score_change", "clock_state", "final", "stop"]}}}
+    "qorcap": {
+      "type": "object",
+      "description": "Recorder extras. frame_bind and readers are optional. A checkpoint that omits them is valid.",
+      "properties": {
+        "trigger": {"enum": ["start", "startup", "segment", "challenge", "score_change", "clock_state", "final", "stop"]},
+        "frame_bind": {"$ref": "qorcap-frame-bind.v0.json#/$defs/commitment"},
+        "readers": {"$ref": "qorcap-readers.v0.json#/$defs/commitment"}
+      }
+    }
   }
 }

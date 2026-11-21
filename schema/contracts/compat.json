@@ -6,6 +6,8 @@
   "bundle_schemas": ["qorcap-bundle/v0"],
   "inputs_schemas": ["qorcap-inputs/v0"],
   "input_proof_schemas": ["qorcap-input-proof/v0"],
+  "frame_bind_schemas": ["qorcap-frame-bind/v0"],
+  "readers_schemas": ["qorcap-readers/v0"],
   "trusted_referees_schemas": ["qortime-trusted-referees/v1"],
   "review_type": "qortime-bundle-review/v1",
   "challenge_token_type": "qortime-challenge/v1",
@@ -15,12 +17,13 @@
              "haptics.jsonl", "input_proof.json", "receipt.json", "receipt.draft.json", "timeline.jsonl",
              "challenges.jsonl", "official_challenges.jsonl", "anchors.jsonl", "referee.pub",
              "challenge_gates.jsonl", "challenge_results.jsonl", "pairing.json", "device_attest.v0.json",
-             "score_timeline.json"]
+             "score_timeline.json", "frames.jsonl", "readers.json"]
   },
   "hash_chain": {
     "canonical_json": "RFC 8785 JCS, integers only (|n| <= 2^53-1), no floats",
     "genesis": "0000000000000000000000000000000000000000000000000000000000000000",
     "segment_link": "head_n = sha256(JCS({prev, seq, sha256}))",
+    "frames_hash": "sha256(JCS(qorcap))",
     "checkpoint_hash": "sha256(JCS({seq, t_ms, frames_hash, input_hash, prev}))",
     "countersign_payload": "JCS({type:'checkpoint', match_id, role, hash, referee_ts_ms})",
     "signature": "Ed25519 over JCS(receipt minus signatures); {key_id, sig}; key_id = 16 hex"
@@ -38,7 +41,7 @@
   },
   "recorder_versions": {
     "tail_timing_sound_from": "0.3.3",
-    "current": "0.3.32",
+    "current": "0.3.38",
     "known_bad_tail": ["0.3.0", "0.3.1", "0.3.2"]
   },
   "challenge_rules": {
@@ -56,7 +59,7 @@
     "max_window_ms": 120000,
     "pattern": "OPTIONS then 4 face/d-pad buttons from sha256(nonce)",
     "menu_leave_buttons": ["CROSS", "CIRCLE"],
-    "menu_safe_issue": "The referee redraws a fresh nonce until CROSS and CIRCLE are only in the last slot or absent. pattern_for is unchanged, so every existing receipt still verifies.",
+    "menu_safe_issue": "The referee redraws a fresh nonce until CROSS and CIRCLE are absent from every body slot after OPTIONS. pattern_for is unchanged, so every existing receipt still verifies.",
     "response": "first OPTIONS press inside [issued_ms, deadline_ms] followed by exactly the pattern",
     "pause_latency_ms": [0, 600],
     "rule_versions": {
@@ -84,34 +87,95 @@
     "gate_log": "challenge_gates.jsonl: one line per opened window with the gate basis and scorebug state"
   },
   "motion_rules": {
-    "floor_permille": 300,
-    "min_bins": 20,
-    "max_lag_bins": 3,
-    "bin_ms": 1000,
-    "current": 3,
-    "sample_max_segments": 24,
-    "sample_hz": 10,
-    "sample_size": [640, 360],
-    "clock": "fragment_pts",
-    "sample": "stratified random: the media span is split into at most 24 equal mono_ms strata and the referee RNG picks one segment per non-empty stratum, drawn only after the submission commit. The drawn seqs are plan.json motion and review.checks.motion.detail.sample_segments",
-    "decode_budget": "at most 24 media fragments (about 48 s when a fragment is ~2 s), 10 Hz, 640x360; the 240 s tail is the final re-read and is not added to this sample",
-    "signal": "controller report rate (logged input rows per second); a second with no reports stays zero and is not dropped",
-    "exclusions": ["scorebug_absent", "end_menu", "final_screen", "challenge_pause"],
-    "not_exclusions": ["client labels", "timeline.jsonl", "bundle.json fields", "idle controller seconds"],
-    "scorebug_absent": "layout_unknown only, and only after this sample has one ok scorebug read; a second is absent when at least half of its classified frames are layout_unknown; frame_too_small, frame_invalid, and frame_aspect are not absence",
-    "challenge_pause": "the measured pause span from the challenge re-run, not the issue window and not every dark frame in the match",
-    "history": "Reviews before motion rule 3 correlated report rate with frame-difference energy over every decoded segment, including the 240 s tail, on the segment close clock, with no live-play exclusions. Those receipts store that integer. The verifier still only compares the stored integer with 300.",
-    "rule_versions": {
-      "3": {
-        "id": 3,
-        "basis": "motion-rule/v3: controller report rate vs frame-difference energy per second on a stratified random spread of at most 24 media segments drawn after commit, timed with the fragment PTS clock (segment close stamps only when a fragment has no tfdt); bins dropped only for referee-measured scorebug absence, end menu, final screen, or challenge pause",
-        "where": "signals.motion_basis and review.checks.motion.detail. Not result.rule. Challenge result.rule stays 1 or 2.",
-        "detail_keys": ["rule", "bins", "decoded_bins", "motion_permille", "basis", "sample_segments", "sample_max_segments", "clock", "clock_fallbacks", "screen_readers", "excluded"],
-        "excluded_keys": ["scorebug_absent", "end_menu", "final_screen", "challenge_pause", "total"],
-        "receipt_schema": "no new receipt.v0.json fields; excluded-bin counts and the sample live in the review check detail and in this registry"
-      }
+  "floor_permille": 300,
+  "min_bins": 20,
+  "max_lag_bins": 3,
+  "bin_ms": 1000,
+  "current": 4,
+  "sample_max_segments": 48,
+  "median_draws": 3,
+  "sample_hz": 10,
+  "sample_size": [
+    640,
+    360
+  ],
+  "clock": "fragment_pts",
+  "sample": "motion-rule/v4: media span split into at most 48 equal mono_ms strata; three deterministic draws seeded only from chain_head / checkpoint head / inputs chain head / mode (never submission id) each pick one segment per non-empty stratum; review uses the median permille. plan.json stores motion (union) and motion_draws; review.checks.motion.detail mirrors that",
+  "decode_budget": "union of 3 deterministic draws of at most 48 media fragments each (about 96 s when a fragment is ~2 s and draws overlap; worst case ~288 s if disjoint), 10 Hz, 640x360; the 240 s tail is the final re-read and is not added to this sample",
+  "signal": "controller report rate (logged input rows per second); a second with no reports stays zero and is not dropped",
+  "exclusions": [
+    "scorebug_absent",
+    "end_menu",
+    "final_screen",
+    "challenge_pause"
+  ],
+  "not_exclusions": [
+    "client labels",
+    "timeline.jsonl",
+    "bundle.json fields",
+    "idle controller seconds"
+  ],
+  "scorebug_absent": "layout_unknown only, and only after this sample has one ok scorebug read; a second is absent when at least half of its classified frames are layout_unknown; frame_too_small, frame_invalid, and frame_aspect are not absence",
+  "challenge_pause": "the measured pause span from the challenge re-run, not the issue window and not every dark frame in the match",
+  "history": "Reviews before motion rule 3 correlated report rate with frame-difference energy over every decoded segment, including the 240 s tail, on the segment close clock, with no live-play exclusions. Rule 3 used a SystemRandom stratified sample of at most 24 segments after commit (submission-dependent). Rule 4 keeps the floor at 300 and the same exclusions, but seeds sampling from content heads only and takes the median of 3 draws of at most 48 segments. Those receipts store that integer. The verifier still only compares the stored integer with 300.",
+  "rule_versions": {
+    "3": {
+      "id": 3,
+      "basis": "motion-rule/v3: controller report rate vs frame-difference energy per second on a stratified random spread of at most 24 media segments drawn after commit, timed with the fragment PTS clock (segment close stamps only when a fragment has no tfdt); bins dropped only for referee-measured scorebug absence, end menu, final screen, or challenge pause",
+      "where": "signals.motion_basis and review.checks.motion.detail. Not result.rule. Challenge result.rule stays 1 or 2.",
+      "detail_keys": [
+        "rule",
+        "bins",
+        "decoded_bins",
+        "motion_permille",
+        "basis",
+        "sample_segments",
+        "sample_max_segments",
+        "clock",
+        "clock_fallbacks",
+        "screen_readers",
+        "excluded"
+      ],
+      "excluded_keys": [
+        "scorebug_absent",
+        "end_menu",
+        "final_screen",
+        "challenge_pause",
+        "total"
+      ],
+      "receipt_schema": "no new receipt.v0.json fields; excluded-bin counts and the sample live in the review check detail and in this registry"
+    },
+    "4": {
+      "id": 4,
+      "basis": "motion-rule/v4: controller report rate vs frame-difference energy per second; median of 3 deterministic stratified draws of at most 48 media segments each, seeded only from chain_head / checkpoint head / inputs chain head / mode (never submission id), timed with the fragment PTS clock (segment close stamps only when a fragment has no tfdt); bins dropped only for referee-measured scorebug absence, end menu, final screen, or challenge pause",
+      "where": "signals.motion_basis and review.checks.motion.detail. Not result.rule. Challenge result.rule stays 1 or 2.",
+      "detail_keys": [
+        "rule",
+        "bins",
+        "decoded_bins",
+        "motion_permille",
+        "basis",
+        "sample_segments",
+        "sample_draws",
+        "draw_permilles",
+        "median_draws",
+        "sample_max_segments",
+        "clock",
+        "clock_fallbacks",
+        "screen_readers",
+        "excluded"
+      ],
+      "excluded_keys": [
+        "scorebug_absent",
+        "end_menu",
+        "final_screen",
+        "challenge_pause",
+        "total"
+      ],
+      "receipt_schema": "no new receipt.v0.json fields; excluded-bin counts and the sample live in the review check detail and in this registry"
     }
-  },
+  }
+},
   "verdicts": ["VERIFIED", "PARTIAL", "SELF_ATTESTED", "FAIL"],
   "cli_exit_codes": {
     "qortime verify": {"VERIFIED": 0, "SELF_ATTESTED": 0, "PARTIAL": 1, "FAIL": 2},
@@ -152,9 +216,20 @@
     "signature_receipt_key": "Ed25519 hex pub and sig; pub is the receipt player pubkey (QorCap finalize device key)",
     "signature_device_attest_key": "same bytes signed by device_attest.v0.json (ECDSA_P256 or RSA_2048 PKCS#1 v1.5 SHA-256); pub is that SPKI base64 or the hex of the SPKI DER"
   },
+  "frame_bind": {
+    "schema": "qorcap-frame-bind/v0",
+    "file": "frames.jsonl",
+    "readers_schema": "qorcap-readers/v0",
+    "readers_file": "readers.json",
+    "statuses": ["verified", "missing", "stripped", "broken"],
+    "verified": "verified",
+    "chain": "head_0 = 64 zero hex chars; head_n = sha256(JCS({prev, sha256})) where sha256 is the hex sha256 of line n's exact bytes and the newline is not hashed",
+    "time": "encoder PTS in the header time_base {num, den}; seconds = pts * num / den; no fps field",
+    "checkpoint": "optional qorcap.frame_bind {schema, n, head} on every checkpoint when bound, and qorcap.readers on seq 0 only ({schema, sha256} or {schema, state: unbound}); old checkpoints that omit both stay valid"
+  },
   "submit_auth": {"scheme": "install-key-v1", "header": "X-Qor-Submit", "challenge": "/v1/submit/challenge",
                   "request_type": "qortime-submit/v1", "pow_prefix": "qortime-pow/v1|", "min_client": "0.3.10",
                   "legacy_status": 426, "install_key": "the bundle's device (recorder) key"},
-  "referee_image": {"qorcap_sidecar_sha": "1680734b3ffbff3ee0d15c39fbbf702ab931ea91",
+  "referee_image": {"qorcap_sidecar_sha": "cd42d667046103b4b7752e29f08ef56ca13cface",
                     "scorebug_profiles": ["madden27_standard", "madden27_monday_night", "madden27_sunday_night", "madden27_thursday_night"]}
 }

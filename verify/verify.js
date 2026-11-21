@@ -10,9 +10,9 @@ export const SCHEMA = "qor-receipt/v0";
 export const SELF_ATTESTED = "SELF_ATTESTED";
 const PHASES = ["kickoff", "halftime", "end"];
 const ALPHABET = ["CROSS", "CIRCLE", "SQUARE", "TRIANGLE", "UP", "DOWN", "LEFT", "RIGHT"];
-// Motion floor is 300 for every motion rule, including motion-rule/v3. This verifier does not
-// recompute the correlation. It compares the stored integer, so a rule-v1 or rule-v2 receipt
-// still verifies exactly as it did when it was signed.
+// Motion floor is 300 for every motion rule, including motion-rule/v3 and motion-rule/v4. This
+// verifier does not recompute the correlation. It compares the stored integer, so older receipts
+// still verify as signed.
 export const MAX_GAP_MS = 10000, MAX_SKEW_MS = 3000, MOTION_MIN = 300;
 const DEFAULT_LEN = 4;
 const MAX_WINDOW_MS = 120000; // v0.3.11: challenge windows are 90 s; longer is not a timed challenge
@@ -407,8 +407,8 @@ export function inputProofAdvisory(signals) {
   const notes = [], flags = [];
   const human = inp.human_permille, label = inp.human_label;
   if (typeof human === "number") {
-    if (human < INPUT_HUMAN_MIN) { flags.push("human_score_low"); notes.push(`human_permille=${human} below advisory floor ${INPUT_HUMAN_MIN}` + (label ? ` (${label})` : "")); }
-    else notes.push(`human_permille=${human}` + (label ? ` (${label})` : ""));
+    if (human < INPUT_HUMAN_MIN) { flags.push("human_score_low"); notes.push(`human_permille=${human} below advisory floor ${INPUT_HUMAN_MIN}` + (label ? ` (${label}) (advisory label only; it does not show who played)` : "")); }
+    else notes.push(`human_permille=${human}` + (label ? ` (${label}) (advisory label only; it does not show who played)` : ""));
   } else flags.push("human_score_missing");
   const matchP = inp.match_permille, chanceP = inp.chance_permille;
   if (typeof matchP === "number" && typeof chanceP === "number") {
@@ -426,7 +426,7 @@ export function inputProofAdvisory(signals) {
   const ok = !flags.some((f) => bad.includes(f));
   return { present: true, ok, flags, notes, status: inp.status, human_permille: human, match_permille: matchP,
            chance_permille: chanceP, haptic_events: he, haptic_high_confidence: hc,
-           claims: "advisory evidence only — not cryptographic proof of a human player" };
+           claims: "advisory evidence only; it does not show who played" };
 }
 
 function failClosed(errors) {

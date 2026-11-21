@@ -1,0 +1,327 @@
+qor-nav {
+  display: block;
+  position: sticky;
+  top: 0;
+  z-index: var(--qor-z-nav);
+}
+
+.qor-nav {
+  position: sticky;
+  top: 0;
+  z-index: var(--qor-z-nav);
+  height: var(--qor-nav-h);
+  border-bottom: 1px solid transparent;
+  transition:
+    background-color var(--qor-dur-med) var(--qor-ease-out),
+    border-color var(--qor-dur-med) var(--qor-ease-out),
+    box-shadow var(--qor-dur-med) var(--qor-ease-out);
+}
+
+.qor-nav.is-scrolled {
+  background: var(--qor-bg-glass);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border-bottom-color: var(--qor-line-subtle);
+  box-shadow: 0 10px 30px -14px rgba(2, 5, 14, 0.82);
+}
+
+.qor-nav__inner {
+  height: 100%;
+  width: min(100% - 2rem, var(--qor-max-w));
+  margin-inline: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--qor-space-4);
+}
+
+/* Brand Mark + Shimmer Slot */
+.qor-nav__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--qor-space-3);
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  font-size: var(--qor-step-0);
+  color: var(--qor-text-1);
+}
+
+.qor-nav__mark {
+  position: relative;
+  width: 1.85rem;
+  height: 1.85rem;
+  flex-shrink: 0;
+}
+
+.qor-nav__mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.qor-nav__wordmark-sub {
+  color: var(--qor-text-2);
+  font-weight: 500;
+  margin-left: 0.25ch;
+}
+
+/* Primary Links + Novel Three-Strand Weave Knot Indicator */
+.qor-nav__track {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--qor-space-1);
+  padding-bottom: 4px;
+}
+
+.qor-nav__link {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.9rem;
+  border-radius: var(--qor-radius-sm);
+  font-size: var(--qor-step--1);
+  font-weight: 550;
+  letter-spacing: 0.01em;
+  color: var(--qor-text-2);
+  transition: color var(--qor-dur-fast) var(--qor-ease-out);
+}
+
+.qor-nav__link:hover,
+.qor-nav__link:focus-visible {
+  color: var(--qor-text-1);
+}
+
+.qor-nav__link[aria-current="page"] {
+  color: var(--qor-text-1);
+}
+
+/* Fallback static three-strand knot when JS hasn't measured yet */
+.qor-nav__track:not(.has-weave-ready) .qor-nav__link[aria-current="page"]::after {
+  content: "";
+  position: absolute;
+  left: 0.9rem;
+  right: 0.9rem;
+  bottom: -2px;
+  height: 3px;
+  border-radius: var(--qor-radius-pill);
+  background: linear-gradient(90deg, var(--qor-blue), var(--qor-cyan), var(--qor-strand-white));
+  box-shadow: var(--qor-glow-cyan);
+}
+
+/* Animated Three-Strand Weave Underline */
+.qor-nav__weave {
+  position: absolute;
+  left: 0;
+  bottom: -3px;
+  width: var(--qor-weave-w, 0px);
+  height: 9px;
+  transform: translate3d(var(--qor-weave-x, 0px), 0, 0);
+  pointer-events: none;
+  opacity: 0;
+  transition:
+    transform var(--qor-dur-med) var(--qor-ease-knot),
+    width var(--qor-dur-med) var(--qor-ease-knot),
+    opacity var(--qor-dur-fast) var(--qor-ease-out);
+}
+
+.qor-nav__track.has-weave-ready .qor-nav__weave {
+  opacity: 1;
+}
+
+/* Three parallel signal lanes that converge ("knot") at the center node */
+.qor-nav__strand {
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  height: 1.5px;
+  border-radius: var(--qor-radius-pill);
+  transition:
+    transform var(--qor-dur-med) var(--qor-ease-knot),
+    left var(--qor-dur-med) var(--qor-ease-knot),
+    right var(--qor-dur-med) var(--qor-ease-knot);
+}
+
+.qor-nav__strand--blue {
+  top: 1px;
+  background: var(--qor-blue);
+  transform: scaleY(1);
+}
+
+.qor-nav__strand--cyan {
+  top: 4px;
+  left: 4%;
+  right: 4%;
+  background: var(--qor-cyan);
+  box-shadow: var(--qor-glow-cyan);
+}
+
+.qor-nav__strand--white {
+  top: 7px;
+  background: rgba(240, 244, 255, 0.82);
+}
+
+/* Central knot node where strands cross */
+.qor-nav__knot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 12px;
+  height: 5px;
+  border-radius: var(--qor-radius-pill);
+  background: var(--qor-strand-white);
+  border: 1px solid var(--qor-cyan);
+  box-shadow: 0 0 12px rgba(46, 242, 255, 0.75);
+  transform: translate(-50%, -50%) scaleX(1);
+  transition: transform var(--qor-dur-fast) var(--qor-ease-knot);
+}
+
+/* While sliding or hovering a non-current link, un-knot slightly into open lanes */
+.qor-nav__track.is-previewing .qor-nav__strand--blue {
+  transform: translateY(-1px);
+}
+.qor-nav__track.is-previewing .qor-nav__strand--white {
+  transform: translateY(1px);
+}
+.qor-nav__track.is-previewing .qor-nav__knot {
+  transform: translate(-50%, -50%) scaleX(0.65);
+}
+
+/* Right Actions & Optional CTA */
+.qor-nav__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--qor-space-3);
+}
+
+.qor-nav__cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.45rem 0.95rem;
+  font-size: var(--qor-step--1);
+  font-weight: 600;
+  color: var(--qor-text-1);
+  background: linear-gradient(180deg, rgba(79, 124, 255, 0.22), rgba(46, 242, 255, 0.1));
+  border: 1px solid var(--qor-line-cyan);
+  border-radius: var(--qor-radius-pill);
+  transition:
+    border-color var(--qor-dur-fast) var(--qor-ease-out),
+    box-shadow var(--qor-dur-fast) var(--qor-ease-out),
+    transform var(--qor-dur-fast) var(--qor-ease-out);
+}
+
+.qor-nav__cta:hover,
+.qor-nav__cta:focus-visible {
+  border-color: var(--qor-cyan);
+  box-shadow: var(--qor-glow-cyan);
+  transform: translateY(-1px);
+}
+
+/* Mobile Toggle & Sheet (<=760px) */
+.qor-nav__toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  background: var(--qor-bg-surface-1);
+  border: 1px solid var(--qor-line-strong);
+  border-radius: var(--qor-radius-sm);
+  cursor: pointer;
+}
+
+.qor-nav__toggle-lanes {
+  display: grid;
+  gap: 4px;
+  width: 18px;
+}
+
+.qor-nav__toggle-lanes span {
+  display: block;
+  height: 2px;
+  border-radius: 2px;
+  transition: transform var(--qor-dur-fast) var(--qor-ease-out), opacity var(--qor-dur-fast) var(--qor-ease-out);
+}
+
+.qor-nav__toggle-lanes span:nth-child(1) { background: var(--qor-blue); }
+.qor-nav__toggle-lanes span:nth-child(2) { background: var(--qor-cyan); }
+.qor-nav__toggle-lanes span:nth-child(3) { background: var(--qor-strand-white); }
+
+.qor-nav__toggle[aria-expanded="true"] .qor-nav__toggle-lanes span:nth-child(1) {
+  transform: translateY(6px) rotate(45deg);
+}
+.qor-nav__toggle[aria-expanded="true"] .qor-nav__toggle-lanes span:nth-child(2) {
+  opacity: 0;
+}
+.qor-nav__toggle[aria-expanded="true"] .qor-nav__toggle-lanes span:nth-child(3) {
+  transform: translateY(-6px) rotate(-45deg);
+}
+
+.qor-nav__sheet {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .qor-nav__track,
+  .qor-nav__actions .qor-nav__cta {
+    display: none;
+  }
+
+  .qor-nav__toggle {
+    display: inline-flex;
+  }
+
+  .qor-nav__sheet[hidden] {
+    display: none;
+  }
+
+  .qor-nav__sheet:not([hidden]) {
+    display: block;
+    position: fixed;
+    inset: var(--qor-nav-h) 0 0 0;
+    z-index: var(--qor-z-sheet);
+    background: rgba(6, 9, 19, 0.82);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    padding: var(--qor-space-4);
+  }
+
+  .qor-nav__sheet-panel {
+    background: var(--qor-bg-surface-1);
+    border: 1px solid var(--qor-line-strong);
+    border-radius: var(--qor-radius-md);
+    padding: var(--qor-space-4);
+    box-shadow: var(--qor-shadow-card);
+    display: grid;
+    gap: var(--qor-space-2);
+  }
+
+  .qor-nav__sheet-panel:focus-within {
+    border-color: var(--qor-line-cyan);
+  }
+
+  .qor-nav__sheet-link {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 0.9rem;
+    border-radius: var(--qor-radius-sm);
+    font-weight: 600;
+    color: var(--qor-text-2);
+    border: 1px solid transparent;
+  }
+
+  .qor-nav__sheet-link[aria-current="page"] {
+    color: var(--qor-text-1);
+    background: var(--qor-bg-surface-2);
+    border-color: var(--qor-line-cyan);
+  }
+
+  .qor-nav__sheet-cta {
+    margin-top: var(--qor-space-2);
+    width: 100%;
+    padding: 0.7rem 1rem;
+  }
+}

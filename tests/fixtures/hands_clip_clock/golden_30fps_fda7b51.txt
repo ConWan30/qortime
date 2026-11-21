@@ -1,0 +1,44 @@
+## regular capture_clock=(5000.000000000, 33.333333333)
+rc=0
+hl00 start_mono_ms=5000 duration_s=12.0
+hl01 start_mono_ms=5500 duration_s=12.0
+hl02 start_mono_ms=6234 duration_s=12.0
+hl03 start_mono_ms=17000 duration_s=12.0
+hl04 start_mono_ms=30333 duration_s=12.0
+hl05 start_mono_ms=44891 duration_s=12.0
+hl06 start_mono_ms=58111 duration_s=12.0
+hl07 start_mono_ms=76000 duration_s=12.0
+{| "clips": [|  {|   "id": "hl00",|   "start_mono_ms": 5000,|   "duration_s": 12.0,|   "actions_ms": []|  },|  {|   "id": "hl01",|   "start_mono_ms": 5500,|   "duration_s": 12.0,|   "actions_ms": []|  },|  {|   "id": "hl02",|   "start_mono_ms": 6234,|   "duration_s": 12.0,|   "actions_ms": []|  },|  {|   "id": "hl03",|   "start_mono_ms": 17000,|   "duration_s": 12.0,|   "actions_ms": []|  },|  {|   "id": "hl04",|   "start_mono_ms": 30333,|   "duration_s": 12.0,|   "actions_ms": []|  },|  {|   "id": "hl05",|   "start_mono_ms": 44891,|   "duration_s": 12.0,|   "actions_ms": []|  },|  {|   "id": "hl06",|   "start_mono_ms": 58111,|   "duration_s": 12.0,|   "actions_ms": []|  },|  {|   "id": "hl07",|   "start_mono_ms": 76000,|   "duration_s": 12.0,|   "actions_ms": []|  }| ]|}||
+## jitter capture_clock=(7061.174049324, 33.500082419)
+rc=0
+hl00 start_mono_ms=7061 duration_s=12.0
+hl01 start_mono_ms=7564 duration_s=12.0
+hl02 start_mono_ms=8301 duration_s=12.0
+hl03 start_mono_ms=19121 duration_s=12.0
+hl04 start_mono_ms=32521 duration_s=12.0
+hl05 start_mono_ms=47152 duration_s=12.0
+hl06 start_mono_ms=60438 duration_s=12.0
+hl07 start_mono_ms=78416 duration_s=12.0
+{| "clips": [|  {|   "id": "hl00",|   "start_mono_ms": 7061,|   "duration_s": 12.0,|   "actions_ms": []|  },|  {|   "id": "hl01",|   "start_mono_ms": 7564,|   "duration_s": 12.0,|   "actions_ms": []|  },|  {|   "id": "hl02",|   "start_mono_ms": 8301,|   "duration_s": 12.0,|   "actions_ms": []|  },|  {|   "id": "hl03",|   "start_mono_ms": 19121,|   "duration_s": 12.0,|   "actions_ms": []|  },|  {|   "id": "hl04",|   "start_mono_ms": 32521,|   "duration_s": 12.0,|   "actions_ms": []|  },|  {|   "id": "hl05",|   "start_mono_ms": 47152,|   "duration_s": 12.0,|   "actions_ms": []|  },|  {|   "id": "hl06",|   "start_mono_ms": 60438,|   "duration_s": 12.0,|   "actions_ms": []|  },|  {|   "id": "hl07",|   "start_mono_ms": 78416,|   "duration_s": 12.0,|   "actions_ms": []|  }| ]|}||
+## short capture_clock=(0.000000000, 33.333333333)
+rc=0
+hl00 start_mono_ms=0 duration_s=12.0
+hl01 start_mono_ms=500 duration_s=12.0
+hl02 start_mono_ms=1234 duration_s=12.0
+hl03 start_mono_ms=12000 duration_s=12.0
+hl04 start_mono_ms=25333 duration_s=12.0
+hl05 start_mono_ms=39891 duration_s=12.0
+hl06 start_mono_ms=53111 duration_s=12.0
+hl07 start_mono_ms=71000 duration_s=12.0
+{| "clips": [|  {|   "id": "hl00",|   "start_mono_ms": 0,|   "duration_s": 12.0,|   "actions_ms": []|  },|  {|   "id": "hl01",|   "start_mono_ms": 500,|   "duration_s": 12.0,|   "actions_ms": []|  },|  {|   "id": "hl02",|   "start_mono_ms": 1234,|   "duration_s": 12.0,|   "actions_ms": []|  },|  {|   "id": "hl03",|   "start_mono_ms": 12000,|   "duration_s": 12.0,|   "actions_ms": []|  },|  {|   "id": "hl04",|   "start_mono_ms": 25333,|   "duration_s": 12.0,|   "actions_ms": []|  },|  {|   "id": "hl05",|   "start_mono_ms": 39891,|   "duration_s": 12.0,|   "actions_ms": []|  },|  {|   "id": "hl06",|   "start_mono_ms": 53111,|   "duration_s": 12.0,|   "actions_ms": []|  },|  {|   "id": "hl07",|   "start_mono_ms": 71000,|   "duration_s": 12.0,|   "actions_ms": []|  }| ]|}||
+## flat capture_clock=(0.000000000, 33.333333333)
+rc=0
+hl00 start_mono_ms=0 duration_s=12.0
+hl01 start_mono_ms=500 duration_s=12.0
+hl02 start_mono_ms=1234 duration_s=12.0
+hl03 start_mono_ms=12000 duration_s=12.0
+hl04 start_mono_ms=25333 duration_s=12.0
+hl05 start_mono_ms=39891 duration_s=12.0
+hl06 start_mono_ms=53111 duration_s=12.0
+hl07 start_mono_ms=71000 duration_s=12.0
+{| "clips": [|  {|   "id": "hl00",|   "start_mono_ms": 0,|   "duration_s": 12.0,|   "actions_ms": []|  },|  {|   "id": "hl01",|   "start_mono_ms": 500,|   "duration_s": 12.0,|   "actions_ms": []|  },|  {|   "id": "hl02",|   "start_mono_ms": 1234,|   "duration_s": 12.0,|   "actions_ms": []|  },|  {|   "id": "hl03",|   "start_mono_ms": 12000,|   "duration_s": 12.0,|   "actions_ms": []|  },|  {|   "id": "hl04",|   "start_mono_ms": 25333,|   "duration_s": 12.0,|   "actions_ms": []|  },|  {|   "id": "hl05",|   "start_mono_ms": 39891,|   "duration_s": 12.0,|   "actions_ms": []|  },|  {|   "id": "hl06",|   "start_mono_ms": 53111,|   "duration_s": 12.0,|   "actions_ms": []|  },|  {|   "id": "hl07",|   "start_mono_ms": 71000,|   "duration_s": 12.0,|   "actions_ms": []|  }| ]|}||

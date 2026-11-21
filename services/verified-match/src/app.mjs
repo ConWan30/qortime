@@ -93,6 +93,12 @@ function rateLimiter() {
 }
 
 
+const ALLOWED_ORIGINS = new Set([
+  "https://qortime.com",
+  "https://www.qortime.com",
+  "https://conwan30.github.io",
+]);
+
 function allowOrigin(req, env) {
   const origin = req.headers.origin;
   if (typeof origin !== "string" || origin.length === 0) return null;
@@ -103,7 +109,7 @@ function allowOrigin(req, env) {
     siteHost = "";
   }
   const local = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
-  if (origin === "https://conwan30.github.io" || origin === siteHost || local.test(origin)) {
+  if (ALLOWED_ORIGINS.has(origin) || origin === siteHost || local.test(origin)) {
     return origin;
   }
   return null;

@@ -1,0 +1,18 @@
+{
+  "schema": "qorcap-readers/v0",
+  "qorcap_version": "0.3.32",
+  "note": "not in the closed schema",
+  "readers": [
+    {
+      "id": "standard",
+      "version": "0.3.32",
+      "files": [
+        {"kind": "code", "path": "sidecar/qorcap_standard.py", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+      ]
+    }
+  ],
+  "runtimes": [
+    {"id": "ffmpeg", "version": "n7.0.1", "sha256": "1111111111111111111111111111111111111111111111111111111111111111"},
+    {"id": "cv2", "version": "4.10.0", "sha256": "2222222222222222222222222222222222222222222222222222222222222222"}
+  ]
+}
