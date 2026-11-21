@@ -339,6 +339,79 @@ def test_untouched_mask_cache_stays_known_and_estimates_match():
     assert pe.estimator_known(pe.DEFAULT_PARAMS) is True
 
 
+def _island_poison(est):
+    """Leave a small valid island in an otherwise zeroed cached mask."""
+    mask = next(iter(est._mask_cache.values()))
+    mask[:] = 0
+    h0, w0 = mask.shape
+    y, x = h0 // 2, w0 // 2
+    mask[y:min(y + 8, h0), x:min(x + 8, w0)] = 255
+
+
+def test_island_poison_then_new_size_mask_write_stays_unknown():
+    from redteam.scorers import _recomputed_pan_sha
+
+    est, _bins = _populated_estimator()
+    _island_poison(est)
+    h, w = next(iter(est._mask_cache))
+    with pytest.warns(RuntimeWarning, match="_mask_cache"):
+        est._mask(h + 11, w + 13)
+    with pytest.warns(RuntimeWarning, match="_mask_cache"):
+        assert est.identity()["estimator_known"] is False
+    with pytest.warns(RuntimeWarning, match="_mask_cache"):
+        bins = est.estimate_frames(pan_frames(DURATION // FRAME_MS, 9.6, 0.0), 0, DURATION)
+    assert bins and all(b.no_claim and b.reason == "unknown_estimator_hash" and b.yaw_rate is None for b in bins)
+    assert _recomputed_pan_sha(est) is None
+    assert pe.estimator_known(pe.DEFAULT_PARAMS) is True
+
+
+def test_mid_estimate_poison_then_new_downscaled_key_stays_unknown():
+    from redteam.scorers import _recomputed_pan_sha
+
+    est = pe.OpticalFlowPanEstimator()
+    base = list(pan_frames(DURATION // FRAME_MS, 9.6, 0.0))
+
+    def frames():
+        for i, (t, frame) in enumerate(base):
+            if i == 2:
+                for mask in list(est._mask_cache.values()):
+                    mask[:] = 0
+                    h0, w0 = mask.shape
+                    y, x = h0 // 2, w0 // 2
+                    mask[y:min(y + 8, h0), x:min(x + 8, w0)] = 255
+                yield t, np.zeros((400, 320, 3), dtype=np.uint8)
+            else:
+                yield t, frame
+
+    with pytest.warns(RuntimeWarning, match="_mask_cache"):
+        bins = est.estimate_frames(frames(), 0, DURATION)
+    with pytest.warns(RuntimeWarning, match="_mask_cache"):
+        assert est.identity()["estimator_known"] is False
+    assert bins and all(b.no_claim and b.reason == "unknown_estimator_hash" and b.yaw_rate is None for b in bins)
+    assert _recomputed_pan_sha(est) is None
+    assert pe.estimator_known(pe.DEFAULT_PARAMS) is True
+
+
+def test_clean_multi_size_run_stays_known_and_estimates_match():
+    from redteam.scorers import _recomputed_pan_sha
+
+    est, first = _populated_estimator()
+    digest = _recomputed_pan_sha(est)
+    h, w = next(iter(est._mask_cache))
+    extra = est._mask(h + 11, w + 13)
+    assert extra.shape == (h + 11, w + 13)
+    assert est.identity()["estimator_known"] is True
+    second = est.estimate_frames(pan_frames(DURATION // FRAME_MS, 9.6, 0.0), 0, DURATION)
+    assert est.identity()["estimator_known"] is True
+    assert _bin_snapshot(first) == _bin_snapshot(second)
+    assert _recomputed_pan_sha(est) == digest or _recomputed_pan_sha(est) is not None
+    # The allowlisted module sha is unchanged by a legitimate extra cache key;
+    # _recomputed_pan_sha hashes source+params, not the cache.
+    assert _recomputed_pan_sha(est) == digest
+    assert digest in al.KNOWN_ESTIMATOR_SHA256
+    assert pe.estimator_known(pe.DEFAULT_PARAMS) is True
+
+
 def test_replacing_pair_on_the_instance_is_not_known():
     est = pe.OpticalFlowPanEstimator()
     est._pair = lambda *_args, **_kwargs: pe.PairResult(100, True, "ok", yaw_rate=99.0, pitch_rate=0.0, confidence=1.0)
