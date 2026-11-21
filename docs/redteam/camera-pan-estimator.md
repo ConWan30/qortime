@@ -79,7 +79,7 @@ The tested wheel is **`opencv-python-headless==5.0.0.93`** (OpenCV 5.0.0, `cp37-
 
 `qor_receipt/vision/estimator_allowlist.py` holds `KNOWN_ESTIMATOR_SHA256`, a fixed `frozenset` of exact 64-character lowercase hex digests. It is a separate file because the hash covers `pan_estimator.py`'s own source. It currently holds one entry, recorded on CPython 3.11 and 3.13 with numpy 2.4.6, `opencv-python-headless==5.0.0.93`, and `cv2.useOptimized()` True:
 
-`51e3a92b826719ed7b919cf18dc5344efd9f3d5decf5976ad15b87203f648b69`
+`973f4c066b559770090909f7df2f9ccad11f5f76b53f1fd9f81fb7de089e9c19`
 
 How the check works:
 
@@ -88,7 +88,7 @@ How the check works:
 - `identity()` reports `estimator_known` separately from `opencv_pinned`.
 - Any other numpy, OpenCV version or build, `useOptimized` setting, parameters, or edited source makes `estimate_frames` return only `no_claim` bins with reason `unknown_estimator_hash`.
 - Being known unlocks nothing: the mismatch gate still has no allow path.
-- `estimator_known` accepts only an exact `PanParams` whose fields are exact `int` and `float` values. An `int` or `float` subclass is rejected. `identity()["estimator_known"]` is false for a subclass that overrides `pairs`, and for an instance whose `__dict__` holds anything other than `params`, `_mask_cache`, and `_mask_cache_id` (so `estimator._pair = ...` is not known). Replacing `_mask_cache` warns and is not known. Patching a method on the `OpticalFlowPanEstimator` class itself still reads as known. `source_identity` does not record the allowlisted hash for a rejected instance, including a field that is a `bool` or an `int` subclass.
+- `estimator_known` accepts only an exact `PanParams` whose fields are exact `int` and `float` values. An `int` or `float` subclass is rejected. `identity()["estimator_known"]` is false for a subclass that overrides `pairs`, and for an instance whose `__dict__` holds anything other than `params`, `_mask_cache`, and `_mask_cache_id` (so `estimator._pair = ...` is not known). Replacing `_mask_cache` (with or without updating `_mask_cache_id`), mutating a cached mask in place, or adding a key the estimator did not write, warns and is not known. A content digest is recorded when the estimator writes the cache and is recomputed on each known-check; a non-dict cache or a foreign key or value type fails closed. The digest lives in a module-level map, not on the instance. Writing a new digest into that map after a mutation, or patching the digest function, still reads as known, as does patching a method on the `OpticalFlowPanEstimator` class itself. `source_identity` does not record the allowlisted hash for a rejected instance, including a field that is a `bool` or an `int` subclass.
 - `estimator_sha256` does not include the Python version. It covers this module's source, the estimator version string, the parameters, and the OpenCV and numpy identity. 3.11 and 3.13 match when those inputs match.
 - The public `bin_pairs` does not claim caller-supplied pair results. `estimate_frames` bins only after the running instance is known.
 - Same-process patching cannot be fully blocked, and the list of holes is not exhaustive. It includes a `__class__` swap via `object.__setattr__`, `type.__new__` after deleting `__init_subclass__`, a metaclass subclass that skips the finality check, patching `MismatchGateResult.allowed`, and writing `_mismatch_gate_final` with `type.__setattr__`. Ordinary assignment of that flag is rejected. Patching numpy, OpenCV, or the allowlist in the same process is also outside what this check seals.
@@ -111,6 +111,7 @@ The current hash is the allowlist entry above. Earlier revisions reported:
 - `8f049000…`, before `pairs` / `bin_pairs` fail closed on an unknown hash and `estimator_known` requires an exact `PanParams`;
 - `c33339f2…`, before each `PanParams` field had to be an exact `int` or `float` and a subclass overriding `pairs` stopped counting as known;
 - `518f6f70…`, before public `bin_pairs` stopped claiming caller-supplied pair results and an extra instance attribute stopped counting as known;
+- `51e3a92b…`, before a known-check hashed mask-cache contents and treated an id-updating swap, an in-place edit, or an added key as not known;
 - `50a1ce30…`, before a replaced `_mask_cache` warned and stopped counting as a known instance;
 - `47413a5c…`, before the hashed source said the digest does not include the Python version.
 

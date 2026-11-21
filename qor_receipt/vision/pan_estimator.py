@@ -47,8 +47,17 @@ a look-alike whose ``to_json`` matches and not an ``int`` or ``float`` subclass.
 A subclass of ``OpticalFlowPanEstimator`` that overrides ``pairs`` is not known.
 An instance attribute other than ``params``, ``_mask_cache``, and
 ``_mask_cache_id``, including a replacement ``_pair``, is not known. Replacing
-``_mask_cache`` warns and is not known. Patching a method on the
-``OpticalFlowPanEstimator`` class itself still reads as known.
+``_mask_cache`` (with or without updating ``_mask_cache_id``), mutating a cached
+mask in place, or adding a key the estimator did not write, warns and is not
+known: a content digest is recorded when this module writes the cache, and a
+known-check recomputes it over keys and values. A non-dict cache, a foreign key
+or value type, or a digest mismatch fails closed. The digest is stored in a
+module-level map, not on the instance, so writing a matching digest into
+``__dict__`` is an extra attribute and is not known. Writing a new digest into
+that map after mutating the cache, or patching the digest function, still reads
+as known; that is the same family as patching a method on the
+``OpticalFlowPanEstimator`` class itself, which also still reads as known, and
+is not a seal.
 
 Determinism
 -----------
@@ -80,6 +89,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any
+from weakref import WeakKeyDictionary
 
 import cv2
 import numpy as np
@@ -302,12 +312,66 @@ def estimator_known(params: PanParams = DEFAULT_PARAMS) -> bool:
 # Instance attributes ``__init__`` writes. Anything else, including ``_pair``, is not the known estimator.
 _ESTIMATOR_ATTRS = frozenset({"params", "_mask_cache", "_mask_cache_id"})
 
+# Content digests of caches this module wrote, keyed by the estimator instance.
+# Not an instance attribute. Updating this map after a mutation is a disclosed
+# in-process hole, in the same family as patching a method on the class.
+_MASK_CACHE_DIGESTS: WeakKeyDictionary[object, bytes] = WeakKeyDictionary()
+
+
+def _mask_cache_digest(cache: object) -> bytes | None:
+    """SHA-256 of cache keys and values, or None if any entry is not a known type.
+
+    Keys must be exact non-empty tuples of exact ints. Values must be exact
+    two-dimensional ``numpy.ndarray`` objects with dtype ``uint8``. Entries are
+    type-tagged and length-prefixed so a foreign type cannot be hashed as a mask.
+    """
+    if type(cache) is not dict:
+        return None
+    try:
+        keys = sorted(cache)
+    except TypeError:
+        return None
+    acc = hashlib.sha256()
+    acc.update(b"mask-cache-v1")
+    acc.update(len(keys).to_bytes(8, "little"))
+    for key in keys:
+        if type(key) is not tuple or not key or any(type(part) is not int for part in key):
+            return None
+        value = cache[key]
+        if type(value) is not np.ndarray or value.ndim != 2 or value.dtype != np.uint8:
+            return None
+        body = np.ascontiguousarray(value)
+        acc.update(b"key:tuple[int]")
+        acc.update(len(key).to_bytes(8, "little"))
+        for part in key:
+            acc.update(int(part).to_bytes(8, "little", signed=True))
+        acc.update(b"val:ndarray:uint8")
+        acc.update(body.shape[0].to_bytes(8, "little"))
+        acc.update(body.shape[1].to_bytes(8, "little"))
+        payload = body.tobytes()
+        acc.update(len(payload).to_bytes(8, "little"))
+        acc.update(payload)
+    return acc.digest()
+
+
+def _record_mask_cache_digest(estimator: object) -> None:
+    """Record the digest of a cache this module just wrote. A failed digest drops the record."""
+    cache = getattr(estimator, "_mask_cache", None)
+    digest = _mask_cache_digest(cache)
+    if digest is None:
+        _MASK_CACHE_DIGESTS.pop(estimator, None)
+        return
+    _MASK_CACHE_DIGESTS[estimator] = digest
+
 
 def _estimator_instance_ok(estimator: object) -> bool:
-    """True for an exact instance whose methods and mask cache are the ones ``__init__`` wrote.
+    """True for an exact instance whose methods and mask cache are the ones this module wrote.
 
     Does not consult the allowlist. A rejected instance must not be hashed as if
-    it were the known estimator. Replacing ``_mask_cache`` warns.
+    it were the known estimator. Replacing ``_mask_cache``, even when
+    ``_mask_cache_id`` is updated to ``id(new_dict)``, mutating a cached mask, or
+    adding a key, warns and is not known. A non-dict cache or a foreign key or
+    value type also fails closed.
     """
     cls = OpticalFlowPanEstimator
     if type(estimator) is not cls:
@@ -322,16 +386,23 @@ def _estimator_instance_ok(estimator: object) -> bool:
     if type(cache) is not dict or data.get("_mask_cache_id") != id(cache):
         warnings.warn("pan estimator _mask_cache was replaced", RuntimeWarning, stacklevel=2)
         return False
+    digest = _mask_cache_digest(cache)
+    recorded = _MASK_CACHE_DIGESTS.get(estimator)
+    if digest is None or recorded is None or digest != recorded:
+        warnings.warn("pan estimator _mask_cache contents changed", RuntimeWarning, stacklevel=2)
+        return False
     return True
 
 
 def _running_estimator_known(estimator: object) -> bool:
-    """True only for an exact instance with no method patched onto it.
+    """True only for an exact instance with no method patched onto it and an intact cache.
 
     ``pairs`` on the instance must be ``OpticalFlowPanEstimator.pairs``. The
     instance ``__dict__`` may contain only ``params``, ``_mask_cache``, and
     ``_mask_cache_id``, so assigning ``estimator._pair`` (or any other attribute)
-    is not known. Replacing ``_mask_cache`` warns and is not known.
+    is not known. Replacing ``_mask_cache`` (with or without updating
+    ``_mask_cache_id``), mutating a cached mask, or adding a key warns and is
+    not known.
     """
     if not _estimator_instance_ok(estimator):
         return False
@@ -364,6 +435,7 @@ class OpticalFlowPanEstimator:
         self.params = params
         self._mask_cache: dict[tuple[int, int], Any] = {}
         self._mask_cache_id = id(self._mask_cache)
+        _record_mask_cache_digest(self)
 
     @property
     def sha256(self) -> str:
@@ -397,6 +469,7 @@ class OpticalFlowPanEstimator:
             ya, yb = int(math.floor(y0 * h)), int(math.ceil(y1 * h))
             mask[max(ya, 0):min(yb, h), max(xa, 0):min(xb, w)] = 0
         self._mask_cache[key] = mask
+        _record_mask_cache_digest(self)
         return mask
 
     def _prepare(self, frame) -> _Prepared:
