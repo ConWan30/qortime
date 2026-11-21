@@ -150,7 +150,15 @@ class Parser {
       }
       const code = s.charCodeAt(i);
       if (code < 0x20) fail("noncanonical_json");
-      if (code >= 0xD800 && code <= 0xDFFF) fail("noncanonical_surrogate");
+      if (code >= 0xD800 && code <= 0xDBFF) {
+        if (i + 1 >= this.n) fail("noncanonical_surrogate");
+        const low = s.charCodeAt(i + 1);
+        if (low < 0xDC00 || low > 0xDFFF) fail("noncanonical_surrogate");
+        parts.push(s.slice(i, i + 2));
+        i += 2;
+        continue;
+      }
+      if (code >= 0xDC00 && code <= 0xDFFF) fail("noncanonical_surrogate");
       parts.push(c);
       i++;
     }

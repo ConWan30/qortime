@@ -74,6 +74,28 @@ export async function runAdversarial(ok) {
     "proto fixture without motion stays PARTIAL");
   ok(injected.status === "FAIL" && injected.errors.includes("noncanonical_json") && injected.status !== "VERIFIED",
     "signals.__proto__.motion_permille cannot upgrade PARTIAL to VERIFIED");
+  const nonBmp = JSON.parse(readFileSync(new URL("tests/fixtures/adversarial/non_bmp.json", root), "utf8"));
+  for (const kind of ["literal", "escaped"]) {
+    const v = await verifyReceipt(nonBmp[kind], nonBmp.pub, { allowlist: nonBmp.allowlist });
+    ok(v.status === "VERIFIED" && v.errors.length === 0 && v.partial.length === 0,
+      `non-BMP ${kind} receipt stays VERIFIED in JS`);
+  }
+  for (const badKind of ["lone_high", "lone_low", "swapped"]) {
+    const v = await verifyReceipt(nonBmp[badKind], nonBmp.pub, { allowlist: nonBmp.allowlist });
+    ok(v.status === "FAIL" && v.errors.includes("noncanonical_surrogate"),
+      `non-BMP ${badKind} fails with noncanonical_surrogate`);
+  }
+  const bmpPair = parseCanonical("{\"🏈\":\"🏆\"}");
+  ok(bmpPair.ok && JSON.stringify(bmpPair.value) === "{\"🏈\":\"🏆\"}",
+    "parseCanonical accepts literal non-BMP key and value");
+  const bmpDup = parseCanonical("{\"🏈\":1,\"\\uD83C\\uDFC8\":2}");
+  ok(!bmpDup.ok && bmpDup.errors.includes("noncanonical_duplicate_key"),
+    "parseCanonical catches duplicate key across literal and escaped non-BMP");
+  for (const rawSurr of ["\"\uD83C\"", "\"\uDFC8\"", "\"\uDFC8\uD83C\""]) {
+    const r = parseCanonical(rawSurr);
+    ok(!r.ok && r.errors.includes("noncanonical_surrogate"),
+      "parseCanonical rejects unpaired literal UTF-16 surrogate");
+  }
 }
 
 const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;

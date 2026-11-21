@@ -119,3 +119,19 @@ def test_proto_motion_cannot_upgrade(tmp_path):
     assert clean["partial"] == ["home:motion_signal_missing"]
     assert injected["status"] == "FAIL"
     assert injected["errors"] == ["noncanonical_json"]
+
+
+def test_non_bmp_verified_and_surrogates_rejected(tmp_path):
+    from qor_receipt.canonical import parse_canonical
+
+    fixture = json.loads((ROOT / "tests" / "fixtures" / "adversarial" / "non_bmp.json").read_text(encoding="utf-8"))
+    allow = tmp_path / "allow.json"
+    allow.write_text(json.dumps(fixture["allowlist"]), encoding="utf-8")
+    for kind in ("literal", "escaped"):
+        v = verify_receipt(fixture[kind], referee_pub=fixture["pub"], allowlist_path=str(allow))
+        assert v["status"] == "VERIFIED" and v["errors"] == [] and v["partial"] == [], (kind, v)
+    for bad_kind in ("lone_high", "lone_low", "swapped"):
+        v = verify_receipt(fixture[bad_kind], referee_pub=fixture["pub"], allowlist_path=str(allow))
+        assert v["status"] == "FAIL" and "noncanonical_surrogate" in v["errors"], (bad_kind, v)
+    assert parse_canonical('{"\U0001f3c8":"\U0001f3c6"}') == ({"\U0001f3c8": "\U0001f3c6"}, [])
+    assert parse_canonical('{"\U0001f3c8":1,"\\uD83C\\uDFC8":2}') == (None, ["noncanonical_duplicate_key"])
