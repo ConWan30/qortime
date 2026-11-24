@@ -13,7 +13,7 @@ import secrets
 import time
 from typing import Any, Callable
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 
 from qor_receipt import receipt as R
@@ -27,6 +27,7 @@ from qor_receipt.challenge import (
 )
 from qor_receipt.checkpoints import body_of, countersign
 from qor_receipt.final_detect import detect_final, timelines_agree, weakest_basis
+from qor_receipt.hash_stamp import HashStampError, StampLedger
 from qor_receipt.jcs import canonicalize, sha256_hex
 from qor_receipt.keys import SoftwareKey, verify
 
@@ -56,6 +57,7 @@ def create_app(key: SoftwareKey | None = None, clock: Callable[[], int] | None =
     key = key or (SoftwareKey.from_seed_hex(os.environ["QOR_REFEREE_SEED"]) if os.getenv("QOR_REFEREE_SEED") else SoftwareKey())
     now = clock or (lambda: int(time.time() * 1000))
     app = FastAPI(title="QorTime referee", version="0.1.0")
+    stamps = StampLedger(key, clock=now)
     M: dict[str, dict[str, Any]] = {}
 
     def get(mid: str) -> dict[str, Any]:
@@ -192,6 +194,25 @@ def create_app(key: SoftwareKey | None = None, clock: Callable[[], int] | None =
     @app.get("/matches/{mid}/receipt")
     def get_receipt(mid: str):
         return get(mid)["final"]
+
+    @app.get("/aux/v1/hash-stamp/key")
+    def get_hash_stamp_key():
+        return stamps.key_info()
+
+    @app.post("/aux/v1/hash-stamp")
+    async def post_hash_stamp(request: Request):
+        raw = await request.body()
+        try:
+            return stamps.issue_raw(raw)
+        except HashStampError as exc:
+            raise HTTPException(exc.status_code, exc.detail) from None
+
+    @app.get("/aux/v1/hash-stamp/{stamp_id}")
+    def get_hash_stamp(stamp_id: str):
+        found = stamps.get(stamp_id)
+        if found is None:
+            raise HTTPException(404, "no such hash stamp")
+        return found
 
     return app
 
