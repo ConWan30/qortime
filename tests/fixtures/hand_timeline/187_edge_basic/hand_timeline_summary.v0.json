@@ -1,0 +1,32 @@
+{
+  "schema": "qorcap-hand-timeline-summary/v0",
+  "file": "hand_timeline.v0.jsonl",
+  "sha256": "2d86b5af3401a18091dfb2dfc85a62ef7a052c53b8532c45ea90672971d3248b",
+  "head": "dcd03bd1f57c157a5b352e6317ac016af851309d564088a0fa8e290ba86d7086",
+  "first_seq": 0,
+  "last_seq": 1,
+  "chunks": 2,
+  "raw_usb": true,
+  "raw_paused": null,
+  "raw_file": "hand_raw.v0.bin",
+  "raw_bytes": 320,
+  "raw_record_bytes": 80,
+  "raw_layout": "v1",
+  "hand_dir": ".",
+  "hand_dir_source": "direct",
+  "hand_dir_fallback_reason": null,
+  "device_models_seen": [
+    "dualsense_edge"
+  ],
+  "fallback": false,
+  "epochs": 1,
+  "reports": 4,
+  "in_rows": 4,
+  "frames": 2,
+  "frame_drops": 0,
+  "disk_faults": 0,
+  "frame_clock": "on",
+  "adaptive_trigger_state": "UNMEASURED",
+  "report_rate_hz": "UNMEASURED",
+  "claims": "Read-only controller input log clocked to the video: host-observed USB HID input reports and capture frame arrivals on one monotonic clock. It does not identify who held the controller."
+}

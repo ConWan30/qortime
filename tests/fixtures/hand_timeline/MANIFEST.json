@@ -1,0 +1,172 @@
+{
+  "schema": "qorcap-hand-timeline-fixtures/v0",
+  "note": "Synthetic frozen fixtures only; LF line endings; BYTES_42_43_CHANGE_CAP_PER_EPOCH=1024; trigger_fx_status maps r2_raw=raw[42] and l2_raw=raw[43] per R2 bench match-20261122-155333.",
+  "fixtures": {
+    "187_edge_basic": {
+      "mode": "pass",
+      "off": false,
+      "chunks": 2,
+      "head": "dcd03bd1f57c157a5b352e6317ac016af851309d564088a0fa8e290ba86d7086",
+      "file_sha256": "2d86b5af3401a18091dfb2dfc85a62ef7a052c53b8532c45ea90672971d3248b",
+      "warnings": 0,
+      "errors": 0
+    },
+    "189_edge": {
+      "mode": "pass",
+      "off": false,
+      "chunks": 2,
+      "head": "5a28fe89e28d30739a5e814ce452c1dfc2ed142e5fd5e7c8a552f6bb5682b33c",
+      "file_sha256": "cf21dfc5118fba845d7593ebb3c11dcfc17b7defde60e3fc785256d279a9fcf6",
+      "warnings": 0,
+      "errors": 0
+    },
+    "189_dualsense_fallback": {
+      "mode": "pass",
+      "off": false,
+      "fallback": true,
+      "chunks": 2,
+      "head": "d49090472d8106364b6e2f5a702bda9e9e171939235348607d3d39ed4808ff51",
+      "file_sha256": "923dec7de38993509d31b3fe6cc1577e97ee7b783a7505219f1c94e741bc792e",
+      "warnings": 0,
+      "errors": 0
+    },
+    "crash_tail_warning": {
+      "mode": "pass",
+      "off": false,
+      "chunks": 2,
+      "head": "5a28fe89e28d30739a5e814ce452c1dfc2ed142e5fd5e7c8a552f6bb5682b33c",
+      "file_sha256": "cf21dfc5118fba845d7593ebb3c11dcfc17b7defde60e3fc785256d279a9fcf6",
+      "warnings_min": 1,
+      "errors": 0,
+      "warning_contains": "trailing byte(s) after sealed offset"
+    },
+    "truncated_sealed_slice_error": {
+      "mode": "fail",
+      "errors_min": 1,
+      "error_contains": "truncated"
+    },
+    "flag_off_zero_hand_keys": {
+      "mode": "pass",
+      "off": true,
+      "chunks": 0,
+      "warnings": 0,
+      "errors": 0
+    },
+    "absent_hand_chunks": {
+      "mode": "err",
+      "err_contains": "hand_timeline.v0.jsonl: not found"
+    }
+  },
+  "files": [
+    {
+      "path": "187_edge_basic/checkpoints.jsonl",
+      "bytes": 717,
+      "sha256": "3fc23909157e6526bca777221677df4013095417e7c16dcb5d557c16693ad1ae"
+    },
+    {
+      "path": "187_edge_basic/hand_raw.v0.bin",
+      "bytes": 320,
+      "sha256": "99dc2b2009a43f4323c3695444007b4541f1adf45f29e29d6813ba9c21466c9b"
+    },
+    {
+      "path": "187_edge_basic/hand_timeline.v0.jsonl",
+      "bytes": 7744,
+      "sha256": "2d86b5af3401a18091dfb2dfc85a62ef7a052c53b8532c45ea90672971d3248b"
+    },
+    {
+      "path": "187_edge_basic/hand_timeline_summary.v0.json",
+      "bytes": 997,
+      "sha256": "726b9f6fa31656d450ace70796acc7bceeda9452c0443985abc0dd050a3881b2"
+    },
+    {
+      "path": "189_dualsense_fallback/checkpoints.jsonl",
+      "bytes": 717,
+      "sha256": "c2648b85a000457bed0b323f3520739b7192c656fd7079030c461153d3108166"
+    },
+    {
+      "path": "189_dualsense_fallback/hand_raw.v0.bin",
+      "bytes": 320,
+      "sha256": "991207f8c5c51e3f5fe8fd145049abe67a68a8a4f7c64d10c2ffb82ced93f682"
+    },
+    {
+      "path": "189_dualsense_fallback/hand_timeline.v0.jsonl",
+      "bytes": 8769,
+      "sha256": "923dec7de38993509d31b3fe6cc1577e97ee7b783a7505219f1c94e741bc792e"
+    },
+    {
+      "path": "189_dualsense_fallback/hand_timeline_summary.v0.json",
+      "bytes": 1113,
+      "sha256": "5cc6929d57545446a17b36661ab0b6072cf410cd54cf232a29e742f1cb2ea21a"
+    },
+    {
+      "path": "189_edge/checkpoints.jsonl",
+      "bytes": 717,
+      "sha256": "e74c426003f0e99f21103a649e783197cfd2dce56e740dd15557c9c13ab5d028"
+    },
+    {
+      "path": "189_edge/hand_raw.v0.bin",
+      "bytes": 320,
+      "sha256": "99dc2b2009a43f4323c3695444007b4541f1adf45f29e29d6813ba9c21466c9b"
+    },
+    {
+      "path": "189_edge/hand_timeline.v0.jsonl",
+      "bytes": 8735,
+      "sha256": "cf21dfc5118fba845d7593ebb3c11dcfc17b7defde60e3fc785256d279a9fcf6"
+    },
+    {
+      "path": "189_edge/hand_timeline_summary.v0.json",
+      "bytes": 1119,
+      "sha256": "663c144cb3f032a39bb1bf2457e7aa57a36bbdf53d411dce988a241d0709358c"
+    },
+    {
+      "path": "absent_hand_chunks/checkpoints.jsonl",
+      "bytes": 50,
+      "sha256": "eb7975280e388a522a85732f02751e6aef9929bac5227f7be2494bd6bcee2307"
+    },
+    {
+      "path": "crash_tail_warning/checkpoints.jsonl",
+      "bytes": 717,
+      "sha256": "e74c426003f0e99f21103a649e783197cfd2dce56e740dd15557c9c13ab5d028"
+    },
+    {
+      "path": "crash_tail_warning/hand_raw.v0.bin",
+      "bytes": 333,
+      "sha256": "e8cb650b44d8df5e6a3b433561dd5bdec330bba71f8d5d520ff43cdb6047985a"
+    },
+    {
+      "path": "crash_tail_warning/hand_timeline.v0.jsonl",
+      "bytes": 8735,
+      "sha256": "cf21dfc5118fba845d7593ebb3c11dcfc17b7defde60e3fc785256d279a9fcf6"
+    },
+    {
+      "path": "crash_tail_warning/hand_timeline_summary.v0.json",
+      "bytes": 1119,
+      "sha256": "663c144cb3f032a39bb1bf2457e7aa57a36bbdf53d411dce988a241d0709358c"
+    },
+    {
+      "path": "flag_off_zero_hand_keys/checkpoints.jsonl",
+      "bytes": 142,
+      "sha256": "10b24d5106ce6715cc3d13d018b9da5f8581e26fd8ecb5326def8f6b5451cf1f"
+    },
+    {
+      "path": "truncated_sealed_slice_error/checkpoints.jsonl",
+      "bytes": 717,
+      "sha256": "e74c426003f0e99f21103a649e783197cfd2dce56e740dd15557c9c13ab5d028"
+    },
+    {
+      "path": "truncated_sealed_slice_error/hand_raw.v0.bin",
+      "bytes": 300,
+      "sha256": "97db61bc371255ba19e02d880b80c9e05b0541618167b0f359b0c783d95b64ba"
+    },
+    {
+      "path": "truncated_sealed_slice_error/hand_timeline.v0.jsonl",
+      "bytes": 8735,
+      "sha256": "cf21dfc5118fba845d7593ebb3c11dcfc17b7defde60e3fc785256d279a9fcf6"
+    },
+    {
+      "path": "truncated_sealed_slice_error/hand_timeline_summary.v0.json",
+      "bytes": 1119,
+      "sha256": "663c144cb3f032a39bb1bf2457e7aa57a36bbdf53d411dce988a241d0709358c"
+    }
+  ]
+}
