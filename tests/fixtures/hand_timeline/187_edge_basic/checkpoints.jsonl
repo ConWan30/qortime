@@ -1,0 +1,3 @@
+{"seq":0,"t_ms":0,"qorcap":{"trigger":"start","hand_timeline_dir":".","hand_dir_source":"direct","hand_timeline_file":"hand_timeline.v0.jsonl","hand_raw_file":"hand_raw.v0.bin"}}
+{"seq":1,"t_ms":1250,"qorcap":{"trigger":"segment","hand_chunk_seq":0,"hand_head":"4be23d2ece70c864d141e35ca9b96eeb5550fac52cd5c85dfd66b93ce514a55e"}}
+{"seq":2,"t_ms":2200,"qorcap":{"trigger":"stop","hand_chunk_seq":1,"hand_head":"dcd03bd1f57c157a5b352e6317ac016af851309d564088a0fa8e290ba86d7086","hand_timeline_sha256":"2d86b5af3401a18091dfb2dfc85a62ef7a052c53b8532c45ea90672971d3248b","hand_timeline_head":"dcd03bd1f57c157a5b352e6317ac016af851309d564088a0fa8e290ba86d7086","hand_timeline_chunks":2,"raw_usb":true,"hand_raw_bytes":320}}

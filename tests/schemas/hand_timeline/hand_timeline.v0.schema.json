@@ -1,0 +1,442 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qorcap.local/schemas/hand_timeline/hand_timeline.v0.schema.json",
+  "title": "qorcap-hand-timeline/v0 JSONL record",
+  "description": "One LF-terminated RFC 8785 JCS JSON object line in hand_timeline.v0.jsonl. Supports both #187 base records and #189 additions (physical_face on DualSense Edge, bytes_42_43_raw). Claim ceiling: skill-proof / fair-proof only; never identifies who held the controller.",
+  "type": "object",
+  "required": ["type"],
+  "oneOf": [
+    { "$ref": "#/$defs/header" },
+    { "$ref": "#/$defs/in" },
+    { "$ref": "#/$defs/frame" },
+    { "$ref": "#/$defs/status" },
+    { "$ref": "#/$defs/profile_swap_candidate" },
+    { "$ref": "#/$defs/hb" },
+    { "$ref": "#/$defs/raw_bind" },
+    { "$ref": "#/$defs/chunk" }
+  ],
+  "$defs": {
+    "hex64": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "u8": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 255
+    },
+    "i16": {
+      "type": "integer",
+      "minimum": -32768,
+      "maximum": 32767
+    },
+    "jcs_u64": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "header": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "type",
+        "schema",
+        "chunk_seq",
+        "t_us",
+        "clock_domain",
+        "clock_note",
+        "qpc",
+        "wall_anchor_ms",
+        "chunk_duration_us",
+        "seal_grace_us",
+        "lane",
+        "transport",
+        "report_id",
+        "report_bytes",
+        "raw_usb",
+        "raw_file",
+        "raw_file_header_bytes",
+        "raw_record_bytes",
+        "raw_layout",
+        "raw_layout_spec",
+        "hand_dir",
+        "hand_dir_source",
+        "hand_dir_fallback_reason",
+        "in_rows",
+        "analog_min_gap_us",
+        "frame_clock",
+        "device_model",
+        "device_policy",
+        "edge_fields",
+        "edge_bits_note",
+        "edge_metadata",
+        "adaptive_trigger_state",
+        "report_rate_hz",
+        "clock_uncertainty_us",
+        "listen_only",
+        "claims"
+      ],
+      "properties": {
+        "type": { "const": "header" },
+        "schema": { "const": "qorcap-hand-timeline/v0" },
+        "chunk_seq": { "$ref": "#/$defs/jcs_u64" },
+        "t_us": { "$ref": "#/$defs/jcs_u64" },
+        "clock_domain": { "const": "qorcap-engine-instant-us" },
+        "clock_note": { "type": "string" },
+        "qpc": {
+          "type": "object",
+          "required": ["status"],
+          "properties": {
+            "status": { "enum": ["MEASURED", "UNMEASURED"] },
+            "freq_hz": { "$ref": "#/$defs/jcs_u64" },
+            "origin_ticks": { "$ref": "#/$defs/jcs_u64" },
+            "origin_t_us": { "$ref": "#/$defs/jcs_u64" }
+          }
+        },
+        "wall_anchor_ms": { "$ref": "#/$defs/jcs_u64" },
+        "chunk_duration_us": { "const": 1000000 },
+        "seal_grace_us": { "const": 250000 },
+        "lane": { "const": "practice" },
+        "transport": { "const": "usb-hid" },
+        "report_id": { "const": 1 },
+        "report_bytes": { "const": 64 },
+        "raw_usb": { "type": "boolean" },
+        "raw_file": { "type": ["string", "null"] },
+        "raw_file_header_bytes": { "const": 0 },
+        "raw_record_bytes": { "const": 80 },
+        "raw_layout": { "const": "v1" },
+        "raw_layout_spec": { "type": "string" },
+        "hand_dir": { "type": "string" },
+        "hand_dir_source": { "enum": ["default_d", "override", "fallback_bundle", "direct"] },
+        "hand_dir_fallback_reason": { "type": ["string", "null"] },
+        "in_rows": { "type": "string" },
+        "analog_min_gap_us": { "$ref": "#/$defs/jcs_u64" },
+        "frame_clock": { "type": "string" },
+        "device_model": { "enum": ["dualsense_edge", "dualsense", "UNKNOWN"] },
+        "device_policy": { "type": "object" },
+        "edge_fields": { "enum": ["MEASURED", "UNMEASURED", "UNKNOWN"] },
+        "edge_bits_note": { "type": "string" },
+        "edge_metadata": { "type": "object" },
+        "adaptive_trigger_state": { "const": "UNMEASURED" },
+        "report_rate_hz": { "type": "string" },
+        "clock_uncertainty_us": { "type": "object" },
+        "listen_only": {
+          "type": "object",
+          "required": ["access", "reads", "output_reports", "feature_reports", "firmware", "audio"],
+          "properties": {
+            "access": { "const": "GENERIC_READ" },
+            "reads": { "type": "string" },
+            "output_reports": { "const": false },
+            "feature_reports": { "const": false },
+            "firmware": { "const": false },
+            "audio": { "const": false }
+          }
+        },
+        "claims": { "type": "string" },
+        "physical_face_status": { "enum": ["ESTIMATED", "UNMEASURED", "UNKNOWN"] },
+        "physical_face_note": { "type": "string" },
+        "bytes_42_43_raw": {
+          "const": "UNKNOWN",
+          "description": "Initial header placeholder stays UNKNOWN before first USB 0x01 report; on in/status rows bytes_42_43_raw is [raw[42], raw[43]] ([r2_raw, l2_raw] per R2 bench match-20261122-155333)."
+        },
+        "bytes_42_43_status": { "const": "ESTIMATED" },
+        "bytes_42_43_change_cap_per_epoch": { "$ref": "#/$defs/jcs_u64" },
+        "bytes_42_43_note": {
+          "type": "string",
+          "description": "Note on raw bytes 42-43 (raw[42] = R2 trigger-effect status, raw[43] = L2 per R2 bench match-20261122-155333; adaptive_trigger_state stays UNMEASURED)."
+        },
+        "declared_settings": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["checked", "source", "edge_profile", "l2_stop", "r2_stop", "stick_curve_left", "stick_curve_right", "in_game_trigger_effect"],
+          "properties": {
+            "checked": { "const": false },
+            "source": { "enum": ["user_declared", "none"] },
+            "edge_profile": { "type": "string" },
+            "l2_stop": { "type": "string" },
+            "r2_stop": { "type": "string" },
+            "stick_curve_left": { "type": "string" },
+            "stick_curve_right": { "type": "string" },
+            "in_game_trigger_effect": { "type": "string" }
+          }
+        }
+      }
+    },
+    "in": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "type",
+        "chunk_seq",
+        "epoch",
+        "t_us",
+        "t_qpc_ticks",
+        "rx_gap_us",
+        "report_id",
+        "counter",
+        "sensor_ts",
+        "lx",
+        "ly",
+        "rx",
+        "ry",
+        "l2",
+        "r2",
+        "buttons",
+        "edge_bits",
+        "gyro",
+        "accel",
+        "touch",
+        "trigger_fx_status",
+        "battery_raw",
+        "device_model",
+        "raw_sha256"
+      ],
+      "properties": {
+        "type": { "const": "in" },
+        "chunk_seq": { "$ref": "#/$defs/jcs_u64" },
+        "late": { "type": "boolean" },
+        "epoch": { "$ref": "#/$defs/jcs_u64" },
+        "t_us": { "$ref": "#/$defs/jcs_u64" },
+        "t_qpc_ticks": { "oneOf": [{ "$ref": "#/$defs/jcs_u64" }, { "type": "null" }] },
+        "rx_gap_us": { "oneOf": [{ "$ref": "#/$defs/jcs_u64" }, { "type": "null" }] },
+        "report_id": { "const": 1 },
+        "counter": { "$ref": "#/$defs/u8" },
+        "sensor_ts": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "lx": { "$ref": "#/$defs/u8" },
+        "ly": { "$ref": "#/$defs/u8" },
+        "rx": { "$ref": "#/$defs/u8" },
+        "ry": { "$ref": "#/$defs/u8" },
+        "l2": { "$ref": "#/$defs/u8", "description": "Analog L2 travel from hid.rs byte 5 (0..255)." },
+        "r2": { "$ref": "#/$defs/u8", "description": "Analog R2 travel from hid.rs byte 6 (0..255)." },
+        "buttons": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "edge_bits": {
+          "oneOf": [
+            { "type": "integer", "minimum": 0, "maximum": 15 },
+            { "const": "UNMEASURED" }
+          ]
+        },
+        "gyro": { "type": "array", "minItems": 3, "maxItems": 3, "items": { "$ref": "#/$defs/i16" } },
+        "accel": { "type": "array", "minItems": 3, "maxItems": 3, "items": { "$ref": "#/$defs/i16" } },
+        "touch": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "array",
+            "minItems": 4,
+            "maxItems": 4,
+            "items": { "type": "integer", "minimum": 0, "maximum": 4095 }
+          }
+        },
+        "trigger_fx_status": {
+          "type": "object",
+          "description": "Trigger-effect status bytes from USB report 0x01: r2_raw = raw[42] (R2 trigger-effect status, confirmed by R2 bench match-20261122-155333) and l2_raw = raw[43] (L2). Analog trigger travel stays l2/r2 (hid.rs bytes 5-6). Live adaptive-trigger force state stays status=UNMEASURED.",
+          "required": ["l2_raw", "r2_raw", "status"],
+          "properties": {
+            "l2_raw": { "$ref": "#/$defs/u8", "description": "raw[43] (L2 trigger-effect status byte)." },
+            "r2_raw": { "$ref": "#/$defs/u8", "description": "raw[42] (R2 trigger-effect status byte)." },
+            "status": { "const": "UNMEASURED" }
+          }
+        },
+        "battery_raw": { "$ref": "#/$defs/u8" },
+        "device_model": { "enum": ["dualsense_edge", "dualsense", "UNKNOWN"] },
+        "raw_sha256": { "$ref": "#/$defs/hex64" },
+        "physical_face": {
+          "oneOf": [
+            { "$ref": "#/$defs/u8" },
+            { "const": "UNMEASURED" }
+          ],
+          "description": "#189 Edge-only raw byte 51 (ESTIMATED; mask 0xF0 for face buttons). Always UNMEASURED on standard DualSense."
+        },
+        "bytes_42_43_raw": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "$ref": "#/$defs/u8" },
+          "description": "Raw [raw[42], raw[43]] pair ([r2_raw, l2_raw] per R2 bench match-20261122-155333)."
+        }
+      }
+    },
+    "frame": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "chunk_seq", "file", "frame_idx", "pts_90k", "t_arrival_us", "pes_batch_count", "clock_source", "pipeline_latency"],
+      "properties": {
+        "type": { "const": "frame" },
+        "chunk_seq": { "$ref": "#/$defs/jcs_u64" },
+        "late": { "type": "boolean" },
+        "file": { "type": "string" },
+        "frame_idx": { "type": "integer", "minimum": 0 },
+        "pts_90k": { "$ref": "#/$defs/jcs_u64" },
+        "t_arrival_us": { "$ref": "#/$defs/jcs_u64" },
+        "pes_batch_count": { "$ref": "#/$defs/jcs_u64" },
+        "clock_source": { "const": "mpegts-video-pes-arrival" },
+        "pipeline_latency": { "const": "UNMEASURED" }
+      }
+    },
+    "status": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "chunk_seq", "t_us", "epoch", "state"],
+      "properties": {
+        "type": { "const": "status" },
+        "chunk_seq": { "$ref": "#/$defs/jcs_u64" },
+        "late": { "type": "boolean" },
+        "t_us": { "$ref": "#/$defs/jcs_u64" },
+        "epoch": { "$ref": "#/$defs/jcs_u64" },
+        "state": { "type": "string" },
+        "detail": { "type": "string" },
+        "device_model": { "enum": ["dualsense_edge", "dualsense", "UNKNOWN"] },
+        "fallback": { "type": "boolean" },
+        "edge_fields": { "enum": ["MEASURED", "UNMEASURED", "UNKNOWN"] },
+        "bytes_42_43_raw": {
+          "oneOf": [
+            { "const": "UNKNOWN" },
+            { "type": "array", "minItems": 2, "maxItems": 2, "items": { "$ref": "#/$defs/u8" } }
+          ]
+        },
+        "prev_bytes_42_43_raw": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "$ref": "#/$defs/u8" } },
+        "bytes_42_43_status": { "const": "ESTIMATED" },
+        "adaptive_trigger_state": { "const": "UNMEASURED" }
+      }
+    },
+    "profile_swap_candidate": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "chunk_seq", "epoch", "t_us", "fn_bit", "face_bit", "resulting_profile", "status", "basis"],
+      "properties": {
+        "type": { "const": "profile_swap_candidate" },
+        "chunk_seq": { "$ref": "#/$defs/jcs_u64" },
+        "late": { "type": "boolean" },
+        "epoch": { "$ref": "#/$defs/jcs_u64" },
+        "t_us": { "$ref": "#/$defs/jcs_u64" },
+        "fn_bit": { "enum": ["FN_L", "FN_R"] },
+        "face_bit": { "enum": ["TRIANGLE", "CIRCLE", "CROSS", "SQUARE"] },
+        "resulting_profile": { "const": "UNKNOWN" },
+        "status": { "const": "ESTIMATED" },
+        "basis": { "const": "input_0x01_combo_only" }
+      }
+    },
+    "hb": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "type",
+        "chunk_seq",
+        "hb_seq",
+        "epoch",
+        "device_model",
+        "fallback",
+        "pad_connected",
+        "rx_delta",
+        "first_rx_t_us",
+        "last_rx_t_us",
+        "max_rx_gap_us",
+        "stale_over_50ms",
+        "short_reads",
+        "parse_faults",
+        "bt_reports",
+        "faults",
+        "timeouts",
+        "read_errors",
+        "seq0",
+        "seq1",
+        "seq_steps",
+        "seq_breaks",
+        "hw0",
+        "hw1",
+        "hw_advance",
+        "hw_stalls",
+        "in_rows",
+        "frames_in_chunk",
+        "pes_reads",
+        "late_records",
+        "frame_drops",
+        "raw_reports",
+        "disk_faults_total",
+        "counter_note"
+      ],
+      "properties": {
+        "type": { "const": "hb" },
+        "chunk_seq": { "$ref": "#/$defs/jcs_u64" },
+        "hb_seq": { "$ref": "#/$defs/jcs_u64" },
+        "epoch": { "$ref": "#/$defs/jcs_u64" },
+        "device_model": { "enum": ["dualsense_edge", "dualsense", "none", "mixed", "UNKNOWN"] },
+        "fallback": { "type": "boolean" },
+        "pad_connected": { "type": "boolean" },
+        "bytes_42_43_suppressed": { "$ref": "#/$defs/jcs_u64" }
+      }
+    },
+    "raw_bind": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "chunk_seq", "raw_usb", "paused", "file", "offset", "len", "sha256", "n_reports", "bytes", "record_bytes", "layout"],
+      "properties": {
+        "type": { "const": "raw_bind" },
+        "chunk_seq": { "$ref": "#/$defs/jcs_u64" },
+        "raw_usb": { "type": "boolean" },
+        "paused": { "type": ["string", "null"] },
+        "file": { "oneOf": [{ "const": "hand_raw.v0.bin" }, { "type": "null" }] },
+        "offset": { "oneOf": [{ "$ref": "#/$defs/jcs_u64" }, { "type": "null" }] },
+        "len": { "oneOf": [{ "$ref": "#/$defs/jcs_u64" }, { "type": "null" }] },
+        "sha256": { "oneOf": [{ "$ref": "#/$defs/hex64" }, { "type": "null" }] },
+        "n_reports": { "$ref": "#/$defs/jcs_u64" },
+        "bytes": { "$ref": "#/$defs/jcs_u64" },
+        "record_bytes": { "const": 80 },
+        "layout": { "const": "v1" }
+      }
+    },
+    "chunk": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "type",
+        "seq",
+        "t_start_us",
+        "t_end_us",
+        "n",
+        "sha256",
+        "prev",
+        "head",
+        "partial",
+        "device_model",
+        "fallback",
+        "raw_file",
+        "raw_offset",
+        "raw_len",
+        "raw_sha256",
+        "health"
+      ],
+      "properties": {
+        "type": { "const": "chunk" },
+        "seq": { "$ref": "#/$defs/jcs_u64" },
+        "t_start_us": { "$ref": "#/$defs/jcs_u64" },
+        "t_end_us": { "$ref": "#/$defs/jcs_u64" },
+        "n": { "$ref": "#/$defs/jcs_u64", "minimum": 2 },
+        "sha256": { "$ref": "#/$defs/hex64" },
+        "prev": { "$ref": "#/$defs/hex64" },
+        "head": { "$ref": "#/$defs/hex64" },
+        "partial": { "type": "boolean" },
+        "device_model": { "enum": ["dualsense_edge", "dualsense", "none", "mixed", "UNKNOWN"] },
+        "fallback": { "type": "boolean" },
+        "raw_file": { "oneOf": [{ "const": "hand_raw.v0.bin" }, { "type": "null" }] },
+        "raw_offset": { "oneOf": [{ "$ref": "#/$defs/jcs_u64" }, { "type": "null" }] },
+        "raw_len": { "oneOf": [{ "$ref": "#/$defs/jcs_u64" }, { "type": "null" }] },
+        "raw_sha256": { "oneOf": [{ "$ref": "#/$defs/hex64" }, { "type": "null" }] },
+        "health": {
+          "type": "object",
+          "required": [
+            "pad_connected",
+            "epoch",
+            "rx_delta",
+            "max_rx_gap_us",
+            "faults",
+            "frame_clock_present",
+            "frames_count",
+            "frame_drops"
+          ]
+        }
+      }
+    }
+  }
+}

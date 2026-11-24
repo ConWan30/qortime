@@ -4,11 +4,13 @@ from __future__ import annotations
 import copy
 import math
 import re
-from typing import Any
+from pathlib import Path
+from typing import Any, Sequence
 
 from qor_receipt.ai_ruling.signing import receipt_jcs_sha256
 from qor_receipt.hands.inputs import verify_inputs
 from qor_receipt.hands.press_to_pixel import score_match
+from qor_receipt.hands.timeline import normalize_in_records, verify_hand_timeline_dir
 from qor_receipt.hands.track import build_track
 
 SCHEMA = "qortime.hands.v0"
@@ -19,7 +21,7 @@ LABEL = ("ADVISORY, LOWER-ONLY. Show Your Hands overlays the verified controller
          "on-screen actions have a press behind them. It can only lower VERIFIED to PARTIAL, never raise a status "
          "or fail a match.")
 BUILT = "Meta AI Developer Hackathon, Oct 26 - Nov 4 2026"
-_BAD_KEYS = re.compile(r"path|instance|serial|(^|_)(vid|pid)($|_)|gamertag|psn|device_id|hid_id|usb_id", re.I)
+_BAD_KEYS = re.compile(r"path|instance|serial|(^|_)(vid|pid|pad_id)($|_)|hand_dir|gamertag|psn|device_id|hid_id|usb_id", re.I)
 _BAD_VALS = re.compile(r"HID\\|USB\\|VID_|PID_|\\\\\?\\|&MI_|\{[0-9a-f-]{36}\}", re.I)
 
 
@@ -74,6 +76,83 @@ def build(receipt: dict[str, Any], records: list[dict[str, Any]], chunks: list[d
     scorable = sum(1 for c in doc["clips"] if c["scorable"])
     doc["summary"] = (f"{flagged} flag(s) in {scorable} scorable clip(s) of {len(doc['clips'])}."
                       if scorable else "No clip could be aligned to the inputs: nothing scored, no penalty.")
+    return sanitize(doc)
+
+
+def build_from_hand_timeline(
+    receipt: dict[str, Any],
+    timeline_dir: Path | str,
+    clips: list[dict[str, Any]],
+    *,
+    role: str = "away",
+    with_track: bool = True,
+    context: dict[str, Any] | None = None,
+    allowed_roots: Sequence[Path] | None = None,
+) -> dict[str, Any]:
+    """Build an advisory lower-only ``qortime.hands.v0`` sidecar from ``qorcap-hand-timeline/v0``."""
+    chk = verify_hand_timeline_dir(Path(timeline_dir), allowed_roots=allowed_roots)
+    doc: dict[str, Any] = {
+        "schema": SCHEMA,
+        "source_format": "qorcap-hand-timeline/v0",
+        "label": LABEL,
+        "claims": "Read-only controller input log clocked to the video; does not identify who held the controller.",
+        "affects_verdict": "lower_only",
+        "max_cap": PARTIAL,
+        "receipt_jcs_sha256": receipt_jcs_sha256(receipt),
+        "role": role,
+        "inputs_verified": bool(chk.ok and not chk.off and chk.chunks > 0),
+        "hand_timeline_off": chk.off,
+        "clips": [],
+        "cap": None,
+    }
+    if chk.off and chk.ok:
+        doc["summary"] = "Controller timeline is off for this session: no overlay, no flags."
+        return sanitize(doc)
+    if not chk.ok or chk.chunks == 0:
+        doc["problems"] = (chk.errors or ["empty hand timeline"])[:10]
+        doc["summary"] = "Controller timeline did not verify: no overlay, no flags."
+        return sanitize(doc)
+
+    normalized = normalize_in_records(chk.records)
+    doc["inputs"] = {
+        "reports": len(normalized),
+        "chunks": chk.chunks,
+        "head": chk.head,
+        "file_sha256": chk.file_sha256,
+        "device_models": list(chk.device_models),
+        "fallback": chk.fallback,
+        "all_chunks_committed": chk.stop_bound,
+    }
+    rows = []
+    for c in clips:
+        t0, dur = int(c["start_mono_ms"]), float(c.get("duration_s", 12.0))
+        rs = [r for r in normalized if t0 * 1000 - 2_000_000 <= r["t_us"] <= (t0 + dur * 1000) * 1000]
+        rows.append(
+            {
+                "id": c.get("id", "clip"),
+                "records": rs,
+                "actions_ms": list(c.get("actions_ms") or []),
+                "stimuli_ms": list(c.get("stimuli_ms") or []),
+                "t0": t0,
+                "dur": dur,
+                "fps": int(c.get("fps", 30)),
+            }
+        )
+    scored = score_match(rows)
+    for row, res in zip(rows, scored):
+        if with_track:
+            res["track"] = build_track(row["records"], row["t0"], row["dur"], row["fps"])
+        doc["clips"].append(res)
+    if context is not None:
+        doc["action_filter"] = context
+    doc["cap"] = decide_cap(doc["clips"])
+    flagged = sum(len(c["flags"]) for c in doc["clips"] if c["scorable"])
+    scorable = sum(1 for c in doc["clips"] if c["scorable"])
+    doc["summary"] = (
+        f"{flagged} flag(s) in {scorable} scorable clip(s) of {len(doc['clips'])}."
+        if scorable
+        else "No clip matched the inputs window: nothing scored, no penalty."
+    )
     return sanitize(doc)
 
 
