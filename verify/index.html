@@ -1,102 +1,213 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>QorTime verifier — VERIFIED, PARTIAL, or FAIL</title>
-<meta name="description" content="Paste a QorTime match receipt and check it in the browser. VERIFIED, PARTIAL, or FAIL. Verified Match, a hosted referee countersign, is planned.">
+<html lang="en" data-qor-site="receipts"><head>
+<meta charset="utf-8"><script>document.documentElement.classList.add("js");setTimeout(function(){var h=document.documentElement;if(!h.classList.contains("qor-motion"))h.classList.remove("js")},3000)</script><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>QorTime Verifier — Client-Side Receipt Check (VERIFIED, PARTIAL, or FAIL)</title>
+<meta name="description" content="Paste a QorTime match receipt or drop bundle files to check them offline in this browser. VERIFIED, PARTIAL, or FAIL. Verified Match, a hosted referee countersign, is planned.">
 <link rel="canonical" href="https://qortime.com/verify/">
-<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg"><link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32.png"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
-<meta property="og:title" content="QorTime verifier">
-<meta property="og:description" content="In-browser receipt check. Self-verify is free. Verified Match, a hosted referee countersign, is planned.">
+<link rel="icon" type="image/svg+xml" href="../qor-ui/brand/favicon.svg"><link rel="icon" type="image/png" sizes="32x32" href="../qor-ui/brand/favicon-32.png"><link rel="apple-touch-icon" href="../qor-ui/brand/apple-touch-icon.png">
+<meta property="og:title" content="QorTime Verifier">
+<meta property="og:description" content="In-browser Ed25519 receipt check with zero uploads. Self-verify is free. Verified Match, a hosted referee countersign, is planned.">
 <meta property="og:url" content="https://qortime.com/verify/">
 <meta property="og:image" content="https://qortime.com/assets/og.png">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="QorTime verifier">
-<meta name="twitter:description" content="Check a signed match receipt in the browser. Verified Match stays TEST until KYC.">
+<meta name="twitter:title" content="QorTime Verifier">
+<meta name="twitter:description" content="Check a signed match receipt locally in this browser. Verified Match stays planned until live checkout opens.">
 <meta name="twitter:image" content="https://qortime.com/assets/og.png">
 <meta name="twitter:site" content="@QorTimeHQ">
-<meta name="theme-color" content="#04050a">
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@800;900&family=Inter+Tight:wght@500;600;700&display=swap" rel="stylesheet">
+<meta name="theme-color" content="#040712"><meta name="color-scheme" content="dark">
+<link rel="stylesheet" href="../qor-ui/tokens.css">
+<link rel="stylesheet" href="../qor-ui/motion.css">
+<link rel="stylesheet" href="../qor-ui/nav.css">
+<link rel="stylesheet" href="../qor-ui/footer.css">
+<link rel="stylesheet" href="../trio-observatory.css">
 <link rel="stylesheet" href="viewer.css">
-</head><body>
-<header class="top">
- <a class="brand" href="../"><img class="mark" src="../assets/logo.svg" alt="" width="30" height="30">Qor<span>Time</span></a>
- <nav><a href="../">Home</a><a href="../how-it-works/">How it works</a><a href="../matches/">Matches</a><a href="../early-access/">Verified Match (planned)</a></nav>
+</head><body class="trio-body trio-blueprint-bg">
+<header class="qor-nav" data-qor-nav data-active="receipts"
+  data-receipts-href="../"
+  data-capture-href="../cap/"
+  data-watch-href="../watch/">
+  <nav class="qor-nav__inner" aria-label="Qor Trio">
+    <a class="qor-nav__brand" href="../">
+      <span class="qor-nav__mark">
+        <img src="../qor-ui/brand/logo-icon.svg" alt="" width="30" height="30">
+        <span class="qor-shimmer" aria-hidden="true"></span>
+      </span>
+      <span class="qor-nav__wordmark">QorTime<span class="qor-nav__wordmark-sub">Receipts</span></span>
+    </a>
+    <div class="qor-nav__track">
+      <a class="qor-nav__link" data-qor-link="receipts" href="../">Receipts</a>
+      <a class="qor-nav__link" data-qor-link="capture" href="../cap/">Capture</a>
+      <a class="qor-nav__link" data-qor-link="watch" href="../watch/">Watch</a>
+      <span class="qor-nav__weave" aria-hidden="true">
+        <span class="qor-nav__strand qor-nav__strand--blue"></span>
+        <span class="qor-nav__strand qor-nav__strand--cyan"></span>
+        <span class="qor-nav__strand qor-nav__strand--white"></span>
+        <span class="qor-nav__knot"></span>
+      </span>
+    </div>
+    <div class="qor-nav__actions">
+      <a class="qor-nav__cta" href="./" aria-current="page">Verifier</a>
+      <button class="qor-nav__toggle" type="button" aria-expanded="false" aria-controls="qor-mobile-sheet" aria-label="Toggle family menu">
+        <span class="qor-nav__toggle-lanes" aria-hidden="true"><span></span><span></span><span></span></span>
+      </button>
+    </div>
+  </nav>
+  <div class="qor-nav__sheet" id="qor-mobile-sheet" hidden>
+    <div class="qor-nav__sheet-panel" role="dialog" aria-label="Qor Trio navigation">
+      <a class="qor-nav__sheet-link" data-qor-link="receipts" href="../"><span>Receipts</span></a>
+      <a class="qor-nav__sheet-link" data-qor-link="capture" href="../cap/"><span>Capture</span></a>
+      <a class="qor-nav__sheet-link" data-qor-link="watch" href="../watch/"><span>Watch</span></a>
+      <a class="qor-nav__cta qor-nav__sheet-cta" href="./" aria-current="page">Verifier</a>
+    </div>
+  </div>
 </header>
+
 <main class="wrap">
-<section class="hero">
- <h1>Check a match receipt</h1>
- <p>Signature checks run in this browser. The receipt JSON is not uploaded. Self-verify is free. Verified Match, a hosted referee countersign, is planned.</p>
+<section class="v-hero">
+  <div class="trio-telemetry-bar">
+    <span class="trio-telemetry-dot" aria-hidden="true"></span>
+    <span>verifier · ed25519 + rfc 8785 jcs · zero uploads</span>
+    <span class="trio-sep">|</span>
+    <span>QPC <span class="trio-clock-val" id="qpc-clock">4,819,204,000 us</span></span>
+  </div>
+  <h1 class="v-title"><span class="line">Check a match receipt.</span> <span class="line v-accent">Verify in your browser.</span></h1>
+  <p class="v-lede">All cryptographic checks execute locally inside this browser with zero uploads. Self-verify is free. Verified Match, a hosted referee countersign, is planned.</p>
+  <div class="v-bridge-row">
+    <a class="v-bridge-pill" href="../watch/#bundle">Checking a QorStream <code>.qormoment.tar</code> clip bundle instead? Open QorStream Watch <code>/check</code> guide →</a>
+  </div>
 </section>
 
-<section class="card" id="input" aria-label="Receipt input">
- <div class="row">
-  <button type="button" class="btn ghost" id="sample">Load the demo receipt</button>
-  <span class="btn ghost file">Choose files<input type="file" id="file" multiple accept=".json,.jsonl,.pub,application/json" aria-label="Choose a receipt and any evidence files"></span>
-  <a href="sample-receipt.json">sample-receipt.json</a>
- </div>
- <label class="lbl" for="json">Receipt JSON. Paste it, choose receipt.json, or drop a bundle's files here. Other files (device_attest.v0.json, score_timeline.json, pairing.json, …) are listed as evidence files.</label>
- <textarea id="json" spellcheck="false" placeholder='{"schema":"qor-receipt/v0", ...}'></textarea>
- <label class="lbl" for="pub">Pinned referee public key (hex). Optional. Leave blank and the key is pinned automatically only if it is on QorTime's built-in trusted list; otherwise the result is at most self-signed.</label>
- <input type="text" id="pub" placeholder="64 hex chars" autocomplete="off" spellcheck="false">
- <div class="attached" id="attached" aria-label="Attached evidence files"></div>
- <div class="go-row"><button type="button" class="btn primary" id="go">Verify</button><small>The verdict comes from verify.js. A signed Muse score cross-check can only lower VERIFIED to PARTIAL, never raise it.</small></div>
+<section class="card beam-card" id="input" aria-label="Receipt input">
+  <div class="v-drop-banner">
+    <div class="act-tag" style="margin:0">01 · Receipt &amp; Evidence Workbench</div>
+    <span class="v-drop-hint">Drag &amp; drop <code>receipt.json</code> + sidecars anywhere in this card</span>
+  </div>
+  <div class="row">
+    <button type="button" class="btn ghost" id="sample">Load the demo receipt</button>
+    <span class="btn ghost file">Choose files<input type="file" id="file" multiple accept=".json,.jsonl,.pub,application/json" aria-label="Choose a receipt and any evidence files"></span>
+    <button type="button" class="btn ghost" id="clearBtn">Clear</button>
+    <a class="v-sample-link" href="sample-receipt.json">sample-receipt.json</a>
+  </div>
+  <label class="lbl" for="json">Receipt JSON. Paste it, choose <code>receipt.json</code>, or drop a bundle's files here. Evidence sidecars (<code>device_attest.v0.json</code>, <code>score_timeline.json</code>, <code>pairing.json</code>, …) are listed automatically.</label>
+  <textarea id="json" spellcheck="false" placeholder='{"schema":"qor-receipt/v0", ...}'></textarea>
+  <label class="lbl" for="pub">Pinned referee public key (hex). Optional. Leave blank to auto-pin only if the key is on QorTime's built-in trusted list; otherwise the result is at most self-signed.</label>
+  <input type="text" id="pub" placeholder="64 hex chars" autocomplete="off" spellcheck="false">
+  <div class="attached" id="attached" aria-label="Attached evidence files"></div>
+  <div class="go-row">
+    <button type="button" class="btn primary" id="go">Verify receipt</button>
+    <small>The verdict comes directly from <code>verify.js</code>. A signed Muse score cross-check can only lower VERIFIED to PARTIAL, never raise it.</small>
+  </div>
 </section>
 
 <section id="verdict" class="verdict" data-tone="idle" aria-live="polite" aria-atomic="false">
- <div class="v-main">
-  <span class="seal-slot" id="seal"></span>
-  <div><p class="kicker">Verifier result</p><h2 id="word">NO RECEIPT YET</h2><p id="line">Paste a receipt, load the demo, or open one from a match page.</p><div class="tags" id="tags"></div></div>
- </div>
+  <div class="v-main">
+    <span class="seal-slot" id="seal"></span>
+    <div>
+      <p class="kicker">02 · Cryptographic Verdict</p>
+      <h2 id="word">NO RECEIPT YET</h2>
+      <p id="line">Paste a receipt, load the demo, or open one from a match page.</p>
+      <div class="tags" id="tags"></div>
+    </div>
+  </div>
 </section>
 
 <section id="stepsWrap" hidden>
- <h2 class="sec">Checks, in the order the verifier runs them</h2>
- <ol class="steps" id="steps"></ol>
+  <h2 class="sec">Checks, in the order the verifier runs them</h2>
+  <ol class="steps" id="steps"></ol>
 </section>
 
 <section id="panelsWrap" hidden>
- <h2 class="sec">Evidence in this receipt</h2>
- <div class="panels" id="panels"></div>
- <div class="panels" id="logSlot" style="margin-top:12px"></div>
- <div class="panels" id="xcSlot" style="margin-top:12px"></div>
- <div class="panels" id="handsSlot" style="margin-top:12px"></div>
- <div class="panels" id="aiSlot" style="margin-top:12px"></div>
+  <h2 class="sec">Evidence in this receipt</h2>
+  <div class="panels" id="panels"></div>
+  <div class="panels" id="logSlot" style="margin-top:12px"></div>
+  <div class="panels" id="xcSlot" style="margin-top:12px"></div>
+  <div class="panels" id="handsSlot" style="margin-top:12px"></div>
+  <div class="panels" id="aiSlot" style="margin-top:12px"></div>
 </section>
 
-<section class="vm" id="vm">
- <h2>Verified Match <span class="vm-test">planned</span></h2>
- <p>Verified Match, a hosted referee countersign, is planned at $9.99. Self-verify is free today, and the check above is the whole of it. Payments are not open yet.</p>
- <!-- Checkout UI kept for when payments open; not rendered while VM_CHECKOUT_LIVE is false. -->
- <div id="vm-live" hidden>
- <p id="vm-return" hidden></p>
- <div id="vm-badge" class="vm-badge" hidden></div>
- <p id="vm-state"></p>
- <button id="vm-buy" class="btn ghost" type="button" disabled>Checkout this receipt</button>
- <p id="vm-err"></p>
- </div>
+<section class="vm beam-card" id="vm">
+  <h2>Verified Match <span class="vm-test">planned</span></h2>
+  <p>Verified Match, a hosted referee countersign, is planned at $9.99. Self-verify is free today, and the check above is the whole of it. Payments are not open yet.</p>
+  <!-- Checkout UI kept for when payments open; not rendered while VM_CHECKOUT_LIVE is false. -->
+  <div id="vm-live" hidden>
+    <p id="vm-return" hidden></p>
+    <div id="vm-badge" class="vm-badge" hidden></div>
+    <p id="vm-state"></p>
+    <button id="vm-buy" class="btn ghost" type="button" disabled>Checkout this receipt</button>
+    <p id="vm-err"></p>
+  </div>
 </section>
 
-<details class="raw-out"><summary>Raw verifier output</summary><pre id="out">Nothing checked yet.</pre></details>
+<details class="raw-out"><summary>Raw verifier output (JSON)</summary><pre id="out">Nothing checked yet.</pre></details>
 
 <h2 class="sec">What the results mean</h2>
 <div class="legend">
- <p><b>VERIFIED</b> — every signature, checkpoint, and challenge holds against a trusted QorTime referee key. The only result shown in gold.</p>
- <p><b>PARTIAL</b> — signatures check out against a trusted QorTime referee, but something is missing (challenge, motion, …). Not a verified result.</p>
- <p><b>SELF-SIGNED</b> — cryptography holds, but the referee key is <strong>not</strong> on QorTime's built-in trusted list (local Start Match key, home-made key, or revoked). Never shown as VERIFIED. The raw output calls this status <code>SELF_ATTESTED</code>.</p>
- <p><b>FAIL</b> — a signature, the chain, or a challenge does not hold.</p>
- <p>Device keys are reported as software or TPM claimed (unverified). TPM claimed is the strongest device status the referee gives. It is not hardware proof.</p>
+  <div class="beam-card legend-card">
+    <p><span class="legend-status is-verified">VERIFIED</span> Every signature, checkpoint, and challenge holds against a trusted QorTime referee key. The only result shown in gold.</p>
+  </div>
+  <div class="beam-card legend-card">
+    <p><span class="legend-status is-partial">PARTIAL</span> Signatures check out against a trusted QorTime referee, but an evidence check is partial or missing (challenge, motion, …). Not a verified result.</p>
+  </div>
+  <div class="beam-card legend-card">
+    <p><span class="legend-status is-self">SELF-SIGNED</span> Cryptography holds, but the referee key is <strong>not</strong> on QorTime's built-in trusted list (local Start Match key, self-hosted key, or revoked). Never shown as VERIFIED. Raw output calls this status <code>SELF_ATTESTED</code>.</p>
+  </div>
+  <div class="beam-card legend-card">
+    <p><span class="legend-status is-fail">FAIL</span> A signature, checkpoint chain, canonical JSON rule, or challenge check failed.</p>
+  </div>
 </div>
+<p class="legend-note">Device keys are reported as software or TPM claimed (unverified). TPM claimed is the strongest device status the referee reports and is not hardware identity proof.</p>
 <p class="foot">Evidence panels explain the verifier's result. They never decide it.</p>
 </main>
+
+<footer class="qor-footer" data-qor-footer data-active="receipts"
+  data-receipts-href="../"
+  data-capture-href="../cap/"
+  data-watch-href="../watch/">
+  <div class="qor-footer__inner">
+    <div class="qor-footer__top">
+      <div class="qor-footer__brand-col">
+        <a class="qor-footer__brand" href="../">
+          <span class="qor-footer__mark"><img src="../qor-ui/brand/logo-icon.svg" alt="" width="26" height="26"></span>
+          <span>QorTime</span>
+        </a>
+        <p class="qor-footer__tagline">Fair-proof capture receipts, hash-only time anchors, and zero-upload browser verification. MIT.</p>
+      </div>
+      <nav class="qor-footer__nav" aria-label="Qor Trio footer">
+        <a class="qor-footer__link" data-qor-link="receipts" href="../">Receipts</a>
+        <a class="qor-footer__link" data-qor-link="capture" href="../cap/">Capture</a>
+        <a class="qor-footer__link" data-qor-link="watch" href="../watch/">Watch</a>
+      </nav>
+    </div>
+    <nav class="qor-footer__site" aria-label="QorTime pages">
+      <a href="../">Hub</a>
+      <a href="../cap/">Capture</a>
+      <a href="../watch/">Watch</a>
+      <a href="../how-it-works/">How it works</a>
+      <a href="../pricing/">Pricing</a>
+      <a href="../record-pack/">Record packs</a>
+      <a href="../matches/">Matches</a>
+      <a href="../early-access/">Early access</a>
+      <a href="https://github.com/ConWan30/qortime">QorTime GitHub</a>
+      <a href="https://github.com/ConWan30/qorcap">QorCap GitHub</a>
+      <a href="https://github.com/ConWan30/qorstream">QorStream GitHub</a>
+      <a href="https://x.com/QorTimeHQ">@QorTimeHQ</a>
+    </nav>
+    <div class="qor-footer__bottom">
+      <p class="qor-footer__record-line"><span class="qor-footer__record-dot" aria-hidden="true"></span><span>Fair-proof record format across Capture, Receipts, and Watch</span></p>
+      <div class="qor-footer__legal">Game-agnostic core · Optional game modules are not affiliated with EA, the NFL, Sony, or Activision.</div>
+    </div>
+  </div>
+</footer>
+
 <script type="module">
 import { apiBase, badgeMatchesReceipt, isValidReceiptId, receiptIdFrom } from "./verified-match.js";
 import { sha256Hex } from "./verify.js";
 import { runVerify, setIdle, logPanel, observe, describeSidecar } from "./viewer-ui.js";
 import { autoPinFor, AUTO_PIN_NOTE } from "./auto-pin.js";
 import { checkAiRuling, aiRulingPanel } from "./ai-ruling-view.js";
-import { fetchAdvisoryText } from "./advisory-fetch.js"; // hackathon: automatic advisory files from the referee
-import { checkHands, applyHands, handsPanel } from "./hands-view.js"; // hackathon: Show Your Hands
-import { checkCrosscheck, applyCrosscheck, crosscheckPanel } from "./score-crosscheck-view.js"; // hackathon: Muse score cross-check // hackathon: advisory AI explanation (HACKATHON.md) // hackathon: verifier auto-pin (verify/AUTO_PIN.md)
+import { fetchAdvisoryText } from "./advisory-fetch.js";
+import { checkHands, applyHands, handsPanel } from "./hands-view.js";
+import { checkCrosscheck, applyCrosscheck, crosscheckPanel } from "./score-crosscheck-view.js";
 // Verified Match checkout is paused until payments open (business KYC). Keep false: no lookups, no checkout UI.
 const VM_CHECKOUT_LIVE = false;
 const $ = (id) => document.getElementById(id);
@@ -114,13 +225,13 @@ let pollTimer = 0;
 let sigStatus = null;
 let sidecars = [];
 let checked = false;
-let aiRulingText = null;   // a dropped ai_ruling.json (hackathon advisory panel)
-let aiRulingUrl = null;    // sibling ai_ruling.json of a same-origin ?receipt= URL
-let xcText = null;         // a dropped score_crosscheck.json (hackathon Muse cross-check)
-let xcUrl = null;          // sibling score_crosscheck.json of a same-origin ?receipt= URL
+let aiRulingText = null;
+let aiRulingUrl = null;
+let xcText = null;
+let xcUrl = null;
 let xcResult = null;
-let handsText = null;      // a dropped hands.json (hackathon Show Your Hands)
-let handsUrl = null;       // sibling hands.json of a same-origin ?receipt= URL
+let handsText = null;
+let handsUrl = null;
 let handsResult = null;
 
 function currentReceipt() {
@@ -227,11 +338,10 @@ async function ingest(files) {
   if ($("json").value.trim()) await check();
 }
 
-// Hackathon advisory panel: shown only when the AI advisory signature, the receipt binding and the echoed status all check out.
 async function paintAiRuling(receipt, status) {
   $("aiSlot").replaceChildren();
   let text = aiRulingText;
-  if (text == null) text = await fetchAdvisoryText(aiRulingUrl, receipt, "ai_ruling.json"); // sibling, then referee copy
+  if (text == null) text = await fetchAdvisoryText(aiRulingUrl, receipt, "ai_ruling.json");
   if (text == null) return;
   let doc; try { doc = JSON.parse(text); } catch { return; }
   const chk = await checkAiRuling(doc, receipt, status);
@@ -251,7 +361,6 @@ async function check() {
   $("go").disabled = true; $("go").setAttribute("aria-busy", "true");
   const text = $("json").value;
   try {
-    // Hackathon auto-pin: only when the pin box is empty, and only for a key on the built-in trusted list.
     let pin = $("pub").value.trim() || null;
     let auto = null;
     if (!pin) { auto = await autoPinFor(currentReceipt()); pin = auto.pin; }
@@ -259,7 +368,7 @@ async function check() {
     xcResult = null; handsResult = null;
     const adjust = async (r, v0) => {
       let t = xcText;
-      if (t == null) t = await fetchAdvisoryText(xcUrl, r, "score_crosscheck.json"); // sibling, then referee copy
+      if (t == null) t = await fetchAdvisoryText(xcUrl, r, "score_crosscheck.json");
       let doc = null; if (t != null) { try { doc = JSON.parse(t); } catch { doc = null; } }
       xcResult = doc ? await checkCrosscheck(doc, r) : null;
       const v1 = applyCrosscheck(v0, xcResult);
@@ -281,7 +390,7 @@ async function check() {
       const res = receipt.result || {};
       const basis = v.verification_basis === "official-post-hoc-review"
         ? `basis: official post-hoc review (${v.review?.video_method}: ${v.review?.segments_verified}/${v.review?.segments_total} video segments checked by the QorTime referee)\n` +
-          `not proven: ${(v.review?.not_proven || []).join("; ")}\n`
+          `not claimed: ${(v.review?.not_proven || []).join("; ")}\n`
         : "";
       const deleg = v.delegation
         ? `signed by: online referee key ${v.referee_id} (delegation serial ${v.delegation.serial} from root ${v.delegation.delegated_by}, valid until ${new Date(v.delegation.not_after_ms).toISOString().slice(0, 10)}; not revoked)\n`
@@ -301,8 +410,23 @@ async function check() {
 
 $("file").onchange = (e) => { ingest(e.target.files).catch(() => { $("vm-err").textContent = "Could not read those files."; }); e.target.value = ""; };
 const card = $("input");
-card.addEventListener("dragover", (e) => { e.preventDefault(); });
+let dragDepth = 0;
+card.addEventListener("dragenter", (e) => {
+  if (!e.dataTransfer || ![...e.dataTransfer.types].includes("Files")) return;
+  dragDepth += 1;
+  card.classList.add("is-dragover");
+});
+card.addEventListener("dragover", (e) => {
+  e.preventDefault();
+  if (e.dataTransfer && [...e.dataTransfer.types].includes("Files")) card.classList.add("is-dragover");
+});
+card.addEventListener("dragleave", () => {
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (dragDepth === 0) card.classList.remove("is-dragover");
+});
 card.addEventListener("drop", (e) => {
+  dragDepth = 0;
+  card.classList.remove("is-dragover");
   if (!e.dataTransfer || !e.dataTransfer.files.length) return;
   e.preventDefault();
   ingest(e.dataTransfer.files).catch(() => { $("vm-err").textContent = "Could not read those files."; });
@@ -319,9 +443,27 @@ $("sample").onclick = async () => {
     $("vm-err").textContent = err instanceof Error ? err.message : "Demo receipt failed to load";
   }
 };
+$("clearBtn").onclick = () => {
+  $("json").value = "";
+  $("pub").value = "";
+  $("vm-err").textContent = "";
+  sigStatus = null; sidecars = [];
+  aiRulingText = null; aiRulingUrl = null;
+  xcText = null; xcUrl = null; xcResult = null;
+  handsText = null; handsUrl = null; handsResult = null;
+  paintAttached();
+  paintAutoPin(null);
+  checked = false;
+  setIdle(ui, "Cleared. Paste a receipt, drop bundle files, or load the demo.");
+  $("logSlot").replaceChildren();
+  $("aiSlot").replaceChildren();
+  $("xcSlot").replaceChildren();
+  $("handsSlot").replaceChildren();
+  $("out").textContent = "Nothing checked yet.";
+};
 const stale = () => {
   sigStatus = null;
-  if (checked) { checked = false; setIdle(ui, "The receipt or pinned key changed. Press Verify to check it again."); $("logSlot").replaceChildren(); $("aiSlot").replaceChildren(); $("xcSlot").replaceChildren(); $("handsSlot").replaceChildren(); }
+  if (checked) { checked = false; setIdle(ui, "The receipt or pinned key changed. Press Verify receipt to check it again."); $("logSlot").replaceChildren(); $("aiSlot").replaceChildren(); $("xcSlot").replaceChildren(); $("handsSlot").replaceChildren(); }
   watchReceipt();
 };
 $("json").addEventListener("input", stale);
@@ -342,7 +484,7 @@ if (preloaded) {
   aiRulingUrl = new URL("ai_ruling.json", preloaded).href;
   xcUrl = new URL("score_crosscheck.json", preloaded).href;
   handsUrl = new URL("hands.json", preloaded).href;
-  fetch(preloaded).then((res) => {
+  fetch(preloaded).then(async (res) => {
     if (!res.ok) throw new Error("receipt");
     return decodeKeptBom(await res.arrayBuffer());
   }).then((text) => {
@@ -391,4 +533,35 @@ if (VM_CHECKOUT_LIVE && q.get("checkout") === "success" && isValidReceiptId(retu
     tick();
   }, 2000);
 }
-</script></body></html>
+</script>
+<script type="module">
+import "../qor-ui/nav.js";
+import "../qor-ui/footer.js";
+import { initReveal, initSectionTransitions } from "../qor-ui/motion.js";
+initReveal();
+initSectionTransitions();
+document.documentElement.classList.add("qor-motion");
+
+const RM = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const qpcEl = document.getElementById("qpc-clock");
+if (qpcEl) {
+  const baseUs = 4819204000;
+  const t0 = performance.now();
+  const tick = () => {
+    const us = baseUs + Math.round((performance.now() - t0) * 1000);
+    qpcEl.textContent = `${String(us).replace(/\B(?=(\d{3})+(?!\d))/g, ",")} us`;
+    if (!RM) requestAnimationFrame(tick);
+  };
+  tick();
+}
+if (matchMedia("(pointer: fine)").matches) {
+  document.querySelectorAll(".beam-card").forEach((card) => {
+    card.addEventListener("pointermove", (e) => {
+      const r = card.getBoundingClientRect();
+      card.style.setProperty("--mx", `${(e.clientX - r.left).toFixed(1)}px`);
+      card.style.setProperty("--my", `${(e.clientY - r.top).toFixed(1)}px`);
+    }, { passive: true });
+  });
+}
+</script>
+</body></html>

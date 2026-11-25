@@ -1,5 +1,8 @@
-"""Site-wide Trio alignment, /watch/ pillar, unified nav, LF, and wording checks."""
+"""Site-wide Trio alignment, /watch/ pillar, /verify/ shell, unified nav, LF, and wording checks."""
 import re
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 
 from qor_receipt.ai_ruling.guardrail import BANNED
@@ -70,3 +73,36 @@ def test_strict_lf_wording_and_semantic_gold_bounds():
             assert word not in low, f"{path}: forbidden {word}"
         if path not in (SITE / "index.html", SITE / "trio-observatory.css"):
             assert "e4c56d" not in low and "ref-verified-gold" not in low, path
+
+
+def test_verifier_page_uses_trio_shell_and_valid_js():
+    v_html = ROOT / "verify/index.html"
+    v_css = ROOT / "verify/viewer.css"
+    for path in (v_html, v_css):
+        assert path.is_file(), f"missing {path}"
+        assert b"\r" not in path.read_bytes(), f"CR found in {path}"
+
+    html = v_html.read_text(encoding="utf-8")
+    assert "../trio-observatory.css" in html and 'href="viewer.css"' in html
+    assert "#watch-coming-soon" not in html and "cursor.com/agents" not in html
+    navs = re.findall(r"<nav.*?</nav>", html, re.S)
+    assert navs and not any("hackathon" in n.lower() for n in navs)
+    for key in ('data-qor-link="receipts"', 'data-qor-link="capture"', 'data-qor-link="watch"'):
+        assert key in html, f"verify/index.html: missing {key}"
+
+    scripts = re.findall(r'<script type="module">(.*?)</script>', html, re.S)
+    assert len(scripts) >= 2
+    node = shutil.which("node")
+    if node:
+        for body in scripts:
+            tmp_path = None
+            try:
+                with tempfile.NamedTemporaryFile(suffix=".mjs", mode="w", encoding="utf-8", delete=False) as tmp:
+                    tmp.write(body)
+                    tmp_path = Path(tmp.name)
+                proc = subprocess.run([node, "--check", str(tmp_path)], capture_output=True, text=True)
+                assert proc.returncode == 0, f"verify/index.html module syntax error: {proc.stderr}"
+            finally:
+                if tmp_path is not None:
+                    tmp_path.unlink(missing_ok=True)
+
