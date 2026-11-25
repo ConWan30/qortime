@@ -1,8 +1,8 @@
 const DEFAULTS = {
   home: "/",
   receiptsHref: "https://qortime.com",
-  captureHref: "https://qortime.com/cap",
-  watchHref: "#watch-coming-soon",
+  captureHref: "https://qortime.com/cap/",
+  watchHref: "https://qortime.com/watch/",
   logoSrc: "brand/logo-icon.svg",
 };
 

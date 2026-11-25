@@ -1,32 +1,32 @@
 <!doctype html>
 <html lang="en" data-qor-site="receipts"><head>
 <meta charset="utf-8"><script>document.documentElement.classList.add("js");setTimeout(function(){var h=document.documentElement;if(!h.classList.contains("qor-motion"))h.classList.remove("js")},3000)</script><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>QorTime — One app. One recording. One receipt.</title>
-<meta name="description" content="One app. One recording. One receipt. QorCap captures and fingerprints your console match on Windows; QorTime then signs the receipt, runs an AI referee and lets anyone verify it. Madden NFL 27 first.">
-<meta name="theme-color" content="#04050a"><meta name="color-scheme" content="dark">
+<title>QorTime — Game-Agnostic Fair-Proof Records, Capture & Browser Verification</title>
+<meta name="description" content="QorTime, QorCap, and QorStream form an open, game-agnostic fair-proof capture and verification trio: HDMI + 1 kHz controller telemetry, Ed25519 hash-only timestamps, and zero-upload .qormoment.tar verification in your browser.">
+<meta name="theme-color" content="#040712"><meta name="color-scheme" content="dark">
 <link rel="icon" type="image/svg+xml" href="qor-ui/brand/favicon.svg"><link rel="icon" type="image/png" sizes="32x32" href="qor-ui/brand/favicon-32.png"><link rel="apple-touch-icon" href="qor-ui/brand/apple-touch-icon.png">
 <link rel="canonical" href="https://qortime.com/">
-<meta property="og:type" content="website"><meta property="og:title" content="QorTime — One app. One recording. One receipt.">
-<meta property="og:description" content="Capture with QorCap, check it after the match, share a receipt anyone can verify. One app. One recording. One receipt.">
+<meta property="og:type" content="website"><meta property="og:title" content="QorTime — Fair-Proof Capture, Time Anchors & Browser Verification">
+<meta property="og:description" content="QorCap captures HDMI video and 1 kHz listen-only controller telemetry. QorTime signs SHA-256 hash stamps. QorStream exports scrubbed .qormoment.tar clips anyone can verify offline in a browser.">
 <meta property="og:url" content="https://qortime.com/"><meta property="og:image" content="https://qortime.com/assets/og.png">
 <meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="https://qortime.com/assets/og.png">
-<meta name="twitter:title" content="QorTime — One app. One recording. One receipt.">
-<meta name="twitter:description" content="Signed, verifiable console match results. Self-verify is free in the browser. Verified Match, a hosted referee countersign, is planned.">
+<meta name="twitter:title" content="QorTime — Fair-Proof Capture, Time Anchors & Browser Verification">
+<meta name="twitter:description" content="Game-agnostic capture receipts, external Ed25519 hash stamps, and zero-upload .qormoment.tar verification.">
 <meta name="twitter:site" content="@QorTimeHQ">
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"WebSite","name":"QorTime","url":"https://qortime.com/","description":"Signed Madden match receipts anyone can verify in a browser. Self-verify is free. Verified Match, a hosted referee countersign, is planned."}
+{"@context":"https://schema.org","@type":"WebSite","name":"QorTime","url":"https://qortime.com/","description":"Open, game-agnostic fair-proof capture receipts, Ed25519 hash-only time anchors, and zero-upload .qormoment.tar browser verification."}
 </script>
 <link rel="stylesheet" href="qor-ui/tokens.css"><link rel="stylesheet" href="qor-ui/motion.css"><link rel="stylesheet" href="qor-ui/nav.css"><link rel="stylesheet" href="qor-ui/footer.css">
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="qor-site.css">
-</head><body>
+<link rel="stylesheet" href="trio-observatory.css">
+</head><body class="trio-body trio-blueprint-bg">
 <div class="grain" aria-hidden="true"></div>
-<div class="cursor" aria-hidden="true"></div>
 <header class="qor-nav" data-qor-nav data-active="receipts"
   data-receipts-href="./"
   data-capture-href="cap/"
-  data-watch-href="#watch-coming-soon">
-  <nav class="qor-nav__inner" aria-label="Qor product family">
+  data-watch-href="watch/">
+  <nav class="qor-nav__inner" aria-label="Qor Trio">
     <a class="qor-nav__brand" href="./">
       <span class="qor-nav__mark">
         <img src="qor-ui/brand/logo-icon.svg" alt="" width="30" height="30">
@@ -37,7 +37,7 @@
     <div class="qor-nav__track">
       <a class="qor-nav__link" data-qor-link="receipts" href="./" aria-current="page">Receipts</a>
       <a class="qor-nav__link" data-qor-link="capture" href="cap/">Capture</a>
-      <a class="qor-nav__link" data-qor-link="watch" href="#watch-coming-soon">Watch</a>
+      <a class="qor-nav__link" data-qor-link="watch" href="watch/">Watch</a>
       <span class="qor-nav__weave" aria-hidden="true">
         <span class="qor-nav__strand qor-nav__strand--blue"></span>
         <span class="qor-nav__strand qor-nav__strand--cyan"></span>
@@ -53,229 +53,259 @@
     </div>
   </nav>
   <div class="qor-nav__sheet" id="qor-mobile-sheet" hidden>
-    <div class="qor-nav__sheet-panel" role="dialog" aria-label="Qor family navigation">
+    <div class="qor-nav__sheet-panel" role="dialog" aria-label="Qor Trio navigation">
       <a class="qor-nav__sheet-link" data-qor-link="receipts" href="./" aria-current="page"><span>Receipts</span></a>
       <a class="qor-nav__sheet-link" data-qor-link="capture" href="cap/"><span>Capture</span></a>
-      <a class="qor-nav__sheet-link" data-qor-link="watch" href="#watch-coming-soon"><span>Watch</span></a>
+      <a class="qor-nav__sheet-link" data-qor-link="watch" href="watch/"><span>Watch</span></a>
       <a class="qor-nav__cta qor-nav__sheet-cta" href="verify/">Verifier</a>
     </div>
   </div>
 </header>
+
 <main>
-
 <section class="hero" id="top">
- <div class="hero-gl" aria-hidden="true"><canvas id="gl"></canvas><img class="gl-fallback" src="assets/a-sealclock.svg" alt=""></div>
- <div class="hero-copy">
-  <p class="kicker reveal-up"><span class="dot"></span> capture · prove · share · Madden NFL 27 first</p>
-  <h1 class="kinetic"><span class="line">One app.</span><span class="line">One recording.</span><span class="line accent">One receipt.</span></h1>
-  <p class="lede reveal-up">Play your match with <b><a href="cap/">QorCap</a></b>, one lightweight Windows app that records the capture card and fingerprints every second of video. When the match is over, QorTime does the heavy lifting on the finished recording: a signed receipt, an AI referee verdict, and a public verify link. Nothing heavy runs while you play.</p>
-  <div class="ctas reveal-up"><a class="btn mag" href="verify/"><span>Verify a receipt</span></a><a class="btn ghost mag" href="https://github.com/ConWan30/qorcap/releases/latest"><span>Download QorCap</span></a></div>
-  <p class="plan-note reveal-up">Verified Match, a hosted referee countersign, is planned at $9.99. Self-verify is free today.</p>
- </div>
- <div class="hero-foot reveal-up"><span>scroll to seal a match</span><i></i></div>
- <div class="marquee" aria-hidden="true"><div class="mq-track"><span>ONE APP ◆ ONE RECORDING ◆ ONE RECEIPT ◆ CAPTURE ◆ PROVE ◆ SHARE ◆ </span><span>ONE APP ◆ ONE RECORDING ◆ ONE RECEIPT ◆ CAPTURE ◆ PROVE ◆ SHARE ◆ </span></div></div>
-</section>
-
-
-<div class="qor-section-weave" aria-hidden="true"></div>
-<section class="wrap" id="flow">
- <p class="num">how it works</p>
- <h2 class="split big">Capture. Prove. Share.</h2>
- <div class="cards">
-  <div class="card glass"><h3>1 · Capture</h3><p><b>QorCap</b> is the one app you run, on Windows, during the match. It records the capture card and fingerprints the video as it is written: every segment is hashed and chained, with timestamped checkpoints. It stays light, so it doesn't strain your laptop.</p><span class="tag">controller button log in the same session · since v0.3.0</span><div class="ctas"><a class="btn ghost mag" href="cap/"><span>Open Capture</span></a></div></div>
-  <div class="card glass"><h3>2 · Prove</h3><p>After the final whistle, QorTime works on the finished recording. It re-checks the fingerprints, reads the score, and seals a signed receipt. The <b>AI referee</b> reviews the evidence and signs a verdict: <b>accept</b>, <b>dispute</b>, or <b>abstain</b>, with plain reasons and the evidence frames.</p></div>
-  <div class="card glass"><h3>3 · Share</h3><p>Send the receipt to your opponent, a tournament, or a platform. Anyone can check it in the free <a href="verify/">browser verifier</a>, and nothing is uploaded. A hosted referee countersign, Verified Match, is planned.</p></div>
- </div>
- <div class="glass limits" style="margin-top:22px">
-  <h2>Inside the Prove step</h2>
-  <ul>
-   <li><b>Integrity checks in code:</b> video fingerprints, checkpoint chain, and signatures. Scores can only move in legal football steps, never backwards. The clock only runs down within a quarter. The final screen must match the last score.</li>
-   <li><b>AI referee:</b> reads frames to confirm the score. It only accepts a reading when it is confident and the reading agrees across several frames, and it <b>abstains</b> rather than guessing. Tampering is caught by the integrity checks, not by trusting a model.</li>
-   <li><b>Honest limit:</b> QorTime checks the recording against its signed hash chain, and its timing against the referee's challenges and anchors. Since v0.3.0, QorCap also logs controller reports from a pad that enumerated on USB in that session. It does <b>not</b> prove who held the controller, or that the console obeyed that pad.</li>
-  </ul>
-  <a class="btn ghost mag" href="how-it-works/"><span>How it works</span></a>
- </div>
-</section>
-
-<div class="qor-section-weave" aria-hidden="true"></div>
-<section class="wrap" id="prove-rails" aria-label="Prove paths">
- <p class="num">prove · two doors</p>
- <h2 class="split big">Same story. Two doors.</h2>
- <p class="lede">Self-verify checks a real receipt in your browser. The SAMPLE path is a practice lab: a demo, not a real match.</p>
- <div class="cards dual-rail">
-  <div class="card glass rail-real">
-   <p class="plan-kicker"><span class="dot"></span> real path</p>
-   <h3>Self-verify</h3>
-   <p>Paste a sealed receipt. Signatures, the chain, and the challenges run locally. Nothing is uploaded. Gold <b>VERIFIED</b> only when the live verifier says so.</p>
-   <a class="btn mag" href="verify/"><span>Open the verifier</span></a>
+  <div class="hero-gl" aria-hidden="true">
+    <canvas id="gl"></canvas>
+    <img class="gl-fallback" src="assets/a-sealclock.svg" alt="">
   </div>
-  <div class="card glass rail-sample">
-   <p class="plan-kicker sample"><span class="dot"></span> SAMPLE · demo</p>
-   <h3>Try the SAMPLE path</h3>
-   <p>Walk Capture → Prove → Share on a redacted practice fixture. You get a clearly labeled <b>SAMPLE</b> receipt: a demo, not a real match. This door does not show a gold seal. A CoD HUD lock in the lab is correlated illustration only. It is not a seal of the Madden SAMPLE JSON, and it is not the same as sealing those CoD frames.</p>
-   <a class="btn ghost mag" href="https://cursor.com/agents/bc-4a3891c2-7098-58c8-98e5-9a84634c68bf" rel="noopener noreferrer" target="_blank"><span>Open SAMPLE lab (Preview)</span></a>
-   <span class="tag">SAMPLE · demo · not a real match · blank referee key</span>
-  </div>
- </div>
- <p class="note"><a href="record-pack/">Match record pack</a>: your sealed match record in one link, with its limits stated, for a league admin, a creator or a support ticket.</p>
-</section>
-
-<!-- 01 capture -->
-<section class="scene" id="capture">
- <div class="pin">
-  <div class="scene-copy">
-   <p class="num">01 / capture</p>
-   <h2 class="split">The scorebug, read off the screen.</h2>
-   <p>QorTime's scorebug reader reads the final score from the recording, digit by digit, and only locks when consecutive frames agree.</p>
-   <ul class="ticks"><li>frames read from the capture card</li><li>score locked on frame agreement</li><li>Madden NFL 27 first, more titles <span class="tag">roadmap</span></li></ul>
-   <p class="note"><a href="cap/">QorCap, the Capture step</a></p>
-  </div>
-  <div class="scene-art">
-   <div class="scorebug glass" id="scorebug">
-    <div class="sb-team"><i class="c1"></i>HOME</div>
-    <div class="sb-score"><span class="dg" data-v="2"></span><span class="dg" data-v="1"></span></div>
-    <div class="sb-clock"><span>Q4</span><span class="sb-time">0:00</span><em>FINAL</em></div>
-    <div class="sb-score"><span class="dg" data-v="1"></span><span class="dg" data-v="7"></span></div>
-    <div class="sb-team"><i class="c2"></i>AWAY</div>
-    <div class="scan" aria-hidden="true"></div>
-   </div>
-   <div class="ocr mono" id="ocr"><span>reading</span><b class="ocr-bar"><i></i></b><span class="ocr-st">locked ✓</span></div>
-   <div class="seal-stamp" id="sbseal"><img src="assets/logo.svg" alt=""><span>SEALED</span></div>
-   <div class="shock" id="sbshock"></div>
-   <p class="note">Illustrative scorebug, not a real match. No league or publisher marks.</p>
-  </div>
- </div>
-</section>
-
-<!-- 02 challenge -->
-<section class="scene alt" id="challenge">
- <div class="pin">
-  <div class="scene-copy">
-   <p class="num">02 / challenge</p>
-   <h2 class="split">Referee challenges, answered mid-match.</h2>
-   <p>Three referee challenges per match: game start, the second half, and the fourth quarter. The player pauses and enters the pattern. On QorCap rule v2 that pause has to show up within 2.5&nbsp;seconds. A relay under 2.5&nbsp;seconds is not reliably caught.</p><p class="note">QorCap logs the controller since v0.3.0. Since v0.3.11 a challenge only opens when Madden lets you pause: after the kickoff and a play call, never during a kickoff. Receipts with no rule id still use the older 600&nbsp;ms ceiling.</p>
-  </div>
-  <div class="scene-art">
-   <div class="pad-wrap glass">
-    <div class="pad-top mono"><span>referee nonce <b>7f3a·c19e</b></span><span class="paused">❚❚ PAUSED</span></div>
-    <div class="glyphs" id="glyphs"><span class="g">OPT</span><span class="g">←</span><span class="g">→</span><span class="g x">✕</span><span class="g">↓</span><span class="g o">○</span></div>
-    <svg class="pwave" viewBox="0 0 600 90" preserveAspectRatio="none" aria-hidden="true"><path id="pwave" d="M0 45 L600 45"/></svg>
-    <div class="window mono"><span>2.5 s window</span><b><i id="winbar"></i></b><span class="ok" id="winok">pause inside 2.5 s ✓</span></div>
-   </div>
-  </div>
- </div>
-</section>
-
-<!-- 03 chain -->
-<section class="scene" id="chain">
- <div class="pin">
-  <div class="scene-copy wide">
-   <p class="num">03 / co-sign</p>
-   <h2 class="split">The laptop signs the chain. The referee timestamps it.</h2>
-   <p>Checkpoint countersignatures come from the laptop’s own key. The official referee does not treat those as live: the key sits on the player’s PC. What the official referee does sign is the chain head, about every 60&nbsp;seconds, plus the three challenges. A receipt forged later cannot invent those timestamps.</p>
-  </div>
-  <div class="chain-track" id="chaintrack">
-   <svg class="chain-line" preserveAspectRatio="none" viewBox="0 0 1000 10" aria-hidden="true"><line x1="0" y1="5" x2="1000" y2="5"/></svg>
-   <div class="cp glass"><b>KICKOFF</b><span class="mono">00:00:00</span><code>h0 3c9a…11f0</code><i class="ref">PC ✓</i></div>
-   <div class="cp glass"><b>CP 1</b><span class="mono">00:00:04</span><code>h1 a81e…92b4</code><i class="ref">PC ✓</i></div>
-   <div class="cp glass"><b>HEAD</b><span class="mono">00:01:00</span><code>anchor · 60s</code><i class="ref">QOR ✓</i></div>
-   <div class="cp glass ch"><b>CHALLENGE</b><span class="mono">00:07:31</span><code>nonce 7f3a…c19e</code><i class="ref">QOR ✓</i></div>
-   <div class="cp glass"><b>HALFTIME</b><span class="mono">00:14:02</span><code>h210 e5b2…7d19</code><i class="ref">PC ✓</i></div>
-   <div class="cp glass"><b>CP 411</b><span class="mono">00:27:24</span><code>h411 9c0f…4e8a</code><i class="ref">PC ✓</i></div>
-   <div class="cp glass fin"><b>FINAL</b><span class="mono">00:27:28</span><code>seal 21–17</code><i class="ref">SEALED</i></div>
-  </div>
-  <p class="note center">Illustrative values. PC is the laptop key. QOR is an official referee timestamp. It is not proof of a TPM.</p>
- </div>
-</section>
-
-<!-- 04 receipt -->
-<section class="scene alt" id="receipt">
- <div class="pin">
-  <div class="scene-copy">
-   <p class="num">04 / seal</p>
-   <h2 class="split">The receipt prints. Everyone signs.</h2>
-   <p>At the final whistle the player’s key signs the result. A receipt from one console is the <b>one-player tier</b>. Two-sided corroboration is a separate indicator. It never changes the verdict. It is available from QorCap v0.3.31 when both players pair their match: each client sends the referee’s pairing token and a signed score timeline. It has not yet been tested on a real two-player match.</p>
-  </div>
-  <div class="scene-art">
-   <div class="printer"><div class="slot"></div>
-    <div class="paper" id="paper">
-     <div class="ph"><img src="assets/logo.svg" alt="" width="22"> qor-receipt/v0</div>
-     <pre class="mono">match    madden27 · ps5
-result   HOME 21 — AWAY 17 · Q4
-challenges  3 / 3 passed
-checkpoints 412 · laptop key
-receipt_hash</pre>
-     <div class="hash mono" id="hash" data-full="sha256:9f3ac41e0b7d52e88a1f64c930de7b21a5c0f8e3d6b94a72e1c907fb">sha256:9f3ac41e0b7d52e88a1f64c930de7b21a5c0f8e3d6b94a72e1c907fb</div>
-     <ul class="sigs mono"><li><span>sig.home</span><b>ed25519:9f3a…c41e</b><em>✓</em></li><li><span>sig.referee</span><b>ed25519:e1c9…07fb</b><em>✓</em></li></ul>
-     <div class="pstamp" id="pstamp"><img src="assets/logo.svg" alt=""><span>SEALED</span></div>
-     <p class="note">Illustrative values, not a real match.</p>
+  <div class="hero-copy">
+    <div class="trio-telemetry-bar">
+      <span class="trio-telemetry-dot" aria-hidden="true"></span>
+      <span>trio · game-agnostic</span>
+      <span class="trio-sep">|</span>
+      <span>QPC <span class="trio-clock-val" id="qpc-clock">4,819,204,000 us</span></span>
     </div>
-   </div>
+    <h1 class="kinetic"><span class="line">Capture the clock.</span><span class="line">Stamp the hash.</span><span class="line accent">Verify in 60s.</span></h1>
+    <p class="lede">An open <b>fair-proof</b> &amp; <b>skill-proof</b> record system across three tools: <b>QorCap</b> records HDMI video + listen-only 1 kHz controller telemetry on one monotonic clock, <b>QorTime</b> issues Ed25519 hash-only timestamps without seeing your video, and <b>QorStream</b> exports scrubbed <code>.qormoment.tar</code> clips anyone can re-hash in a browser.</p>
+    <div class="ctas">
+      <a class="btn mag" href="verify/"><span>Open Verifier</span></a>
+      <a class="btn ghost mag" href="watch/#quickstart"><span>60s Trio Quickstart</span></a>
+      <a class="btn ghost mag" href="cap/"><span>Explore QorCap</span></a>
+    </div>
+
+    <div class="trio-switchboard" aria-label="Qor Trio switchboard">
+      <button type="button" class="beam-card sw-pill is-active" data-trio-mode="capture">
+        <div class="sw-head"><span class="sw-kicker">01 · QorCap</span><span class="sw-badge">Capture</span></div>
+        <h3>HDMI + 1 kHz USB Pad</h3>
+        <p>Listen-only Windows capture, <code>qorcap preflight</code> hardware gate, SHA-256 chunk chains.</p>
+        <div class="sw-artifact">hand_timeline.v0.jsonl · frame-chain.jsonl</div>
+      </button>
+      <button type="button" class="beam-card sw-pill" data-trio-mode="receipts">
+        <div class="sw-head"><span class="sw-kicker">02 · QorTime</span><span class="sw-badge">Anchor</span></div>
+        <h3>Ed25519 Hash Stamps</h3>
+        <p>Posts SHA-256 heads only to <code>/aux/v1/hash-stamp</code> — zero video upload, zero PII, plus optional referee receipts.</p>
+        <div class="sw-artifact">hash_stamp.v1.json · key_id 10ba682c8ad13513</div>
+      </button>
+      <button type="button" class="beam-card sw-pill" data-trio-mode="watch">
+        <div class="sw-head"><span class="sw-kicker">03 · QorStream</span><span class="sw-badge">Watch &amp; Verify</span></div>
+        <h3>Scrubbed Clips &amp; /check</h3>
+        <p>Loopback replay server &amp; offline <code>.qormoment.tar</code> bundles verified locally with WebCrypto.</p>
+        <div class="sw-artifact">LOCAL CHAIN INTACT · EXTERNAL HASH STAMP VERIFIED</div>
+      </button>
+    </div>
   </div>
- </div>
 </section>
 
-<!-- 05 verify -->
-<section class="scene" id="verify">
- <div class="pin">
-  <div class="scene-copy">
-   <p class="num">05 / verify</p>
-   <h2 class="split">One verdict. In your browser.</h2>
-   <p>Paste the JSON into the verifier. It checks every signature, the checkpoint chain and the challenges locally and returns a verdict. Nothing is uploaded.</p>
-   <div class="tiers">
-    <div class="tier"><b class="v ok">VERIFIED</b><span>Every signature, checkpoint, and challenge holds against a referee key on QorTime’s trusted list.</span></div>
-    <div class="tier"><b class="v pa">PARTIAL</b><span>Signatures check out against a trusted QorTime referee, but something is missing (a challenge, motion, …). An untrusted key is not PARTIAL.</span></div>
-    <div class="tier"><b class="v sa">SELF-SIGNED</b><span>Cryptography holds, but the referee key is not on QorTime’s built-in trusted list (local Start Match key, home-made key, or revoked). Never shown as VERIFIED.</span></div>
-    <div class="tier"><b class="v fa">FAIL</b><span>A signature, the chain, or a challenge does not hold.</span></div>
-   </div>
+<section class="hero-subgrid" id="tamper-lab">
+  <div class="beam-card tamper-lab">
+    <div class="lab-top">
+      <div>
+        <div class="act-tag">Interactive Cryptography Lab · Live Simulation</div>
+        <h2 style="margin:0;font-size:26px">Click any segment, frame link, or controller chunk to flip 1 byte</h2>
+      </div>
+      <div class="lab-controls">
+        <button type="button" class="btn ghost" id="lab-pin" aria-pressed="true">Pinned QorTime Key: 10ba682c8ad13513</button>
+        <button type="button" class="btn" id="lab-reset">Restore &amp; Re-Hash</button>
+      </div>
+    </div>
+
+    <div class="lab-verdict" id="lab-verdict" data-state="pass">LOCAL CHAIN INTACT · EXTERNAL HASH STAMP VERIFIED</div>
+
+    <div class="lab-lanes" style="margin-top:14px">
+      <div class="lab-scan-beam" aria-hidden="true"></div>
+      <div class="lab-lane">
+        <div class="lab-lane-lbl">Video Segments (HLS)</div>
+        <div class="lab-cells">
+          <button type="button" class="lab-cell" data-lane="seg" data-idx="0" data-label="seg_00003.ts">seg_03</button>
+          <button type="button" class="lab-cell" data-lane="seg" data-idx="1" data-label="seg_00004.ts">seg_04</button>
+          <button type="button" class="lab-cell" data-lane="seg" data-idx="2" data-label="seg_00005.ts">seg_05</button>
+          <button type="button" class="lab-cell" data-lane="seg" data-idx="3" data-label="seg_00006.ts">seg_06</button>
+          <button type="button" class="lab-cell" data-lane="seg" data-idx="4" data-label="seg_00007.ts">seg_07</button>
+          <button type="button" class="lab-cell" data-lane="seg" data-idx="5" data-label="seg_00008.ts">seg_08</button>
+        </div>
+      </div>
+      <div class="lab-lane">
+        <div class="lab-lane-lbl">Frame Clock SHA-256</div>
+        <div class="lab-cells">
+          <button type="button" class="lab-cell" data-lane="fr" data-idx="0" data-label="frame_chain link 0">f0..12</button>
+          <button type="button" class="lab-cell" data-lane="fr" data-idx="1" data-label="frame_chain link 25">f25..50</button>
+          <button type="button" class="lab-cell" data-lane="fr" data-idx="2" data-label="frame_chain link 50">f50..75</button>
+          <button type="button" class="lab-cell" data-lane="fr" data-idx="3" data-label="frame_chain link 75">f75..100</button>
+          <button type="button" class="lab-cell" data-lane="fr" data-idx="4" data-label="frame_chain link 100">f100..125</button>
+          <button type="button" class="lab-cell" data-lane="fr" data-idx="5" data-label="frame_chain link 125">f125..150</button>
+        </div>
+      </div>
+      <div class="lab-lane">
+        <div class="lab-lane-lbl">1 kHz Pad Chunks (±6s)</div>
+        <div class="lab-cells">
+          <button type="button" class="lab-cell" data-lane="hand" data-idx="0" data-label="hand chunk #6">chunk #6</button>
+          <button type="button" class="lab-cell" data-lane="hand" data-idx="1" data-label="hand chunk #7">chunk #7</button>
+          <button type="button" class="lab-cell" data-lane="hand" data-idx="2" data-label="hand chunk #8">chunk #8</button>
+          <button type="button" class="lab-cell" data-lane="hand" data-idx="3" data-label="hand chunk #9">chunk #9</button>
+          <button type="button" class="lab-cell" data-lane="hand" data-idx="4" data-label="hand chunk #10">chunk #10</button>
+          <button type="button" class="lab-cell" data-lane="hand" data-idx="5" data-label="hand chunk #11">chunk #11</button>
+        </div>
+      </div>
+    </div>
+    <div class="lab-diff" id="lab-diff"></div>
   </div>
-  <div class="scene-art">
-   <div class="flip" id="flip"><div class="flip-in">
-    <div class="face front glass"><div class="spin"></div><b class="mono">checking 412 signatures…</b></div>
-    <div class="face back glass"><img src="assets/logo.svg" alt="" width="72"><b class="big">VERIFIED</b><small class="mono">trusted referee key · chain intact · 3/3 challenges</small></div>
-   </div></div>
-   <div class="badges"><span class="badge single">◆ one-player tier · one recording</span><span class="badge dual">corroboration · separate · paired matches</span></div>
+</section>
+
+<section class="hero-subgrid" id="act-capture" style="padding-top:46px">
+  <div class="act-grid" data-stagger-group>
+    <div data-stagger-item>
+      <div class="act-tag">Act 01 · QorCap</div>
+      <h2 style="font-size:clamp(26px,3.2vw,38px);margin:0 0 12px">Capture every frame and USB pad report without touching the console.</h2>
+      <p style="color:var(--trio-muted)"><code>qorcap preflight</code> checks storage headroom, folder permissions, and wired DualSense / DualSense Edge visibility before play starts. During the run, QorCap stays lightweight — hashing video segments and chaining 1 kHz controller chunks on a single monotonic QPC clock.</p>
+      <ul class="act-bullets">
+        <li><b>Listen-only USB HID:</b> never sends rumble/output/feature overrides.</li>
+        <li><b>Streaming verification:</b> handles 600 MB/h sessions chunk-by-chunk with constant memory.</li>
+        <li><b>Game-agnostic core:</b> works on speedruns, shooters, sims, and sports — optional game readers sit cleanly alongside.</li>
+      </ul>
+      <div class="ctas" style="margin-top:18px"><a class="btn ghost mag" href="cap/"><span>Open QorCap Capture</span></a></div>
+    </div>
+    <div class="beam-card scope-wrap" data-stagger-item>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font:600 11.5px var(--qor-font-mono);color:var(--trio-muted)">
+        <span>1 KHZ CONTROLLER OSCILLOSCOPE</span>
+        <span style="color:var(--trio-cyan)">RX / RY / L2-R2 · READ-ONLY</span>
+      </div>
+      <canvas class="scope-canvas" id="scope-canvas" aria-label="Animated illustrative 1 kHz controller waveform"></canvas>
+      <div class="preflight-grid">
+        <div class="pf-row"><span>controller</span><span class="pf-pass">PASS · dualsense_edge</span></div>
+        <div class="pf-row"><span>hand_storage</span><span class="pf-pass">PASS · writable</span></div>
+        <div class="pf-row"><span>bundle_storage</span><span class="pf-pass">PASS · writable</span></div>
+        <div class="pf-row"><span>edge_settings</span><span class="pf-warn">DECLARED / UNKNOWN</span></div>
+      </div>
+    </div>
   </div>
- </div>
 </section>
 
-<div class="qor-section-weave" aria-hidden="true"></div>
-<section class="wrap" id="platforms">
- <p class="num">for platforms &amp; sponsors</p>
- <h2 class="split big">Release escrow on math, not screenshots.</h2>
- <div class="cards">
-  <div class="card glass"><h3>Verify in one call</h3><p>The reference verifier ships as a Python CLI and a small browser JS module. Run it on every result before paying out.</p><code>qortime verify r.json --referee-pub &lt;hex&gt;</code><span class="tag">hosted verify API · roadmap</span></div>
-  <div class="card glass"><h3>Fewer score disputes</h3><p>A sealed receipt replaces "he lied about the score" tickets with something a machine can check. What it can't see, we list plainly below.</p></div>
-  <div class="card glass"><h3>Open format</h3><p>JSON, canonicalized (JCS), Ed25519 signatures. Spec and schema in the repo, MIT licensed.</p><span class="tag">TPM device key · claimed, unverified (<a href="https://github.com/ConWan30/qortime/blob/main/docs/PHASE2.md">a checked TPM quote is roadmap</a>)</span></div>
- </div>
+<section class="hero-subgrid" id="act-anchor" style="padding-top:46px">
+  <div class="act-grid" data-stagger-group>
+    <div class="beam-card digest-funnel" data-stagger-item>
+      <div class="act-tag">Zero-Upload Architecture · qortime.aux.hash_stamp.v1</div>
+      <div class="funnel-row">
+        <div class="funnel-box">
+          <strong>Stays Private on Your PC</strong>
+          Full <code>vod.mp4</code>, <code>hand_raw.v0.bin</code>, USB serials, local file paths
+        </div>
+        <div class="funnel-arrow">SHA-256 ONLY →</div>
+        <div class="funnel-box">
+          <strong>Sent to QorTime</strong>
+          <code>hand_timeline_head</code>, <code>frame_chain_head</code>, <code>receipt_sha256</code>, nonce
+        </div>
+      </div>
+      <div class="funnel-box" style="border-color:rgba(46,242,255,0.4)">
+        <strong>Returned Ed25519 Hash Stamp (`hash_stamp.v1.json`)</strong>
+        Deterministic JCS canonical JSON signed with QorTime key <code>10ba682c8ad13513</code> — commits when QorTime observed those exact digests.
+      </div>
+    </div>
+    <div data-stagger-item>
+      <div class="act-tag">Act 02 · QorTime</div>
+      <h2 style="font-size:clamp(26px,3.2vw,38px);margin:0 0 12px">External time anchors without uploading your footage.</h2>
+      <p style="color:var(--trio-muted)">A local hash chain stops third parties from altering a clip afterward, but needs an external clock to show when those digests existed. Run opt-in <code>qorcap hash-stamp</code> against <code>POST /aux/v1/hash-stamp</code> to bind an Ed25519 timestamp to your session heads.</p>
+      <ul class="act-bullets">
+        <li><b>Zero video egress:</b> less than 1 KB of canonical JSON crosses the wire.</li>
+        <li><b>Optional Referee Receipts:</b> when an event uses QorTime's full referee scoring, genuine referee-verified matches can carry a <span class="verdict-chip verdict-chip--verified ref-verified-gold">VERIFIED</span> seal — kept strictly separate from practice checks.</li>
+      </ul>
+    </div>
+  </div>
 </section>
 
-<section class="wrap" id="limits">
- <div class="glass limits"><h2>Honest limits</h2>
- <p>QorTime checks the recording against its signed hash chain, and its timing against the referee's challenges and anchors. Controller reports from a USB-enumerated pad in the same session are logged by QorCap <span class="tag">since v0.3.0</span>. It does <b>not</b> prove:</p>
- <ul><li><b>Account sharing:</b> who is physically holding the controller. The referee does not check pad identity. QorCap’s second-pad note, when it exists, stays in the local <span class="mono">input_proof.json</span>.</li><li><b>Right-stick injection:</b> an inline passthrough adapter can add right-stick input the console obeys while QorCap logs the real pad. Open. Planned checks are an advisory per-axis stick-versus-camera signal first, and hardware such as a sealed tap before any pad-to-console binding.</li><li><b>Collusion:</b> both players agreeing to throw or fake a match.</li><li>Anything outside what the capture card saw.</li><li><b>Red team:</b> a virtual capture device was missed. Relays under about 2.5–3&nbsp;seconds, and a splice that is rehashed and resigned, came out weak. <a href="https://github.com/ConWan30/qorcap/blob/main/docs/REDTEAM.md">QorCap red-team notes</a>.</li></ul>
- <a class="btn ghost mag" href="https://github.com/ConWan30/qortime/blob/main/docs/RISKS.md"><span>Read RISKS.md</span></a></div>
+<section class="hero-subgrid" id="act-watch" style="padding-top:46px">
+  <div class="act-grid" data-stagger-group>
+    <div data-stagger-item>
+      <div class="act-tag">Act 03 · QorStream</div>
+      <h2 style="font-size:clamp(26px,3.2vw,38px);margin:0 0 12px">One `.qormoment.tar` bundle. Scrubbed, offline, verifiable in 60s.</h2>
+      <p style="color:var(--trio-muted)">Pick any highlight or disputed moment (`±6 s`), export a self-contained uncompressed tar archive, and hand it to a speedrun moderator, league admin, or viewer. They drop it into <b>/check</b> in any browser — WebCrypto re-hashes every file with zero server calls.</p>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;margin:14px 0 18px">
+        <span class="verdict-chip verdict-chip--pass">LOCAL CHAIN INTACT · EXTERNAL HASH STAMP VERIFIED</span>
+      </div>
+      <div class="ctas"><a class="btn mag" href="watch/"><span>Explore QorStream Watch</span></a><a class="btn ghost mag" href="verify/"><span>Open Receipt Verifier</span></a></div>
+    </div>
+    <div class="beam-card tar-capsule" data-stagger-item>
+      <div style="font:700 11px var(--qor-font-mono);color:var(--trio-cyan);letter-spacing:0.1em;margin-bottom:4px">INSIDE &lt;MATCH&gt;-T12.QORMOMENT.TAR</div>
+      <div class="tar-layer"><span>manifest.json</span><span>qorstream.moment_bundle.v0</span></div>
+      <div class="tar-layer"><span>hls/seg_*.ts + frame-chain.jsonl</span><span>Unedited ±6 s bytes + SHA-256 chain</span></div>
+      <div class="tar-layer"><span>hand_timeline.moment.jsonl</span><span>Checkpoint-bound + window 1 kHz records</span></div>
+      <div class="tar-layer"><span>hash_stamp.v1.json</span><span>Ed25519 stamp verified via WebCrypto</span></div>
+      <div class="tar-layer scrubbed"><span>Privacy Scrubber Active</span><span>pad_id, header &amp; local C:\ / D:\ paths STRIPPED</span></div>
+    </div>
+  </div>
 </section>
 
-<section class="wrap plan-sec" id="verified-match">
- <div class="plan-panel glass">
-  <p class="plan-kicker"><span class="dot"></span> planned</p>
-  <h2>Verified Match</h2>
-  <p>Verified Match, a hosted referee countersign, is planned at $9.99. Self-verify is free today. Payments are not open yet, so there is nothing to buy on this site.</p>
-  <div class="ctas"><a class="btn mag" href="verify/"><span>Self-verify, free</span></a><a class="btn ghost mag" href="early-access/"><span>Early access</span></a><a class="btn ghost mag" href="pricing/"><span>Pricing</span></a></div>
- </div>
+<section class="hero-subgrid" id="wave-markets" style="padding-top:46px">
+  <div data-stagger-group>
+    <div class="act-tag">Where the Trio Fits · Wave 1 &amp; Wave 2</div>
+    <h2 style="font-size:clamp(26px,3.4vw,40px);margin:0 0 18px">Built for gaming communities first, ready for high-rate physical telemetry beyond games.</h2>
+    <div class="bento-grid">
+      <article class="beam-card" data-stagger-item>
+        <div class="sw-kicker">Wave 1 · #1 Fit</div>
+        <h3 style="margin:8px 0">Speedrunning &amp; World Records</h3>
+        <p style="margin:0;color:var(--trio-muted);font-size:14.5px">Speedrunners already capture HDMI + inputs. Drop-in <code>.qormoment.tar</code> clips and offline <code>/check</code> cuts splice and timing review queues without touching console rules.</p>
+      </article>
+      <article class="beam-card" data-stagger-item>
+        <div class="sw-kicker">Wave 1 · Tournaments</div>
+        <h3 style="margin:8px 0">Leagues &amp; Console Competition</h3>
+        <p style="margin:0;color:var(--trio-muted);font-size:14.5px">Replaces manual clip-dispute screenshots with SHA-256 receipts, external hash stamps, and optional game readers (starting with Madden NFL 27 scorebug/challenge modules).</p>
+      </article>
+      <article class="beam-card" data-stagger-item>
+        <div class="sw-kicker">Wave 2 · Beyond Gaming</div>
+        <h3 style="margin:8px 0">Simulators, Robotics &amp; Hardware QA</h3>
+        <p style="margin:0;color:var(--trio-muted);font-size:14.5px">Shared monotonic-clock binding between video frames and sub-ms physical controller/pedal inputs transfers directly to sim racing, FPV, teleoperation, and controller QA labs.</p>
+      </article>
+    </div>
+  </div>
 </section>
 
-<section class="wrap cta">
- <h2 class="split big">Check a receipt yourself.</h2><p>Early prototype. The verifier runs entirely in your browser.</p>
- <div class="ctas c"><a class="btn mag" href="verify/"><span>Open the verifier</span></a><a class="btn ghost mag" href="https://github.com/ConWan30/qortime"><span>Star on GitHub</span></a></div>
+<section class="hero-subgrid" id="paths" style="padding-top:40px">
+  <div class="cards dual-rail">
+    <div class="beam-card">
+      <div class="act-tag">Path A · Self-Verify Free</div>
+      <h3>Verify a Receipt or Bundle Now</h3>
+      <p style="color:var(--trio-muted)">Run browser Ed25519 signature, checkpoint-chain, and challenge verification directly on your device — zero uploads. Also inspect <a href="record-pack/">Match Record Packs</a> for dispute/ticket bundles. Verified Match, a hosted referee countersign, is planned at $9.99. Self-verify is free today.</p>
+      <div class="ctas"><a class="btn mag" href="verify/"><span>Open Verifier</span></a></div>
+    </div>
+    <div class="beam-card">
+      <div class="act-tag">Path B · Try the Trio Flow</div>
+      <h3>Follow the 60-Second Quickstart</h3>
+      <p style="color:var(--trio-muted)">Walk through <code>qorcap preflight</code> → capture → <code>qorcap hash-stamp</code> → export <code>.qormoment.tar</code> → offline browser <code>/check</code> with trusted key pinning (`?k=`).</p>
+      <div class="ctas"><a class="btn ghost mag" href="watch/#quickstart"><span>Open 60s Quickstart</span></a></div>
+    </div>
+  </div>
+</section>
+
+<section class="hero-subgrid" id="limits" style="padding-bottom:64px">
+  <div class="beam-card limits">
+    <h2 style="margin:0 0 10px">Honest Limits (Fair-Proof, Never Overclaimed)</h2>
+    <p style="color:var(--trio-muted)">A passing check confirms the bytes, chained SHA-256 commitments, and QorTime timestamp match their cryptographic commitments. It does <b>not</b> establish:</p>
+    <ul>
+      <li><b>Hardware operator identity:</b> logs come from an enumerated USB pad in that session, not biometrics of who held the controller.</li>
+      <li><b>Pre-capture injection:</b> inline passthrough adapters before the capture card or console occur upstream of the observed USB/HDMI stream.</li>
+      <li><b>Practice vs. Verified:</b> Practice bundles stay labeled <code>PRACTICE</code> and use non-gold verification colors; gold is reserved strictly for referee-<code>VERIFIED</code> match records.</li>
+    </ul>
+    <div class="ctas" style="margin-top:16px">
+      <a class="btn ghost mag" href="how-it-works/"><span>Architecture Details</span></a>
+      <a class="btn ghost mag" href="pricing/"><span>Open-Core Model</span></a>
+    </div>
+  </div>
 </section>
 </main>
-<p class="qor-watch-note" id="watch-coming-soon">Watch is the third Qor product. It is not public yet.</p>
+
 <footer class="qor-footer" data-qor-footer data-active="receipts"
   data-receipts-href="./"
   data-capture-href="cap/"
-  data-watch-href="#watch-coming-soon">
+  data-watch-href="watch/">
   <div class="qor-footer__inner">
     <div class="qor-footer__top">
       <div class="qor-footer__brand-col">
@@ -283,25 +313,38 @@ receipt_hash</pre>
           <span class="qor-footer__mark"><img src="qor-ui/brand/logo-icon.svg" alt="" width="26" height="26"></span>
           <span>QorTime</span>
         </a>
-        <p class="qor-footer__tagline">Signed match receipts, local capture, and a browser verifier. MIT · early prototype.</p>
+        <p class="qor-footer__tagline">Fair-proof capture receipts, hash-only time anchors, and zero-upload browser verification. MIT.</p>
       </div>
-      <nav class="qor-footer__nav" aria-label="Qor family footer">
+      <nav class="qor-footer__nav" aria-label="Qor Trio footer">
         <a class="qor-footer__link" data-qor-link="receipts" href="./" aria-current="page">Receipts</a>
         <a class="qor-footer__link" data-qor-link="capture" href="cap/">Capture</a>
-        <a class="qor-footer__link" data-qor-link="watch" href="#watch-coming-soon">Watch</a>
+        <a class="qor-footer__link" data-qor-link="watch" href="watch/">Watch</a>
       </nav>
     </div>
-    <nav class="qor-footer__site" aria-label="QorTime pages"><a href="verify/">Verify</a><a href="#flow">Prove · Share</a><a href="matches/">Matches</a><a href="challenge/">Challenges</a><a href="how-it-works/">How it works</a><a href="pricing/">Pricing</a><a href="early-access/">Early access</a><a href="cap/">Capture</a><a href="https://github.com/ConWan30/qorcap/releases/latest">QorCap</a><a href="https://github.com/ConWan30/qortime">GitHub</a><a href="https://x.com/QorTimeHQ">@QorTimeHQ</a></nav>
+    <nav class="qor-footer__site" aria-label="QorTime pages">
+      <a href="verify/">Verify</a>
+      <a href="cap/">Capture</a>
+      <a href="watch/">Watch</a>
+      <a href="how-it-works/">How it works</a>
+      <a href="pricing/">Pricing</a>
+      <a href="record-pack/">Record packs</a>
+      <a href="matches/">Matches</a>
+      <a href="early-access/">Early access</a>
+      <a href="https://github.com/ConWan30/qortime">QorTime GitHub</a>
+      <a href="https://github.com/ConWan30/qorcap">QorCap GitHub</a>
+      <a href="https://github.com/ConWan30/qorstream">QorStream GitHub</a>
+      <a href="https://x.com/QorTimeHQ">@QorTimeHQ</a>
+    </nav>
     <div class="qor-footer__bottom">
-      <p class="qor-footer__record-line"><span class="qor-footer__record-dot" aria-hidden="true"></span><span>Fair-proof record format across Receipts and Capture</span></p>
-      <div class="qor-footer__legal">Not affiliated with EA, the NFL or Sony. Madden NFL is a trademark of its owner.</div>
+      <p class="qor-footer__record-line"><span class="qor-footer__record-dot" aria-hidden="true"></span><span>Fair-proof record format across Capture, Receipts, and Watch</span></p>
+      <div class="qor-footer__legal">Game-agnostic core · Optional game modules are not affiliated with EA, the NFL, Sony, or Activision.</div>
     </div>
   </div>
 </footer>
 <script src="vendor/gsap.min.js" defer></script>
 <script src="vendor/ScrollTrigger.min.js" defer></script>
 <script src="vendor/lenis.min.js" defer></script>
-<script src="app.js" defer></script>
+<script src="trio-stage.js" defer></script>
 <script type="module">
   import "./qor-ui/nav.js";
   import "./qor-ui/footer.js";

@@ -1,11 +1,11 @@
 const FOOTER_DEFAULTS = {
   home: "/",
   receiptsHref: "https://qortime.com",
-  captureHref: "https://qortime.com/cap",
-  watchHref: "#watch-coming-soon",
+  captureHref: "https://qortime.com/cap/",
+  watchHref: "https://qortime.com/watch/",
   logoSrc: "brand/logo-icon.svg",
-  tagline: "Signed match receipts, local capture, and a browser verifier.",
-  legal: "QorTime product family.",
+  tagline: "Fair-proof capture, hash-only time anchors, and zero-upload browser verification.",
+  legal: "QorTime · QorCap · QorStream Trio.",
 };
 
 function readFooterConfig(el) {
@@ -99,7 +99,7 @@ export class QorFooterElement extends HTMLElement {
           <div class="qor-footer__bottom">
             <p class="qor-footer__record-line">
               <span class="qor-footer__record-dot" aria-hidden="true"></span>
-              <span>Fair-proof record format across Receipts and Capture</span>
+              <span>Fair-proof record format across Capture, Receipts, and Watch</span>
             </p>
             <div class="qor-footer__legal">${slotLegal}</div>
           </div>

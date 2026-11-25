@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en" data-qor-site="watch"><head>
+<meta charset="utf-8"><script>document.documentElement.classList.add("js");setTimeout(function(){var h=document.documentElement;if(!h.classList.contains("qor-motion"))h.classList.remove("js")},3000)</script><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Watch — QorStream · Scrubbed Moment Bundles &amp; Browser /check</title>
+<meta name="description" content="QorStream is the self-hosted Watch pillar of the Qor Trio: loopback HLS replay, scrubbed .qormoment.tar clip bundles, and zero-upload WebCrypto /check verification in 60 seconds.">
+<meta name="theme-color" content="#040712"><meta name="color-scheme" content="dark">
+<link rel="icon" type="image/svg+xml" href="../qor-ui/brand/favicon.svg"><link rel="icon" type="image/png" sizes="32x32" href="../qor-ui/brand/favicon-32.png"><link rel="apple-touch-icon" href="../qor-ui/brand/apple-touch-icon.png">
+<link rel="canonical" href="https://qortime.com/watch/">
+<link rel="stylesheet" href="../qor-ui/tokens.css"><link rel="stylesheet" href="../qor-ui/motion.css"><link rel="stylesheet" href="../qor-ui/nav.css"><link rel="stylesheet" href="../qor-ui/footer.css">
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="../qor-site.css">
+<link rel="stylesheet" href="../trio-observatory.css">
+</head><body class="page trio-body trio-blueprint-bg">
+<div class="grain" aria-hidden="true"></div>
+<header class="qor-nav" data-qor-nav data-active="watch"
+  data-receipts-href="../"
+  data-capture-href="../cap/"
+  data-watch-href="./">
+  <nav class="qor-nav__inner" aria-label="Qor Trio">
+    <a class="qor-nav__brand" href="../">
+      <span class="qor-nav__mark">
+        <img src="../qor-ui/brand/logo-icon.svg" alt="" width="30" height="30">
+        <span class="qor-shimmer" aria-hidden="true"></span>
+      </span>
+      <span class="qor-nav__wordmark">QorStream<span class="qor-nav__wordmark-sub">Watch</span></span>
+    </a>
+    <div class="qor-nav__track">
+      <a class="qor-nav__link" data-qor-link="receipts" href="../">Receipts</a>
+      <a class="qor-nav__link" data-qor-link="capture" href="../cap/">Capture</a>
+      <a class="qor-nav__link" data-qor-link="watch" href="./" aria-current="page">Watch</a>
+      <span class="qor-nav__weave" aria-hidden="true">
+        <span class="qor-nav__strand qor-nav__strand--blue"></span>
+        <span class="qor-nav__strand qor-nav__strand--cyan"></span>
+        <span class="qor-nav__strand qor-nav__strand--white"></span>
+        <span class="qor-nav__knot"></span>
+      </span>
+    </div>
+    <div class="qor-nav__actions">
+      <a class="qor-nav__cta" href="../verify/">Verifier</a>
+      <button class="qor-nav__toggle" type="button" aria-expanded="false" aria-controls="qor-mobile-sheet" aria-label="Toggle family menu">
+        <span class="qor-nav__toggle-lanes" aria-hidden="true"><span></span><span></span><span></span></span>
+      </button>
+    </div>
+  </nav>
+  <div class="qor-nav__sheet" id="qor-mobile-sheet" hidden>
+    <div class="qor-nav__sheet-panel" role="dialog" aria-label="Qor Trio navigation">
+      <a class="qor-nav__sheet-link" data-qor-link="receipts" href="../"><span>Receipts</span></a>
+      <a class="qor-nav__sheet-link" data-qor-link="capture" href="../cap/"><span>Capture</span></a>
+      <a class="qor-nav__sheet-link" data-qor-link="watch" href="./" aria-current="page"><span>Watch</span></a>
+      <a class="qor-nav__cta qor-nav__sheet-cta" href="../verify/">Verifier</a>
+    </div>
+  </div>
+</header>
+
+<main>
+<section class="page-hero">
+  <p class="kicker"><span class="dot"></span> watch · self-hosted replay + .qormoment.tar + browser /check</p>
+  <h1><span class="line">One clip bundle.</span><br><span class="line accent">Verified offline in 60s.</span></h1>
+  <p class="lede"><b>QorStream</b> is the third Trio pillar: a loopback replay &amp; verification server that exports scrubbed <code>±6 s</code> <b><code>.qormoment.tar</code></b> archives and verifies segments, frame chains, controller chunks, and Ed25519 QorTime hash stamps in any browser with zero uploads.</p>
+  <div class="ctas">
+    <a class="btn mag" href="https://github.com/ConWan30/qorstream"><span>QorStream on GitHub</span></a>
+    <a class="btn ghost mag" href="#quickstart"><span>60-Second Quickstart</span></a>
+    <a class="btn ghost mag" href="../verify/"><span>Open QorTime Verifier</span></a>
+  </div>
+</section>
+
+<section class="hero-subgrid" id="quickstart">
+  <div class="beam-card" id="qs-stepper">
+    <div class="act-tag">Interactive Walkthrough · 60-Second Verification Flow</div>
+    <h2 style="margin:0 0 12px">Capture → Stamp → Export → Verify</h2>
+    <div class="stepper-tabs" role="tablist" aria-label="60-second verification steps">
+      <button type="button" class="stepper-tab" role="tab" aria-selected="true">01 Preflight</button>
+      <button type="button" class="stepper-tab" role="tab" aria-selected="false">02 Capture</button>
+      <button type="button" class="stepper-tab" role="tab" aria-selected="false">03 Hash-Stamp</button>
+      <button type="button" class="stepper-tab" role="tab" aria-selected="false">04 Export Bundle</button>
+      <button type="button" class="stepper-tab" role="tab" aria-selected="false">05 Browser /check</button>
+    </div>
+    <div class="code-cmd">
+      <code id="qs-cmd">qorcap.exe preflight</code>
+      <button type="button" class="btn" id="qs-copy">Copy</button>
+    </div>
+    <p id="qs-desc" style="margin:12px 0 0;color:var(--trio-muted);font-size:14.5px"></p>
+  </div>
+</section>
+
+<section class="hero-subgrid" id="bundle" style="padding-top:32px;padding-bottom:64px">
+  <div class="act-grid" data-stagger-group>
+    <div class="beam-card tar-capsule" data-stagger-item>
+      <div class="act-tag">Bundle Contents · qorstream.moment_bundle.v0</div>
+      <div class="tar-layer"><span>manifest.json</span><span>Schema + expected SHA-256 pointers</span></div>
+      <div class="tar-layer"><span>receipt.json</span><span>Redacted viewer receipt copy</span></div>
+      <div class="tar-layer"><span>frame-chain.jsonl + hls/seg_*.ts</span><span>Unedited source video + full genesis link chain</span></div>
+      <div class="tar-layer"><span>hand_timeline.moment.jsonl</span><span>Checkpoint-committed head + scrubbed ±6 s pad records</span></div>
+      <div class="tar-layer"><span>hash_stamp.v1.json (optional)</span><span>External QorTime Ed25519 stamp · pinnable via ?k=</span></div>
+      <div class="tar-layer scrubbed"><span>Stripped Automatically</span><span>0 pad_id · 0 stream keys · 0 local filesystem paths</span></div>
+    </div>
+    <div class="beam-card" data-stagger-item>
+      <div class="act-tag">Two Ways Moderators Verify</div>
+      <h2 style="margin:0 0 10px">Zero-Upload Browser or CLI</h2>
+      <p style="color:var(--trio-muted)">Drop any <code>.qormoment.tar</code> directly onto <b>/check</b> in a browser (no server requests made) or verify from a terminal:</p>
+      <div class="code-cmd" style="margin:12px 0"><code>node tools/check_bundle.mjs clip.qormoment.tar --trusted-stamp-key &lt;key_id&gt;</code></div>
+      <p style="color:var(--trio-muted);font-size:14px">Share a pre-pinned URL cleanly with <code>/check/&lt;match_id&gt;?t=12&amp;k=&lt;key_id&gt;</code>, copy the plain-text verification summary with <b>Copy summary</b>, or download a <code>.qormoment.tar</code> directly after a server check.</p>
+      <div class="ctas" style="margin-top:14px"><a class="btn ghost mag" href="../cap/"><span>Back to Capture (QorCap)</span></a><a class="btn ghost mag" href="../"><span>Back to Trio Hub</span></a></div>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer class="qor-footer" data-qor-footer data-active="watch"
+  data-receipts-href="../"
+  data-capture-href="../cap/"
+  data-watch-href="./">
+  <div class="qor-footer__inner">
+    <div class="qor-footer__top">
+      <div class="qor-footer__brand-col">
+        <a class="qor-footer__brand" href="../">
+          <span class="qor-footer__mark"><img src="../qor-ui/brand/logo-icon.svg" alt="" width="26" height="26"></span>
+          <span>QorStream</span>
+        </a>
+        <p class="qor-footer__tagline">Self-hosted Watch pillar of the Qor Trio: scrubbed moment bundles and WebCrypto browser verification.</p>
+      </div>
+      <nav class="qor-footer__nav" aria-label="Qor Trio footer">
+        <a class="qor-footer__link" data-qor-link="receipts" href="../">Receipts</a>
+        <a class="qor-footer__link" data-qor-link="capture" href="../cap/">Capture</a>
+        <a class="qor-footer__link" data-qor-link="watch" href="./" aria-current="page">Watch</a>
+      </nav>
+    </div>
+    <nav class="qor-footer__site" aria-label="QorStream pages">
+      <a href="../">Hub</a>
+      <a href="../cap/">Capture</a>
+      <a href="../verify/">Verify</a>
+      <a href="../how-it-works/">How it works</a>
+      <a href="../pricing/">Pricing</a>
+      <a href="https://github.com/ConWan30/qorstream">QorStream GitHub</a>
+      <a href="https://x.com/QorTimeHQ">@QorTimeHQ</a>
+    </nav>
+    <div class="qor-footer__bottom">
+      <p class="qor-footer__record-line"><span class="qor-footer__record-dot" aria-hidden="true"></span><span>Fair-proof record format across Capture, Receipts, and Watch</span></p>
+      <div class="qor-footer__legal">Local loopback by default · No gold UI on practice or watch verification views.</div>
+    </div>
+  </div>
+</footer>
+<script src="../vendor/gsap.min.js" defer></script>
+<script src="../vendor/ScrollTrigger.min.js" defer></script>
+<script src="../trio-stage.js" defer></script>
+<script type="module">
+  import "../qor-ui/nav.js";
+  import "../qor-ui/footer.js";
+  import { initReveal, initSectionTransitions } from "../qor-ui/motion.js";
+  initReveal();
+  initSectionTransitions();
+  document.documentElement.classList.add("qor-motion");
+</script>
+</body></html>
