@@ -3,7 +3,10 @@
 Designed for Cloud Run / container deployment of ``/aux/v1/hash-stamp`` with:
 * Fail-closed signing-key loading from a mounted secret file or env var
   (never generated ephemerally at runtime, never logged on failure).
-* Fail-closed append-only ledger persistence and startup ``verify_chain()``.
+* Single startup chain verification via ``StampLedger`` (fail-closed: an invalid
+  ledger marks the app not-ready on ``/healthz`` and refuses ``POST`` stamps).
+* Cheap ``O(1)`` ``GET /healthz`` probe returning startup-set flags without
+  re-verifying the ledger or acquiring the ledger lock.
 * Strict request-size ceiling before buffering request bodies (HTTP 413).
 * Zero referee match endpoints and zero API docs schema routes exposed.
 """
@@ -18,7 +21,6 @@ from typing import Any, Callable
 from fastapi import FastAPI, HTTPException, Request
 
 from qor_receipt.hash_stamp import (
-    GENESIS,
     MAX_BODY_BYTES,
     SERVICE_ID,
     HashStampError,
@@ -66,24 +68,34 @@ def create_hash_stamp_app(
     stamp_db_path: str | Path | None = None,
     max_body_bytes: int = MAX_BODY_BYTES,
 ) -> FastAPI:
-    """Build the isolated hash-stamp FastAPI app and run ``verify_chain()`` at startup."""
+    """Build the isolated hash-stamp FastAPI app and verify ledger integrity once at startup."""
     resolved_key = key or load_signing_key_from_env()
     now = clock or (lambda: int(time.time() * 1000))
     jsonl_target = stamp_jsonl_path if stamp_jsonl_path is not None else (os.getenv("QOR_HASH_STAMP_JSONL") or None)
     db_target = stamp_db_path if stamp_db_path is not None else (os.getenv("QOR_HASH_STAMP_DB") or None)
 
-    stamps = StampLedger(resolved_key, clock=now, db_path=db_target, jsonl_path=jsonl_target)
-    startup_check = stamps.verify_chain()
-    if not startup_check.get("ok"):
-        stamps.close()
-        raise RuntimeError(f"hash-stamp ledger verify_chain failed at startup: {startup_check.get('reason')}")
+    stamps: StampLedger | None = None
+    startup_ready = False
+    startup_chain_ok = False
+    startup_reason: str | None = None
+    try:
+        # StampLedger.__init__ runs _load_and_verify() exactly once from GENESIS.
+        stamps = StampLedger(resolved_key, clock=now, db_path=db_target, jsonl_path=jsonl_target)
+        startup_ready = True
+        startup_chain_ok = True
+    except HashStampError as exc:
+        stamps = None
+        startup_ready = False
+        startup_chain_ok = False
+        startup_reason = exc.detail
 
     @contextlib.asynccontextmanager
     async def _lifespan(_app: FastAPI):
         try:
             yield
         finally:
-            stamps.close()
+            if stamps is not None:
+                stamps.close()
 
     app = FastAPI(
         title="QorTime hash-stamp service",
@@ -94,35 +106,47 @@ def create_hash_stamp_app(
         lifespan=_lifespan,
     )
     app.state.stamp_ledger = stamps
+    app.state.ready = startup_ready
+    app.state.chain_ok = startup_chain_ok
+    app.state.startup_reason = startup_reason
 
     @app.get("/healthz")
     def healthz() -> dict[str, Any]:
-        chk = stamps.verify_chain()
-        if not chk.get("ok"):
+        # O(1) probe: reads immutable startup flags only (zero disk reads, zero verify_chain, zero ledger lock).
+        if not app.state.ready or not app.state.chain_ok:
             raise HTTPException(
                 503,
                 {
                     "ok": False,
-                    "service": SERVICE_ID,
+                    "ready": False,
                     "chain_ok": False,
-                    "reason": chk.get("reason"),
+                    "service": SERVICE_ID,
+                    "reason": app.state.startup_reason or "startup_verification_failed",
                 },
             )
         return {
             "ok": True,
+            "ready": True,
+            "chain_ok": True,
             "service": SERVICE_ID,
             "key_id": resolved_key.key_id,
-            "entries": chk.get("entries", 0),
-            "head_ledger_sha256": chk.get("head_ledger_sha256") or GENESIS,
-            "chain_ok": True,
         }
+
+    def _require_ready_ledger() -> StampLedger:
+        if not app.state.ready or not app.state.chain_ok or stamps is None:
+            raise HTTPException(
+                503,
+                f"hash-stamp service not ready: {app.state.startup_reason or 'ledger unavailable'}",
+            )
+        return stamps
 
     @app.get("/aux/v1/hash-stamp/key")
     def get_hash_stamp_key() -> dict[str, str]:
-        return stamps.key_info()
+        return _require_ready_ledger().key_info()
 
     @app.post("/aux/v1/hash-stamp")
     async def post_hash_stamp(request: Request) -> dict[str, Any]:
+        ledger = _require_ready_ledger()
         content_length = request.headers.get("content-length")
         if content_length is not None:
             try:
@@ -145,13 +169,13 @@ def create_hash_stamp_app(
             chunks.append(chunk)
 
         try:
-            return stamps.issue_raw(b"".join(chunks))
+            return ledger.issue_raw(b"".join(chunks))
         except HashStampError as exc:
             raise HTTPException(exc.status_code, exc.detail) from None
 
     @app.get("/aux/v1/hash-stamp/{stamp_id}")
     def get_hash_stamp(stamp_id: str) -> dict[str, Any]:
-        found = stamps.get(stamp_id)
+        found = _require_ready_ledger().get(stamp_id)
         if found is None:
             raise HTTPException(404, "no such hash stamp")
         return found
