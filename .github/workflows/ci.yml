@@ -9,6 +9,7 @@ jobs:
   python:
     runs-on: ubuntu-24.04
     strategy:
+      fail-fast: false
       matrix:
         python: ["3.11", "3.13"]
     steps:
@@ -18,7 +19,18 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: Install ffmpeg (the referee fMP4 and frame-rate tests need it)
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg && ffmpeg -version | head -1
-      - run: pip install -e ".[dev,vision]"
+      - name: Install package and dev/vision extras
+        run: |
+          for attempt in 1 2 3; do
+            echo "pip install attempt ${attempt}/3"
+            if python -m pip install --no-cache-dir --retries 10 --timeout 60 -e ".[dev,vision]"; then
+              exit 0
+            fi
+            if [ "${attempt}" -eq 3 ]; then
+              exit 1
+            fi
+            sleep 15
+          done
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - run: ruff check .
       - run: pytest -q -rs
