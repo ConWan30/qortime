@@ -1,0 +1,15 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - services/hash-stamp/Dockerfile
+      - -t
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/qortime-hash-stamp:${_TAG}
+      - .
+images:
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/qortime-hash-stamp:${_TAG}
+substitutions:
+  _REGION: us-central1
+  _AR_REPO: qortime
+  _TAG: latest
