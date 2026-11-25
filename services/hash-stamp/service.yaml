@@ -1,0 +1,80 @@
+# Declarative Cloud Run v1 service template for qortime-hash-stamp.
+# Replace <PROJECT_ID>, <REGION>, <IMAGE_URI>, <LEDGER_BUCKET>, and <RUNTIME_SA_EMAIL>
+# (or pass equivalent flags to `gcloud run deploy --no-allow-unauthenticated`).
+# Never put raw secrets in this file.
+# Beta deploy is IAM-required (--no-allow-unauthenticated): NEVER grant roles/run.invoker to allUsers.
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: qortime-hash-stamp
+  labels:
+    cloud.googleapis.com/location: <REGION>
+    app.kubernetes.io/part-of: qortime-aux-hash-stamp
+  annotations:
+    run.googleapis.com/ingress: all
+spec:
+  template:
+    metadata:
+      annotations:
+        run.googleapis.com/execution-environment: gen2
+        autoscaling.knative.dev/minScale: "0"
+        # maxScale=1 enforces single-writer serialization on /data/hash_stamps.jsonl over Cloud Storage FUSE.
+        autoscaling.knative.dev/maxScale: "1"
+    spec:
+      serviceAccountName: <RUNTIME_SA_EMAIL>
+      containerConcurrency: 16
+      timeoutSeconds: 30
+      containers:
+        - image: <IMAGE_URI>
+          ports:
+            - name: http1
+              containerPort: 8080
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          env:
+            - name: QOR_HASH_STAMP_AUTOSTART
+              value: "1"
+            - name: QOR_HASH_STAMP_JSONL
+              value: /data/hash_stamps.jsonl
+            - name: QOR_HASH_STAMP_SEED_FILE
+              value: /run/secrets/hash-stamp-seed/seed
+          volumeMounts:
+            - name: stamp-ledger
+              mountPath: /data
+            - name: stamp-signing-seed
+              mountPath: /run/secrets/hash-stamp-seed
+              readOnly: true
+          # Sized for single startup verify_chain (~2.3 s CPU @ 10k stamps ESTIMATED) + GCS FUSE read margin.
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 2
+            timeoutSeconds: 5
+            periodSeconds: 10
+            failureThreshold: 6
+          # O(1) startup-flag liveness check only (never re-reads GCS FUSE ledger).
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            timeoutSeconds: 3
+            periodSeconds: 30
+            failureThreshold: 3
+      volumes:
+        - name: stamp-ledger
+          csi:
+            driver: gcsfuse.run.googleapis.com
+            volumeAttributes:
+              bucketName: <LEDGER_BUCKET>
+        - name: stamp-signing-seed
+          secret:
+            secretName: qortime-hash-stamp-seed
+            items:
+              - key: latest
+                path: seed
