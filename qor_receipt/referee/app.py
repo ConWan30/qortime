@@ -8,9 +8,11 @@ Player requests carry an Ed25519 signature over JCS(request body) by the player 
 """
 from __future__ import annotations
 
+import contextlib
 import os
 import secrets
 import time
+from pathlib import Path
 from typing import Any, Callable
 
 from fastapi import FastAPI, HTTPException, Request
@@ -51,13 +53,30 @@ class Signed(BaseModel):
     sig: str
 
 
-def create_app(key: SoftwareKey | None = None, clock: Callable[[], int] | None = None,
-               nonce_fn: Callable[[str, str], str] | None = None) -> FastAPI:
+def create_app(
+    key: SoftwareKey | None = None,
+    clock: Callable[[], int] | None = None,
+    nonce_fn: Callable[[str, str], str] | None = None,
+    *,
+    stamp_db_path: str | Path | None = None,
+    stamp_jsonl_path: str | Path | None = None,
+) -> FastAPI:
     """nonce_fn(phase, role) is ONLY for agent replay of a recorded session; production draws a menu-safe nonce."""
     key = key or (SoftwareKey.from_seed_hex(os.environ["QOR_REFEREE_SEED"]) if os.getenv("QOR_REFEREE_SEED") else SoftwareKey())
     now = clock or (lambda: int(time.time() * 1000))
-    app = FastAPI(title="QorTime referee", version="0.1.0")
-    stamps = StampLedger(key, clock=now)
+    db_target = stamp_db_path if stamp_db_path is not None else (os.getenv("QOR_HASH_STAMP_DB") or None)
+    jsonl_target = stamp_jsonl_path if stamp_jsonl_path is not None else (os.getenv("QOR_HASH_STAMP_JSONL") or None)
+    stamps = StampLedger(key, clock=now, db_path=db_target, jsonl_path=jsonl_target)
+
+    @contextlib.asynccontextmanager
+    async def _lifespan(_app: FastAPI):
+        try:
+            yield
+        finally:
+            stamps.close()
+
+    app = FastAPI(title="QorTime referee", version="0.1.0", lifespan=_lifespan)
+    app.state.stamp_ledger = stamps
     M: dict[str, dict[str, Any]] = {}
 
     def get(mid: str) -> dict[str, Any]:
