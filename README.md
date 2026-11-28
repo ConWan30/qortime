@@ -67,13 +67,16 @@ flowchart LR
   B --> C[Signed receipt]
   C --> D[QorTime referee]
   D --> E[Public viewer]
+  A -.->|Sealed Controller Timeline| H[Hand-timeline sidecar<br/>advisory, lower-only]
+  A -.->|SHA-256 digests only| S[Aux hash-stamp service<br/>no gold, not a ruling]
 ```
 
 1. **HDMI capture.** QorCap records the capture card on Windows and fingerprints the video as it is written (hash chain, timestamped checkpoints). Since v0.3.0 it also logs controller button reports from that same session.
 2. **Scorebug read.** The score is read off the recording, digit by digit, and locked only when consecutive frames agree. A refused read is dropped. The reader does not guess.
 3. **Signed receipt.** The laptop signs `qor-receipt/v0` with ed25519. That signature is **self-signed**: the signing key sits on the player's PC. The verifier status code is `SELF_ATTESTED`.
 4. **QorTime referee.** `qorcap submit` can upload the bundle to the official referee at `https://qortime-referee-production.up.railway.app`. It re-checks chains, video bytes, and the ending, and only then may countersign. Any check error is HTTP 422. Code and rules: [docs/REFEREE_SERVICE.md](docs/REFEREE_SERVICE.md).
-5. **Public viewer.** `qortime publish` writes `site/matches/<id>/`. The page is labeled with the status the verifier computed. A FAIL receipt is refused unless `--allow-fail`, and then every surface says the result is not verified.
+5. **Public viewer & Trio site.** `qortime publish` writes `site/matches/<id>/`. The page is labeled with the status the verifier computed. A FAIL receipt is refused unless `--allow-fail`, and then every surface says the result is not verified. The public site aligns QorTime, QorCap, and QorStream under one Trio shell (`/`, `/cap/`, `/watch/`, `/how-it-works/`, `/pricing/`, and `/verify/`).
+6. **Sealed Controller Timeline & auxiliary hash-stamp (optional).** `qor_receipt/hands/timeline.py` verifies `qorcap-hand-timeline/v0` + `hand_raw.v0.bin` v1 inputs (same clock domain; residual UNMEASURED) into a sanitized, advisory, lower-only `qortime.hands.v0` sidecar. Separately, the auxiliary hash-stamp service (`/aux/v1/hash-stamp`, `qortime.aux.hash_stamp.v1`) timestamps session SHA-256 digests into a persistent append-only ledger with an isolated Cloud Run ASGI app (`qor_receipt/hash_stamp_app.py`); see [docs/HASH_STAMP.md](docs/HASH_STAMP.md). Neither layer awards gold or changes a referee verdict upward.
 
 QorTime proves integrity and timing of the footage, and, from QorCap v0.3, that controller reports were logged from a USB-enumerated pad in the same session. It does not prove who held the controller, or that the console obeyed that pad.
 
@@ -110,13 +113,18 @@ schema/receipt.v0.json       JSON Schema, JCS canonical form, Ed25519
 qor_receipt/receipt.py       build, sign, verify
 qor_receipt/challenge.py     nonce, HID plus vision check, motion
 qor_receipt/checkpoints.py   hash chain and referee countersign
-qor_receipt/referee/         in-memory demo referee
+qor_receipt/hash_stamp.py    auxiliary hash-only timestamp ledger and verifier
+qor_receipt/hash_stamp_app.py isolated Cloud Run ASGI app for /aux/v1/hash-stamp
+qor_receipt/hands/timeline.py streaming qorcap-hand-timeline/v0 reader and verifier
+qor_receipt/referee/         in-memory demo referee (also mounts /aux/v1/hash-stamp)
 qor_receipt/referee_service/ official review HTTP service
 qor_receipt/review/          checks the uploaded bundle
 qor_receipt/_vendor/         Qoresence scorebug reader and signing (MIT)
-verify/                      browser verifier, noble-ed25519, tests
-site/                        GitHub Pages site and published matches
+verify/                      browser verifier (Trio Observatory shell), noble-ed25519, tests
+site/                        GitHub Pages Trio site (/, /cap/, /watch/, /verify/) and published matches
+services/hash-stamp/         Cloud Run Dockerfile, Cloud Build, and service.yaml for hash-stamp
 services/referee/            Railway image for the official referee
+docs/HASH_STAMP.md           auxiliary hash-stamp contract, persistence, and Cloud Run config
 docs/REFEREE_SERVICE.md      what the official referee will and will not sign
 docs/RISKS.md                residual risks, written plainly
 docs/PHASE2.md               not built yet
